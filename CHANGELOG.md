@@ -13,3 +13,7 @@
 - Implemented `lpf man generate`, `lpf man check`, and `lpf man install`
   using OCaml command metadata.
 - Added generated `lpf(8)`, command, policy config, and policy test man pages.
+- Implemented the first `lpf check` and `lpf fmt` policy-language slice in
+  OCaml.
+- Added valid and invalid policy fixtures for default actions, tables, rules,
+  NAT, redirects, syntax errors, and unknown table diagnostics.

@@ -1,4 +1,6 @@
 (test
  (name test_lpf)
- (deps (source_tree ../man/generated))
+ (deps
+  (source_tree ../fixtures)
+  (source_tree ../man/generated))
  (libraries lpf))

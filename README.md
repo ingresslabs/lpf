@@ -21,10 +21,15 @@ All product command and feature code is written in OCaml.
 
 ## Current Status
 
-This is the initial private project scaffold. The CLI currently exposes the
-command surface and help text. `lpf man generate`, `lpf man check`, and
-`lpf man install` are implemented from OCaml command metadata; networking
-backend behavior is intentionally not implemented yet.
+This is an early private implementation. The CLI exposes the command surface
+and help text. `lpf man generate`, `lpf man check`, and `lpf man install` are
+implemented from OCaml command metadata.
+
+The first policy-language slice is implemented for `lpf check` and `lpf fmt`.
+It parses and formats a small policy subset covering default actions,
+interfaces, macros, tables, pass/block rules, NAT, and redirects with OCaml
+tests and valid/invalid fixtures. The typed IR, backend plan generation, and
+networking backend behavior are intentionally not implemented yet.
 
 ## Planned CLI
 

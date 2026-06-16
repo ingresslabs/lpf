@@ -1,0 +1,6 @@
+set default maybe
+
+table trusted { 10.0.0.0/8 }
+
+pass sideways proto tcp
+

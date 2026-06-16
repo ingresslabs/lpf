@@ -39,6 +39,8 @@ type man_page = {
   content : string;
 }
 
+module Policy : module type of Policy
+
 val version : string
 val all_commands : (string * command * string) list
 val command_name : command -> string
@@ -49,3 +51,5 @@ val help : unit -> string
 val command_help : command -> string
 val man_pages : unit -> man_page list
 val man_page_content : man_page -> string
+val check_policy_text : ?file:string -> string -> Policy.check_result
+val format_policy_text : ?file:string -> string -> (string, Policy.diagnostic list) result

@@ -88,6 +88,48 @@ let handle_man args =
       prerr_endline "usage: lpf man <generate|check|install> [--dir DIR] [--prefix PREFIX]";
       exit 64
 
+let exit_for_policy_check result =
+  let output = Lpf.Policy.format_check_result result in
+  if output <> "" then prerr_endline output;
+  match result.Lpf.Policy.policy with
+  | Some _ -> exit 0
+  | None -> exit 1
+
+let handle_check args =
+  match args with
+  | [ path ] ->
+      read_file path |> Lpf.check_policy_text ~file:path |> exit_for_policy_check
+  | _ ->
+      prerr_endline "usage: lpf check <policy>";
+      exit 64
+
+let handle_fmt args =
+  let check_only, paths =
+    List.fold_left
+      (fun (check_only, paths) arg ->
+        if String.equal arg "--check" then (true, paths) else (check_only, paths @ [ arg ]))
+      (false, []) args
+  in
+  match paths with
+  | [ path ] -> (
+      let input = read_file path in
+      match Lpf.format_policy_text ~file:path input with
+      | Ok formatted ->
+          if check_only then (
+            if String.equal input formatted then (
+              Printf.printf "%s is formatted\n" path;
+              exit 0)
+            else (
+              prerr_endline (path ^ " is not formatted");
+              exit 1))
+          else print_string formatted
+      | Error diagnostics ->
+          diagnostics |> List.iter (fun diagnostic -> prerr_endline (Lpf.Policy.diagnostic_to_string diagnostic));
+          exit 1)
+  | _ ->
+      prerr_endline "usage: lpf fmt [--check] <policy>";
+      exit 64
+
 let planned command =
   print_end (Lpf.command_help command);
   exit 2
@@ -104,6 +146,8 @@ let () =
       | None ->
           prerr_endline ("unknown lpf command: " ^ name);
           exit 64)
+  | _ :: "check" :: args -> handle_check args
+  | _ :: "fmt" :: args -> handle_fmt args
   | _ :: "man" :: args -> handle_man args
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with

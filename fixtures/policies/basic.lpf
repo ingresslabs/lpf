@@ -1,0 +1,6 @@
+set default deny
+
+table <trusted> { 10.0.0.0/8, 192.168.0.0/16 }
+
+pass out proto tcp from any to any port 443 keep state
+block in from any to any

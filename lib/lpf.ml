@@ -39,6 +39,8 @@ type man_page = {
   content : string;
 }
 
+module Policy = Policy
+
 let version = "0.1.0-dev"
 
 let all_commands =
@@ -462,6 +464,13 @@ let man_pages () = overview_page () :: List.map command_page command_docs @ [ co
 
 let man_page_content page = page.content
 
+let check_policy_text ?file text = Policy.check ?file text
+
+let format_policy_text ?file text =
+  match Policy.check ?file text with
+  | { policy = Some policy; diagnostics = _ } -> Ok (Policy.format policy)
+  | { policy = None; diagnostics } -> Error diagnostics
+
 let usage_lines () =
   let render (name, _, summary) = Printf.sprintf "  %-15s %s" name summary in
   List.map render all_commands
@@ -483,7 +492,7 @@ let help () =
       ])
 
 let command_status = function
-  | Man -> "implemented"
+  | Check | Fmt | Man -> "implemented"
   | Version | Help -> "implemented"
   | _ -> "planned; implementation must be OCaml"
 
