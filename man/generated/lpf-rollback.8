@@ -1,0 +1,25 @@
+.TH LPF-ROLLBACK 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-rollback \- restore a previous known\-good policy state
+.SH SYNOPSIS
+lpf rollback [policy\-id]
+.SH DESCRIPTION
+Restore a previous lpf policy state and backend preimages.
+.SH OPTIONS
+.TP
+\-\-now
+rollback the active guarded apply immediately
+.SH EXAMPLES
+lpf rollback
+lpf rollback 2026\-06\-16T20:30:00Z
+.SH FILES
+/etc/lpf.conf
+/var/lib/lpf/history
+/var/lib/lpf/rollback
+.SH SAFETY NOTES
+Rollback must cover nftables, routes, tc, dynamic tables, and owned sysctls.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-apply(8), lpf\-history(8)

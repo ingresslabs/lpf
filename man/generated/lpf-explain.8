@@ -1,0 +1,23 @@
+.TH LPF-EXPLAIN 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-explain \- explain why a hypothetical packet passes or drops
+.SH SYNOPSIS
+lpf explain from <addr> to <addr> proto <proto> port <port>
+.SH DESCRIPTION
+Explain how a hypothetical packet would be handled by policy.
+Results include decision, policy rule, NAT, route, queue, log, and state behavior.
+.SH OPTIONS
+.TP
+\-\-json
+emit machine\-readable explanation
+.SH EXAMPLES
+lpf explain from 10.0.0.5 to 1.1.1.1 proto tcp port 443
+.SH FILES
+/etc/lpf.conf
+.SH SAFETY NOTES
+Explain is advisory until compared with installed backend state.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-test(8), lpf\-rules(8)

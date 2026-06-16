@@ -22,8 +22,9 @@ All product command and feature code is written in OCaml.
 ## Current Status
 
 This is the initial private project scaffold. The CLI currently exposes the
-command surface and help text, but backend behavior is intentionally not
-implemented yet.
+command surface and help text. `lpf man generate`, `lpf man check`, and
+`lpf man install` are implemented from OCaml command metadata; networking
+backend behavior is intentionally not implemented yet.
 
 ## Planned CLI
 
@@ -62,3 +63,11 @@ dune runtest
 
 Backend-affecting features must pass the five-kernel matrix described in
 [docs/KERNEL_LAB_MATRIX.md](docs/KERNEL_LAB_MATRIX.md).
+
+## Man Pages
+
+Generated pages live in `man/generated/` and are checked with:
+
+```sh
+lpf man check
+```

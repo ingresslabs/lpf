@@ -1,0 +1,24 @@
+.TH LPF-STATE 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-state \- inspect or modify conntrack state
+.SH SYNOPSIS
+lpf state <list|show|kill|flush\-policy>
+.SH DESCRIPTION
+Inspect and manage lpf\-related conntrack state.
+.SH OPTIONS
+.TP
+\-\-json
+emit machine\-readable state output
+.SH EXAMPLES
+lpf state list
+lpf state kill \-\-policy\-id abc123
+.SH FILES
+/proc/net/nf_conntrack
+/var/lib/lpf/history
+.SH SAFETY NOTES
+Killing conntrack entries can interrupt active connections.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-rules(8), lpf\-history(8)

@@ -1,0 +1,24 @@
+.TH LPF-DIFF 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-diff \- show the delta between current host state and a plan
+.SH SYNOPSIS
+lpf diff <policy>
+.SH DESCRIPTION
+Compare a generated plan with current lpf\-owned host state.
+.SH OPTIONS
+.TP
+\-\-json
+emit semantic diff as machine\-readable output
+.SH EXAMPLES
+lpf diff /etc/lpf.conf
+.SH FILES
+/etc/lpf.conf
+/var/lib/lpf/history
+/var/lib/lpf/rollback
+.SH SAFETY NOTES
+This command is read\-only.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-plan(8), lpf\-rules(8)

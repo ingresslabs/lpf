@@ -1,0 +1,74 @@
+.TH LPF 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf \- PF\-style control plane for Linux networking
+.SH SYNOPSIS
+lpf <command> [arguments]
+.SH DESCRIPTION
+lpf is an OCaml\-first control plane for readable Linux firewall and routing policy.
+It compiles typed policy into nftables, policy routing, tc, conntrack, and logging plans.
+Remote\-safe apply, rollback, explainability, policy tests, generated man pages, and kernel\-matrix validation are core requirements.
+.SH COMMANDS
+.TP
+lpf check
+parse and validate policy without touching the host
+.TP
+lpf fmt
+format policy files deterministically
+.TP
+lpf plan
+compile policy to a typed backend change plan
+.TP
+lpf diff
+show the delta between current host state and a plan
+.TP
+lpf apply
+apply a plan with confirmation and rollback support
+.TP
+lpf confirm
+confirm a pending guarded apply
+.TP
+lpf rollback
+restore a previous known\-good policy state
+.TP
+lpf explain
+explain why a hypothetical packet passes or drops
+.TP
+lpf test
+run policy assertion fixtures
+.TP
+lpf table
+manage dynamic policy tables
+.TP
+lpf state
+inspect or modify conntrack state
+.TP
+lpf rules
+show generated or installed backend rules
+.TP
+lpf history
+show policy apply history and rollback points
+.TP
+lpf import
+import existing nftables or iptables\-save policy
+.TP
+lpf ui
+serve, build, or test the Bonsai browser UI
+.TP
+lpf support\-bundle
+collect redacted diagnostic evidence
+.TP
+lpf kernel\-matrix
+run or plan latest\-kernel validation
+.TP
+lpf man
+generate, check, or install man pages
+.SH FILES
+/etc/lpf.conf
+/var/lib/lpf/history
+/var/lib/lpf/rollback
+.SH SAFETY NOTES
+Run lpf check and lpf plan before applying host changes.
+Use guarded apply with an explicit confirmation window for remote hosts.
+Keep rollback evidence server\-side; never rely on browser\-only state.
+.SH SEE ALSO
+lpf.conf(5), lpf\-policy\-tests(5), lpf\-apply(8), lpf\-man(8)

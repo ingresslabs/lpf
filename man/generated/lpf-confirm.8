@@ -1,0 +1,20 @@
+.TH LPF-CONFIRM 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-confirm \- confirm a pending guarded apply
+.SH SYNOPSIS
+lpf confirm
+.SH DESCRIPTION
+Confirm a pending guarded apply and promote it to known\-good state.
+.SH EXAMPLES
+lpf confirm
+.SH FILES
+/etc/lpf.conf
+/var/lib/lpf/history
+/var/lib/lpf/rollback
+.SH SAFETY NOTES
+Confirm only after verifying management access and expected traffic behavior.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-apply(8), lpf\-rollback(8)

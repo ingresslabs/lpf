@@ -1,0 +1,26 @@
+.TH LPF-PLAN 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-plan \- compile policy to a typed backend change plan
+.SH SYNOPSIS
+lpf plan <policy>
+.SH DESCRIPTION
+Compile policy into a typed backend change plan.
+Plans include nftables, routing, tc, conntrack, logging, sysctl, and rollback preimage requirements.
+.SH OPTIONS
+.TP
+\-\-json
+emit machine\-readable plan output
+.SH EXAMPLES
+lpf plan /etc/lpf.conf
+lpf plan \-\-json /etc/lpf.conf
+.SH FILES
+/etc/lpf.conf
+/var/lib/lpf/history
+/var/lib/lpf/rollback
+.SH SAFETY NOTES
+Planning is read\-only but may inspect current host capabilities.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-diff(8), lpf\-apply(8)

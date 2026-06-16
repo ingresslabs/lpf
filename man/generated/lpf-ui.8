@@ -1,0 +1,30 @@
+.TH LPF-UI 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-ui \- serve, build, or test the Bonsai browser UI
+.SH SYNOPSIS
+lpf ui <serve|build|test>
+.SH DESCRIPTION
+Serve, build, or test the Bonsai/Bonsai_web browser UI.
+The browser UI uses typed OCaml API endpoints and never executes host commands directly.
+.SH OPTIONS
+.TP
+\-\-mock
+serve UI with mock API responses
+.TP
+\-\-listen <addr:port>
+bind UI server address
+.SH EXAMPLES
+lpf ui serve \-\-mock
+lpf ui serve \-\-listen 127.0.0.1:9443
+.SH FILES
+/var/lib/lpf/ui\-session
+/var/lib/lpf/history
+.SH SAFETY NOTES
+Bind to localhost by default.
+Require plan checksum confirmation for destructive actions.
+Keep rollback preimages server\-side.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-apply(8), lpf\-explain(8), lpf\-support\-bundle(8)

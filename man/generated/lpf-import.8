@@ -1,0 +1,25 @@
+.TH LPF-IMPORT 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-import \- import existing nftables or iptables\-save policy
+.SH SYNOPSIS
+lpf import <nftables|iptables\-save|ufw|firewalld>
+.SH DESCRIPTION
+Import existing firewall state into an lpf policy starting point.
+.SH OPTIONS
+.TP
+\-\-output <path>
+write imported policy to a file
+.SH EXAMPLES
+lpf import nftables
+lpf import iptables\-save < rules.v4
+.SH FILES
+/etc/nftables.conf
+/etc/ufw
+/etc/firewalld
+.SH SAFETY NOTES
+Untranslatable constructs must be marked explicitly and never silently dropped.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-check(8), lpf.conf(5)

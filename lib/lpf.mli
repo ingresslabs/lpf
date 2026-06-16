@@ -20,10 +20,32 @@ type command =
   | Version
   | Help
 
+type command_doc = {
+  command : command;
+  section : int;
+  synopsis : string;
+  description : string list;
+  options : (string * string) list;
+  examples : string list;
+  files : string list;
+  safety_notes : string list;
+  see_also : string list;
+}
+
+type man_page = {
+  filename : string;
+  section : int;
+  title : string;
+  content : string;
+}
+
 val version : string
 val all_commands : (string * command * string) list
 val command_name : command -> string
 val command_of_string : string -> command option
 val command_summary : command -> string
+val command_docs : command_doc list
 val help : unit -> string
 val command_help : command -> string
+val man_pages : unit -> man_page list
+val man_page_content : man_page -> string

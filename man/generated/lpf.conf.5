@@ -1,0 +1,12 @@
+.TH LPF.CONF 5 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf.conf \- lpf policy file format
+.SH DESCRIPTION
+The lpf policy format is a PF\-inspired language for Linux networking.
+It is planned to model interfaces, tables, rules, NAT, redirects, queues, route\-to behavior, logging, and anchors.
+.SH EXAMPLES
+set default deny
+table <trusted> { 10.0.0.0/8, 192.168.0.0/16 }
+pass out keep state
+.SH SEE ALSO
+lpf\-check(8), lpf\-plan(8), lpf\-apply(8)

@@ -1,0 +1,22 @@
+.TH LPF-HISTORY 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-history \- show policy apply history and rollback points
+.SH SYNOPSIS
+lpf history
+.SH DESCRIPTION
+Show policy apply history, checksums, tests, operators, and rollback points.
+.SH OPTIONS
+.TP
+\-\-json
+emit machine\-readable history
+.SH EXAMPLES
+lpf history
+.SH FILES
+/var/lib/lpf/history
+.SH SAFETY NOTES
+History output must redact private host inventory.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-rollback(8), lpf\-support\-bundle(8)

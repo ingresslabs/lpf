@@ -1,0 +1,25 @@
+.TH LPF-TABLE 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-table \- manage dynamic policy tables
+.SH SYNOPSIS
+lpf table <name> <add|delete|replace|show|flush|counters>
+.SH DESCRIPTION
+Manage dynamic policy tables without a full policy reload.
+.SH OPTIONS
+.TP
+\-\-ttl <duration>
+attach a time\-to\-live where supported
+.SH EXAMPLES
+lpf table threats add 203.0.113.10
+lpf table threats replace threats.txt
+.SH FILES
+/etc/lpf.conf
+/var/lib/lpf/history
+/var/lib/lpf/rollback
+.SH SAFETY NOTES
+Replacement must be atomic and reversible.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-plan(8), lpf\-rules(8)

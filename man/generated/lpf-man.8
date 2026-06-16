@@ -1,0 +1,28 @@
+.TH LPF-MAN 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-man \- generate, check, or install man pages
+.SH SYNOPSIS
+lpf man <generate|check|install>
+.SH DESCRIPTION
+Generate, check, or install man pages from OCaml command metadata.
+.SH OPTIONS
+.TP
+\-\-dir <path>
+select generated man page directory for generate/check
+.TP
+\-\-prefix <path>
+install pages under the prefix share/man tree
+.SH EXAMPLES
+lpf man generate
+lpf man check
+lpf man install \-\-prefix /usr/local
+.SH FILES
+man/generated
+/usr/local/share/man
+.SH SAFETY NOTES
+Generated man pages must be committed with command behavior changes.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf(8), lpf.conf(5)

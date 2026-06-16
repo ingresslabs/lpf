@@ -1,0 +1,20 @@
+.TH LPF-CHECK 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-check \- parse and validate policy without touching the host
+.SH SYNOPSIS
+lpf check <policy>
+.SH DESCRIPTION
+Parse, type\-check, and validate an lpf policy without changing host state.
+Diagnostics must include source locations and actionable recovery guidance.
+.SH EXAMPLES
+lpf check /etc/lpf.conf
+lpf check fixtures/policies/basic.lpf
+.SH FILES
+/etc/lpf.conf
+.SH SAFETY NOTES
+This command is read\-only.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-plan(8), lpf\-fmt(8), lpf.conf(5)

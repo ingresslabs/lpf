@@ -1,0 +1,27 @@
+.TH LPF-RULES 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-rules \- show generated or installed backend rules
+.SH SYNOPSIS
+lpf rules show
+.SH DESCRIPTION
+Show generated or installed backend rules with source\-policy annotations.
+.SH OPTIONS
+.TP
+\-\-installed
+show installed backend state
+.TP
+\-\-planned
+show generated planned state
+.SH EXAMPLES
+lpf rules show \-\-installed
+.SH FILES
+/etc/lpf.conf
+/var/lib/lpf/history
+/var/lib/lpf/rollback
+.SH SAFETY NOTES
+This command is read\-only.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-diff(8), lpf\-plan(8)

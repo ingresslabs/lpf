@@ -1,0 +1,14 @@
+.TH LPF-POLICY-TESTS 5 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-policy\-tests \- policy assertion fixture format
+.SH DESCRIPTION
+Policy tests describe expected pass, drop, reject, NAT, route, queue, log, and table behavior.
+The fixture format is planned as an OCaml\-validated schema used by lpf test and CI.
+.SH EXAMPLES
+from: 10.0.0.5
+to: 1.1.1.1
+proto: tcp
+port: 443
+expect: pass
+.SH SEE ALSO
+lpf\-test(8), lpf\-explain(8)

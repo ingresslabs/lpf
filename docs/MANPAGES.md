@@ -4,7 +4,7 @@
 in man pages and those man pages must be generated from OCaml metadata so they
 stay synchronized with the executable.
 
-## Planned Commands
+## Implemented Commands
 
 ```sh
 lpf man generate
@@ -61,7 +61,7 @@ Each command metadata entry must provide:
 Any command or user-visible behavior change is incomplete until:
 
 ```sh
-lpf man check
+dune exec -- lpf man check
 dune runtest
 ```
 
@@ -77,3 +77,8 @@ man/generated/
 
 Do not manually edit generated pages. Edit the OCaml metadata and regenerate.
 
+## Current Implementation
+
+`lpf man generate`, `lpf man check`, and `lpf man install` are implemented in
+OCaml. The generator emits roff pages from typed command metadata in the `lpf`
+library.

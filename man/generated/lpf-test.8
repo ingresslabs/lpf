@@ -1,0 +1,22 @@
+.TH LPF-TEST 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-test \- run policy assertion fixtures
+.SH SYNOPSIS
+lpf test <fixture>
+.SH DESCRIPTION
+Run policy assertions covering decisions, NAT, route, queue, log, and tables.
+.SH OPTIONS
+.TP
+\-\-junit <path>
+write JUnit\-compatible test output
+.SH EXAMPLES
+lpf test fixtures/tests/basic.yaml
+.SH FILES
+lpf\-policy\-tests(5)
+.SH SAFETY NOTES
+Policy tests must run before guarded apply in CI workflows.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-explain(8), lpf\-policy\-tests(5)
