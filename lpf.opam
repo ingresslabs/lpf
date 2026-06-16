@@ -1,0 +1,16 @@
+opam-version: "2.0"
+synopsis: "PF-style control plane for Linux networking"
+description: "OCaml-first firewall policy control plane targeting nftables, policy routing, tc, conntrack, and NFLOG."
+maintainer: "avkcode"
+authors: ["avkcode"]
+license: "Apache-2.0"
+homepage: "https://github.com/avkcode/lpf"
+bug-reports: "https://github.com/avkcode/lpf/issues"
+depends: [
+  "ocaml" {>= "5.1"}
+  "dune" {>= "3.11"}
+]
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]
+

@@ -1,0 +1,61 @@
+# lpf
+
+`lpf` is a planned PF-style control plane for Linux networking.
+
+The goal is not to port OpenBSD PF into the Linux kernel. The goal is to give
+Linux a coherent firewall/router operations layer:
+
+- readable policy files
+- safe atomic apply with rollback
+- packet decision explainability
+- policy tests
+- dynamic tables
+- nftables-backed filtering and NAT
+- policy routing through `ip rule` and route tables
+- shaping through `tc`
+- state inspection through conntrack
+- structured logging through NFLOG/ulogd
+
+All product command and feature code is written in OCaml.
+
+## Current Status
+
+This is the initial private project scaffold. The CLI currently exposes the
+command surface and help text, but backend behavior is intentionally not
+implemented yet.
+
+## Planned CLI
+
+```sh
+lpf check /etc/lpf.conf
+lpf plan /etc/lpf.conf
+lpf diff /etc/lpf.conf
+lpf apply /etc/lpf.conf --confirm 60s
+lpf confirm
+lpf rollback
+lpf explain from 10.0.0.5 to 1.1.1.1 proto tcp port 443
+lpf test policy-tests.yaml
+lpf table threats add 203.0.113.10
+lpf history
+lpf support-bundle
+```
+
+See [docs/COMMANDS.md](docs/COMMANDS.md) for the command contract and
+[docs/PLAN.md](docs/PLAN.md) for the implementation plan.
+
+## Build
+
+The intended build path is:
+
+```sh
+opam switch create . ocaml-base-compiler.5.2.1
+opam install . --deps-only --with-test
+dune build
+dune runtest
+```
+
+## Kernel Validation
+
+Backend-affecting features must pass the five-kernel matrix described in
+[docs/KERNEL_LAB_MATRIX.md](docs/KERNEL_LAB_MATRIX.md).
+
