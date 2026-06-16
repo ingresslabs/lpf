@@ -13,8 +13,10 @@ type command =
   | Rules
   | History
   | Import
+  | Ui
   | Support_bundle
   | Kernel_matrix
+  | Man
   | Version
   | Help
 
@@ -25,4 +27,3 @@ val command_of_string : string -> command option
 val command_summary : command -> string
 val help : unit -> string
 val command_help : command -> string
-

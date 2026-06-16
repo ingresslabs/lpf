@@ -17,6 +17,9 @@ networking primitives.
 - Backend target: nftables first.
 - No product shell scripts.
 - Remote safety is a core feature, not a later enhancement.
+- Operator-facing commands must have generated man pages from OCaml metadata.
+- Code changes must compile and test locally and on a remote Linux machine when
+  one is reachable.
 - All backend-changing features must pass the five-kernel matrix.
 - Lab 141 is the preferred kernel-matrix proving ground.
 
@@ -29,6 +32,7 @@ Tasks:
 - Add agent rules.
 - Add command contract.
 - Add kernel-matrix evidence contract.
+- Add man-page generation contract.
 - Add changelog.
 - Add GitHub Actions for lint/build/test once the repository is pushed.
 
@@ -38,6 +42,7 @@ Exit criteria:
 - `dune runtest` works in CI.
 - `lpf help` and `lpf version` work.
 - Agent rules enforce OCaml-only feature implementation.
+- Agent rules enforce generated man pages and remote Linux validation.
 
 ## Phase 1: Policy Language MVP
 
@@ -228,7 +233,54 @@ Exit criteria:
 - `lpf support-bundle`
 - redaction tests prevent secrets and full private inventories from leaking.
 
-## Phase 11: Kernel Matrix And Lab 141 Automation
+## Phase 11: Bonsai UI
+
+Goal: provide a safe browser operations surface using Bonsai/Bonsai_web.
+
+Tasks:
+
+- Extract shared policy, plan, diff, explain, history, support-bundle, and
+  evidence models for CLI/server/UI reuse.
+- Add an OCaml local API server for typed UI operations.
+- Add `lpf ui serve --mock` for rootless UI development.
+- Add `lpf ui serve --listen 127.0.0.1:9443` for local/SSH-forwarded use.
+- Add a Bonsai Policy Workbench with editor, diagnostics, plan, diff, explain,
+  and policy test panes.
+- Add a Bonsai Apply Guard with plan checksum, rollback preimage, countdown,
+  confirm, and rollback actions.
+- Add dynamic table, conntrack, history, support bundle, and kernel evidence
+  screens.
+- Add Bonsai component tests and browser smoke tests.
+
+Exit criteria:
+
+- `lpf ui serve --mock` opens a working Bonsai UI without root.
+- UI check/plan/diff/explain flows use typed mock API fixtures.
+- guarded apply flow refuses changed plan checksums.
+- Bonsai component tests cover workbench, explain, apply guard, rollback
+  timer, and support-bundle redaction.
+- the base `lpf` CLI still builds without Bonsai dependencies.
+
+## Phase 12: Man Page Generation
+
+Goal: keep operator docs synchronized with command metadata.
+
+Tasks:
+
+- Define OCaml command metadata for every command and subcommand.
+- Generate `lpf(8)`, per-command man pages, `lpf.conf(5)`, and test fixture
+  format pages.
+- Add `lpf man generate`.
+- Add `lpf man check`.
+- Add tests that fail when generated man pages are stale.
+
+Exit criteria:
+
+- `lpf man generate`
+- `lpf man check`
+- generated pages exist for every operator-facing command.
+
+## Phase 13: Kernel Matrix And Lab 141 Automation
 
 Goal: prove backend behavior on current kernels.
 
@@ -246,7 +298,7 @@ Exit criteria:
 - each command's backend behavior is exercised per kernel
 - evidence references Lab 141 when used
 
-## Phase 12: Packaging And Release
+## Phase 14: Packaging And Release
 
 Goal: make `lpf` easy to install and safe to operate.
 
@@ -257,10 +309,10 @@ Tasks:
 - Add man pages generated from OCaml command metadata.
 - Add signed release checksums.
 - Document distro compatibility.
+- Remote Linux build/test evidence is attached to release candidates.
 
 Exit criteria:
 
 - installable package
 - reproducible release notes
 - kernel-matrix evidence attached to release
-

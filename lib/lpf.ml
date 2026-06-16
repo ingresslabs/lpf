@@ -13,8 +13,10 @@ type command =
   | Rules
   | History
   | Import
+  | Ui
   | Support_bundle
   | Kernel_matrix
+  | Man
   | Version
   | Help
 
@@ -36,8 +38,10 @@ let all_commands =
     ("rules", Rules, "show generated or installed backend rules");
     ("history", History, "show policy apply history and rollback points");
     ("import", Import, "import existing nftables or iptables-save policy");
+    ("ui", Ui, "serve, build, or test the Bonsai browser UI");
     ("support-bundle", Support_bundle, "collect redacted diagnostic evidence");
     ("kernel-matrix", Kernel_matrix, "run or plan latest-kernel validation");
+    ("man", Man, "generate, check, or install man pages");
     ("version", Version, "print lpf version");
     ("help", Help, "print general or command-specific help");
   ]
@@ -57,8 +61,10 @@ let command_name = function
   | Rules -> "rules"
   | History -> "history"
   | Import -> "import"
+  | Ui -> "ui"
   | Support_bundle -> "support-bundle"
   | Kernel_matrix -> "kernel-matrix"
+  | Man -> "man"
   | Version -> "version"
   | Help -> "help"
 
@@ -96,4 +102,3 @@ let help () =
 let command_help command =
   Printf.sprintf "lpf %s\n\n%s\n\nStatus: planned; implementation must be OCaml."
     (command_name command) (command_summary command)
-

@@ -11,6 +11,8 @@ Every command must include:
 
 - parser behavior
 - `--help` text
+- generated man page metadata
+- generated man page freshness test
 - dry-run behavior where the command changes host state
 - structured machine output plan for automation
 - human output for operators
@@ -157,8 +159,31 @@ Initial importers:
 Create a redacted diagnostic bundle. It must never include raw secrets,
 private keys, full packet payloads, or unredacted host inventory.
 
+### `lpf ui <operation>`
+
+Operate the Bonsai/Bonsai_web UI.
+
+Operations:
+
+- `serve --mock`
+- `serve --listen <addr:port>`
+- `build`
+- `test`
+
+The UI must call typed OCaml API endpoints and must never execute backend host
+commands directly from browser code.
+
 ### `lpf kernel-matrix`
 
 Plan or run kernel compatibility validation. This command owns the five-latest
 kernel rule and Lab 141 evidence contract.
 
+### `lpf man <operation>`
+
+Generate, check, and install man pages from OCaml command metadata.
+
+Operations:
+
+- `generate`
+- `check`
+- `install`

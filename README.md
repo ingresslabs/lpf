@@ -15,6 +15,7 @@ Linux a coherent firewall/router operations layer:
 - shaping through `tc`
 - state inspection through conntrack
 - structured logging through NFLOG/ulogd
+- Bonsai/Bonsai_web browser UI for safe policy review and guarded apply
 
 All product command and feature code is written in OCaml.
 
@@ -36,12 +37,15 @@ lpf rollback
 lpf explain from 10.0.0.5 to 1.1.1.1 proto tcp port 443
 lpf test policy-tests.yaml
 lpf table threats add 203.0.113.10
+lpf ui serve --mock
+lpf man generate
 lpf history
 lpf support-bundle
 ```
 
 See [docs/COMMANDS.md](docs/COMMANDS.md) for the command contract and
-[docs/PLAN.md](docs/PLAN.md) for the implementation plan.
+[docs/PLAN.md](docs/PLAN.md) for the implementation plan. The UI architecture
+is documented in [docs/UI.md](docs/UI.md).
 
 ## Build
 
@@ -58,4 +62,3 @@ dune runtest
 
 Backend-affecting features must pass the five-kernel matrix described in
 [docs/KERNEL_LAB_MATRIX.md](docs/KERNEL_LAB_MATRIX.md).
-
