@@ -28,8 +28,10 @@ implemented from OCaml command metadata.
 The first policy-language slice is implemented for `lpf check` and `lpf fmt`.
 It parses and formats a small policy subset covering default actions,
 interfaces, macros, tables, pass/block rules, NAT, and redirects with OCaml
-tests and valid/invalid fixtures. The typed IR, backend plan generation, and
-networking backend behavior are intentionally not implemented yet.
+tests and valid/invalid fixtures. The parser is tokenized and carries
+column-level spans for actionable diagnostics. The typed IR, backend plan
+generation, and networking backend behavior are intentionally not implemented
+yet.
 
 ## Planned CLI
 

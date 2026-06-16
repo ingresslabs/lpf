@@ -51,31 +51,48 @@ type rule = {
   action : action;
   direction : direction option;
   interface : reference option;
+  interface_span : span option;
   protocol : protocol;
+  protocol_span : span option;
   source : reference;
+  source_span : span;
   destination : reference;
+  destination_span : span;
   port : port;
+  port_span : span option;
   keep_state : bool;
   span : span;
 }
 
 type nat = {
   interface : reference;
+  interface_span : span;
   protocol : protocol;
+  protocol_span : span option;
   source : reference;
+  source_span : span;
   destination : reference;
+  destination_span : span;
   translation : reference;
+  translation_span : span;
   span : span;
 }
 
 type rdr = {
   interface : reference;
+  interface_span : span;
   protocol : protocol;
+  protocol_span : span option;
   source : reference;
+  source_span : span;
   destination : reference;
+  destination_span : span;
   port : port;
+  port_span : span option;
   translation : reference;
+  translation_span : span;
   translation_port : port;
+  translation_port_span : span option;
   span : span;
 }
 
@@ -100,4 +117,3 @@ val check : ?file:string -> string -> check_result
 val format : policy -> string
 val format_check_result : check_result -> string
 val diagnostic_to_string : diagnostic -> string
-

@@ -17,3 +17,6 @@
   OCaml.
 - Added valid and invalid policy fixtures for default actions, tables, rules,
   NAT, redirects, syntax errors, and unknown table diagnostics.
+- Refactored policy parsing around tokenized statements with column-level
+  spans for parser and validation diagnostics.
+- Added formatter round-trip coverage for non-normalized policy input.

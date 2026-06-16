@@ -51,31 +51,48 @@ type rule = {
   action : action;
   direction : direction option;
   interface : reference option;
+  interface_span : span option;
   protocol : protocol;
+  protocol_span : span option;
   source : reference;
+  source_span : span;
   destination : reference;
+  destination_span : span;
   port : port;
+  port_span : span option;
   keep_state : bool;
   span : span;
 }
 
 type nat = {
   interface : reference;
+  interface_span : span;
   protocol : protocol;
+  protocol_span : span option;
   source : reference;
+  source_span : span;
   destination : reference;
+  destination_span : span;
   translation : reference;
+  translation_span : span;
   span : span;
 }
 
 type rdr = {
   interface : reference;
+  interface_span : span;
   protocol : protocol;
+  protocol_span : span option;
   source : reference;
+  source_span : span;
   destination : reference;
+  destination_span : span;
   port : port;
+  port_span : span option;
   translation : reference;
+  translation_span : span;
   translation_port : port;
+  translation_port_span : span option;
   span : span;
 }
 
@@ -107,10 +124,6 @@ let empty_policy =
 
 let trim = String.trim
 
-let starts_with ~prefix text =
-  let prefix_len = String.length prefix in
-  String.length text >= prefix_len && String.sub text 0 prefix_len = prefix
-
 let span ?file line column end_column = { file; line; column; end_column }
 
 let line_span ?file line text = span ?file line 1 (max 1 (String.length text + 1))
@@ -119,32 +132,11 @@ let diagnostic severity span message = { severity; span; message }
 
 let syntax_error span message = diagnostic Diag_error span message
 
-let strip_comment text =
-  match String.index_opt text '#' with
-  | None -> text
-  | Some index -> String.sub text 0 index
+let starts_with ~prefix text =
+  let prefix_len = String.length prefix in
+  String.length text >= prefix_len && String.sub text 0 prefix_len = prefix
 
 let is_space = function ' ' | '\t' | '\r' | '\n' -> true | _ -> false
-
-let split_words text =
-  let rec skip_spaces index =
-    if index >= String.length text then index
-    else if is_space text.[index] then skip_spaces (index + 1)
-    else index
-  in
-  let rec next_word start index acc =
-    if index >= String.length text then
-      if start = index then List.rev acc
-      else List.rev (String.sub text start (index - start) :: acc)
-    else if is_space text.[index] then
-      let word = String.sub text start (index - start) in
-      loop (index + 1) (word :: acc)
-    else next_word start (index + 1) acc
-  and loop index acc =
-    let index = skip_spaces index in
-    if index >= String.length text then List.rev acc else next_word index index acc
-  in
-  loop 0 []
 
 let strip_quotes text =
   let len = String.length text in
@@ -195,251 +187,519 @@ let parse_action = function "pass" -> Some Pass | "block" -> Some Block | _ -> N
 
 let add_diagnostic diagnostics diag = diag :: diagnostics
 
-let parse_default ?file line original text policy diagnostics =
-  match split_words text with
-  | [ "set"; "default"; "deny" ] ->
-      ({ policy with default_action = Some Default_deny }, diagnostics)
-  | [ "set"; "default"; "pass" ] ->
-      ({ policy with default_action = Some Default_pass }, diagnostics)
-  | _ ->
-      ( policy,
-        add_diagnostic diagnostics
-          (syntax_error (line_span ?file line original)
-             "expected `set default deny` or `set default pass`") )
+type token = {
+  text : string;
+  span : span;
+}
 
-let parse_interface ?file line original text policy diagnostics =
-  match split_words text with
-  | [ "interface"; name; "="; device ] when valid_name name ->
-      let interface = { name; device = strip_quotes device; span = line_span ?file line original } in
-      ({ policy with interfaces = interface :: policy.interfaces }, diagnostics)
-  | _ ->
-      ( policy,
-        add_diagnostic diagnostics
-          (syntax_error (line_span ?file line original)
-             "expected `interface <name> = \"device\"`") )
+let token ?file line start finish text =
+  { text; span = span ?file line (start + 1) (finish + 1) }
 
-let parse_macro ?file line original text policy diagnostics =
-  match String.index_opt text '=' with
-  | None -> (policy, diagnostics)
-  | Some index ->
-      let name = String.sub text 0 index |> trim in
-      let value = String.sub text (index + 1) (String.length text - index - 1) |> trim in
-      if not (valid_name name) then
-        ( policy,
-          add_diagnostic diagnostics
-            (syntax_error (line_span ?file line original) ("invalid macro name `" ^ name ^ "`")) )
-      else if value = "" then
-        ( policy,
-          add_diagnostic diagnostics
-            (syntax_error (line_span ?file line original) ("macro `" ^ name ^ "` has no value")) )
-      else
-        let macro = { name; value = strip_quotes value; span = line_span ?file line original } in
-        ({ policy with macros = macro :: policy.macros }, diagnostics)
+let is_punctuation = function '{' | '}' | ',' | '=' -> true | _ -> false
 
-let parse_table ?file line original text policy diagnostics =
-  match String.index_opt text '{', String.rindex_opt text '}' with
-  | Some open_index, Some close_index when close_index > open_index -> (
-      let head = String.sub text 0 open_index |> trim in
-      match split_words head with
-      | [ "table"; table_token ] -> (
-          match parse_table_name table_token with
-          | Some name when valid_name name ->
-              let body =
-                String.sub text (open_index + 1) (close_index - open_index - 1)
-                |> String.split_on_char ','
-                |> List.map trim
-                |> List.filter (fun entry -> entry <> "")
-              in
-              let table = { name; entries = body; span = line_span ?file line original } in
-              ({ policy with tables = table :: policy.tables }, diagnostics)
-          | Some name ->
-              ( policy,
-                add_diagnostic diagnostics
-                  (syntax_error (line_span ?file line original)
-                     ("invalid table name `" ^ name ^ "`")) )
-          | None ->
-              ( policy,
-                add_diagnostic diagnostics
-                  (syntax_error (line_span ?file line original)
-                     "expected table name like `<trusted>`") ))
+let is_token_boundary text index =
+  index >= String.length text || is_space text.[index] || text.[index] = '#'
+  || is_punctuation text.[index]
+  || (text.[index] = '-' && index + 1 < String.length text && text.[index + 1] = '>')
+
+let lex_line ?file line original =
+  let len = String.length original in
+  let rec loop index tokens diagnostics =
+    if index >= len then (List.rev tokens, List.rev diagnostics)
+    else
+      match original.[index] with
+      | '#' -> (List.rev tokens, List.rev diagnostics)
+      | c when is_space c -> loop (index + 1) tokens diagnostics
+      | '"' ->
+          let rec find_quote cursor =
+            if cursor >= len then None
+            else if original.[cursor] = '"' then Some cursor
+            else find_quote (cursor + 1)
+          in
+          let finish, diagnostics =
+            match find_quote (index + 1) with
+            | Some close -> (close + 1, diagnostics)
+            | None ->
+                let diag =
+                  syntax_error (span ?file line (index + 1) (len + 1))
+                    "unterminated quoted string"
+                in
+                (len, diag :: diagnostics)
+          in
+          let text = String.sub original index (finish - index) in
+          loop finish (token ?file line index finish text :: tokens) diagnostics
+      | '-' when index + 1 < len && original.[index + 1] = '>' ->
+          loop (index + 2) (token ?file line index (index + 2) "->" :: tokens) diagnostics
+      | c when is_punctuation c ->
+          loop (index + 1)
+            (token ?file line index (index + 1) (String.make 1 c) :: tokens)
+            diagnostics
+      | _ ->
+          let rec finish_word cursor =
+            if is_token_boundary original cursor then cursor else finish_word (cursor + 1)
+          in
+          let finish = finish_word index in
+          let text = String.sub original index (finish - index) in
+          loop finish (token ?file line index finish text :: tokens) diagnostics
+  in
+  loop 0 [] []
+
+let last_token tokens =
+  match List.rev tokens with [] -> None | token :: _ -> Some token
+
+let span_of_tokens fallback = function
+  | [] -> fallback
+  | first :: _ as tokens -> (
+      match last_token tokens with
+      | None -> fallback
+      | Some last -> { first.span with end_column = last.span.end_column })
+
+let text_is expected token = String.equal token.text expected
+
+let has_token expected tokens = List.exists (text_is expected) tokens
+
+let add_diagnostics diagnostics new_diagnostics =
+  List.fold_left (fun diagnostics diagnostic -> diagnostic :: diagnostics) diagnostics
+    new_diagnostics
+
+let parse_reference_token token = parse_reference token.text
+
+let parse_port_token token =
+  match parse_port token.text with
+  | Ok port -> Ok (port, token.span)
+  | Error message -> Error (token.span, message)
+
+let parse_default original tokens policy diagnostics =
+  let statement_span = span_of_tokens (line_span 1 original) tokens in
+  match tokens with
+  | [ set_token; default_token; action_token ]
+    when text_is "set" set_token && text_is "default" default_token -> (
+      match action_token.text with
+      | "deny" -> ({ policy with default_action = Some Default_deny }, diagnostics)
+      | "pass" -> ({ policy with default_action = Some Default_pass }, diagnostics)
       | _ ->
           ( policy,
             add_diagnostic diagnostics
-              (syntax_error (line_span ?file line original)
-                 "expected `table <name> { entries }`") ))
+              (syntax_error action_token.span
+                 "expected default action `deny` or `pass`") ))
   | _ ->
       ( policy,
         add_diagnostic diagnostics
-          (syntax_error (line_span ?file line original)
-             "expected `table <name> { entries }`") )
+          (syntax_error statement_span
+             "expected `set default deny` or `set default pass`") )
 
-let parse_rule ?file line original text policy diagnostics =
-  let tokens = split_words text in
+let parse_interface original tokens policy diagnostics =
+  let statement_span = span_of_tokens (line_span 1 original) tokens in
   match tokens with
-  | action_token :: rest -> (
-      match parse_action action_token with
+  | [ keyword; name; equals; device ]
+    when text_is "interface" keyword && text_is "=" equals ->
+      if not (valid_name name.text) then
+        ( policy,
+          add_diagnostic diagnostics
+            (syntax_error name.span ("invalid interface name `" ^ name.text ^ "`")) )
+      else
+        let interface =
+          { name = name.text; device = strip_quotes device.text; span = statement_span }
+        in
+        ({ policy with interfaces = interface :: policy.interfaces }, diagnostics)
+  | _ ->
+      ( policy,
+        add_diagnostic diagnostics
+          (syntax_error statement_span "expected `interface <name> = \"device\"`") )
+
+let split_on_equals tokens =
+  let rec loop before = function
+    | [] -> None
+    | token :: rest when text_is "=" token -> Some (List.rev before, token, rest)
+    | token :: rest -> loop (token :: before) rest
+  in
+  loop [] tokens
+
+let parse_macro original tokens policy diagnostics =
+  let statement_span = span_of_tokens (line_span 1 original) tokens in
+  match split_on_equals tokens with
+  | Some ([ name ], equals, value_tokens) ->
+      if not (valid_name name.text) then
+        ( policy,
+          add_diagnostic diagnostics
+            (syntax_error name.span ("invalid macro name `" ^ name.text ^ "`")) )
+      else if value_tokens = [] then
+        ( policy,
+          add_diagnostic diagnostics
+            (syntax_error equals.span ("macro `" ^ name.text ^ "` has no value")) )
+      else
+        let value =
+          value_tokens |> List.map (fun token -> token.text) |> String.concat " " |> trim
+        in
+        let macro = { name = name.text; value = strip_quotes value; span = statement_span } in
+        ({ policy with macros = macro :: policy.macros }, diagnostics)
+  | _ ->
+      ( policy,
+        add_diagnostic diagnostics
+          (syntax_error statement_span "expected `<name> = <value>`") )
+
+let parse_table_entries tokens =
+  let rec loop entries expecting_entry = function
+    | [] -> Ok (List.rev entries)
+    | token :: rest when text_is "," token ->
+        if expecting_entry then Error (token.span, "empty table entry")
+        else loop entries true rest
+    | token :: rest ->
+        if expecting_entry then loop (token.text :: entries) false rest
+        else Error (token.span, "expected `,` between table entries")
+  in
+  loop [] true tokens
+
+let parse_table original tokens policy diagnostics =
+  let statement_span = span_of_tokens (line_span 1 original) tokens in
+  let error message =
+    (policy, add_diagnostic diagnostics (syntax_error statement_span message))
+  in
+  match tokens with
+  | keyword :: name_token :: open_token :: rest
+    when text_is "table" keyword && text_is "{" open_token -> (
+      match parse_table_name name_token.text with
+      | Some name when valid_name name -> (
+          let rec collect_body body = function
+            | [] -> Error (statement_span, "expected closing `}`")
+            | close_token :: after_close when text_is "}" close_token ->
+                if after_close = [] then Ok (List.rev body)
+                else
+                  let extra = List.hd after_close in
+                  Error (extra.span, "unexpected token after table declaration")
+            | token :: rest -> collect_body (token :: body) rest
+          in
+          match collect_body [] rest with
+          | Error (span, message) ->
+              (policy, add_diagnostic diagnostics (syntax_error span message))
+          | Ok body -> (
+              match parse_table_entries body with
+              | Error (span, message) ->
+                  (policy, add_diagnostic diagnostics (syntax_error span message))
+              | Ok entries ->
+                  let table = { name; entries; span = statement_span } in
+                  ({ policy with tables = table :: policy.tables }, diagnostics)))
+      | Some name ->
+          ( policy,
+            add_diagnostic diagnostics
+              (syntax_error name_token.span ("invalid table name `" ^ name ^ "`")) )
       | None ->
           ( policy,
             add_diagnostic diagnostics
-              (syntax_error (line_span ?file line original)
-                 "expected rule to start with `pass` or `block`") )
+              (syntax_error name_token.span "expected table name like `<trusted>`") ))
+  | _ -> error "expected `table <name> { entries }`"
+
+let missing_after keyword token = (token.span, "missing value after `" ^ keyword ^ "`")
+
+let parse_rule original tokens policy diagnostics =
+  match tokens with
+  | action_token :: rest -> (
+      let rule_span = span_of_tokens (line_span 1 original) tokens in
+      match parse_action action_token.text with
+      | None ->
+          ( policy,
+            add_diagnostic diagnostics
+              (syntax_error action_token.span "expected rule to start with `pass` or `block`") )
       | Some action ->
-          let rule_span = line_span ?file line original in
-          let rec loop (state : rule) diagnostics = function
-            | [] -> Ok (state, diagnostics)
-            | "in" :: rest -> (
-                match state.direction with
-                | Some _ -> Error "duplicate direction"
-                | None -> loop { state with direction = Some In } diagnostics rest)
-            | "out" :: rest -> (
-                match state.direction with
-                | Some _ -> Error "duplicate direction"
-                | None -> loop { state with direction = Some Out } diagnostics rest)
-            | "on" :: name :: rest -> (
-                match state.interface with
-                | Some _ -> Error "duplicate interface matcher"
-                | None -> loop { state with interface = Some (parse_reference name) } diagnostics rest)
-            | "proto" :: proto :: rest -> (
-                match state.protocol with
-                | Proto_any -> loop { state with protocol = Proto_named proto } diagnostics rest
-                | Proto_named _ -> Error "duplicate protocol matcher")
-            | "from" :: source :: rest -> (
-                match state.source with
-                | Any -> loop { state with source = parse_reference source } diagnostics rest
-                | _ -> Error "duplicate source matcher")
-            | "to" :: destination :: rest -> (
-                match state.destination with
-                | Any -> loop { state with destination = parse_reference destination } diagnostics rest
-                | _ -> Error "duplicate destination matcher")
-            | "port" :: value :: rest -> (
-                match state.port with
-                | Port_any -> (
-                    match parse_port value with
-                    | Ok port -> loop { state with port } diagnostics rest
-                    | Error message -> Error message)
-                | _ -> Error "duplicate port matcher")
-            | "keep" :: "state" :: rest -> (
-                match state.keep_state with
-                | false -> loop { state with keep_state = true } diagnostics rest
-                | true -> Error "duplicate `keep state`")
-            | token :: _ -> Error ("unexpected token `" ^ token ^ "`")
-          in
           let initial : rule =
             {
               action;
               direction = None;
               interface = None;
+              interface_span = None;
               protocol = Proto_any;
+              protocol_span = None;
               source = Any;
+              source_span = action_token.span;
               destination = Any;
+              destination_span = action_token.span;
               port = Port_any;
+              port_span = None;
               keep_state = false;
               span = rule_span;
             }
           in
-          (match loop initial diagnostics rest with
-          | Ok (rule, diagnostics) -> ({ policy with rules = rule :: policy.rules }, diagnostics)
-          | Error message ->
+          let rec loop state source_seen destination_seen port_seen = function
+            | [] -> Ok state
+            | token :: rest when text_is "in" token -> (
+                match state.direction with
+                | Some _ -> Error (token.span, "duplicate direction")
+                | None ->
+                    loop { state with direction = Some In } source_seen destination_seen
+                      port_seen rest)
+            | token :: rest when text_is "out" token -> (
+                match state.direction with
+                | Some _ -> Error (token.span, "duplicate direction")
+                | None ->
+                    loop { state with direction = Some Out } source_seen destination_seen
+                      port_seen rest)
+            | token :: [] when text_is "on" token -> Error (missing_after "on" token)
+            | token :: value :: rest when text_is "on" token -> (
+                match state.interface with
+                | Some _ -> Error (token.span, "duplicate interface matcher")
+                | None ->
+                    loop
+                      {
+                        state with
+                        interface = Some (parse_reference_token value);
+                        interface_span = Some value.span;
+                      }
+                      source_seen destination_seen port_seen rest)
+            | token :: [] when text_is "proto" token -> Error (missing_after "proto" token)
+            | token :: value :: rest when text_is "proto" token -> (
+                match state.protocol_span with
+                | Some _ -> Error (token.span, "duplicate protocol matcher")
+                | None ->
+                    loop
+                      {
+                        state with
+                        protocol = Proto_named value.text;
+                        protocol_span = Some value.span;
+                      }
+                      source_seen destination_seen port_seen rest)
+            | token :: [] when text_is "from" token -> Error (missing_after "from" token)
+            | token :: value :: rest when text_is "from" token ->
+                if source_seen then Error (token.span, "duplicate source matcher")
+                else
+                  loop
+                    {
+                      state with
+                      source = parse_reference_token value;
+                      source_span = value.span;
+                    }
+                    true destination_seen port_seen rest
+            | token :: [] when text_is "to" token -> Error (missing_after "to" token)
+            | token :: value :: rest when text_is "to" token ->
+                if destination_seen then Error (token.span, "duplicate destination matcher")
+                else
+                  loop
+                    {
+                      state with
+                      destination = parse_reference_token value;
+                      destination_span = value.span;
+                    }
+                    source_seen true port_seen rest
+            | token :: [] when text_is "port" token -> Error (missing_after "port" token)
+            | token :: value :: rest when text_is "port" token ->
+                if port_seen then Error (token.span, "duplicate port matcher")
+                else (
+                  match parse_port_token value with
+                  | Ok (port, port_span) ->
+                      loop { state with port; port_span = Some port_span } source_seen
+                        destination_seen true rest
+                  | Error error -> Error error)
+            | token :: [] when text_is "keep" token ->
+                Error (token.span, "missing `state` after `keep`")
+            | token :: value :: rest when text_is "keep" token ->
+                if not (text_is "state" value) then
+                  Error (value.span, "expected `state` after `keep`")
+                else if state.keep_state then Error (token.span, "duplicate `keep state`")
+                else
+                  loop { state with keep_state = true } source_seen destination_seen port_seen
+                    rest
+            | token :: _ -> Error (token.span, "unexpected token `" ^ token.text ^ "`")
+          in
+          (match loop initial false false false rest with
+          | Ok rule -> ({ policy with rules = rule :: policy.rules }, diagnostics)
+          | Error (span, message) ->
               ( policy,
-                add_diagnostic diagnostics
-                  (syntax_error rule_span ("invalid rule: " ^ message)) )))
+                add_diagnostic diagnostics (syntax_error span ("invalid rule: " ^ message)) )))
   | [] -> (policy, diagnostics)
 
-let parse_nat ?file line original text policy diagnostics =
-  let tokens = split_words text in
+let parse_nat original tokens policy diagnostics =
   match tokens with
-  | "nat" :: rest -> (
-      let rule_span = line_span ?file line original in
-      let rec loop (state : nat) diagnostics = function
-        | [] -> Error "missing translation `->`"
-        | "->" :: translation :: [] -> Ok ({ state with translation = parse_reference translation }, diagnostics)
-        | "on" :: name :: rest -> loop { state with interface = parse_reference name } diagnostics rest
-        | "proto" :: proto :: rest -> loop { state with protocol = Proto_named proto } diagnostics rest
-        | "from" :: source :: rest -> loop { state with source = parse_reference source } diagnostics rest
-        | "to" :: destination :: rest -> loop { state with destination = parse_reference destination } diagnostics rest
-        | token :: _ -> Error ("unexpected token `" ^ token ^ "`")
-      in
+  | keyword :: rest when text_is "nat" keyword -> (
+      let rule_span = span_of_tokens (line_span 1 original) tokens in
       let initial : nat =
         {
           interface = Any;
+          interface_span = rule_span;
           protocol = Proto_any;
+          protocol_span = None;
           source = Any;
+          source_span = rule_span;
           destination = Any;
+          destination_span = rule_span;
           translation = Any;
+          translation_span = rule_span;
           span = rule_span;
         }
       in
-      match loop initial diagnostics rest with
-      | Ok (nat, diagnostics) -> ({ policy with nats = nat :: policy.nats }, diagnostics)
-      | Error message ->
-          ( policy,
-            add_diagnostic diagnostics
-              (syntax_error rule_span ("invalid nat: " ^ message)) ))
+      let rec loop (state : nat) source_seen destination_seen = function
+        | [] -> Error (rule_span, "missing translation `->`")
+        | token :: [] when text_is "on" token -> Error (missing_after "on" token)
+        | token :: value :: rest when text_is "on" token ->
+            if state.interface <> Any then Error (token.span, "duplicate interface matcher")
+            else
+              loop
+                {
+                  state with
+                  interface = parse_reference_token value;
+                  interface_span = value.span;
+                }
+                source_seen destination_seen rest
+        | token :: [] when text_is "proto" token -> Error (missing_after "proto" token)
+        | token :: value :: rest when text_is "proto" token -> (
+            match state.protocol_span with
+            | Some _ -> Error (token.span, "duplicate protocol matcher")
+            | None ->
+                loop
+                  { state with protocol = Proto_named value.text; protocol_span = Some value.span }
+                  source_seen destination_seen rest)
+        | token :: [] when text_is "from" token -> Error (missing_after "from" token)
+        | token :: value :: rest when text_is "from" token ->
+            if source_seen then Error (token.span, "duplicate source matcher")
+            else
+              loop
+                { state with source = parse_reference_token value; source_span = value.span }
+                true destination_seen rest
+        | token :: [] when text_is "to" token -> Error (missing_after "to" token)
+        | token :: value :: rest when text_is "to" token ->
+            if destination_seen then Error (token.span, "duplicate destination matcher")
+            else
+              loop
+                {
+                  state with
+                  destination = parse_reference_token value;
+                  destination_span = value.span;
+                }
+                source_seen true rest
+        | token :: [] when text_is "->" token -> Error (missing_after "->" token)
+        | token :: translation :: rest when text_is "->" token ->
+            if rest = [] then
+              Ok
+                {
+                  state with
+                  translation = parse_reference_token translation;
+                  translation_span = translation.span;
+                }
+            else
+              let extra = List.hd rest in
+              Error (extra.span, "unexpected token after translation")
+        | token :: _ -> Error (token.span, "unexpected token `" ^ token.text ^ "`")
+      in
+      match loop initial false false rest with
+      | Ok nat -> ({ policy with nats = nat :: policy.nats }, diagnostics)
+      | Error (span, message) ->
+          (policy, add_diagnostic diagnostics (syntax_error span ("invalid nat: " ^ message))))
   | _ -> (policy, diagnostics)
 
-let parse_rdr ?file line original text policy diagnostics =
-  let tokens = split_words text in
+let parse_rdr original tokens policy diagnostics =
   match tokens with
-  | "rdr" :: rest -> (
-      let rule_span = line_span ?file line original in
-      let rec loop (state : rdr) diagnostics = function
-        | [] -> Error "missing translation `->`"
-        | "->" :: translation :: rest -> (
-            let state = { state with translation = parse_reference translation } in
-            match rest with
-            | [] -> Ok (state, diagnostics)
-            | [ "port"; port_token ] -> (
-                match parse_port port_token with
-                | Ok translation_port -> Ok ({ state with translation_port }, diagnostics)
-                | Error message -> Error message)
-            | _ -> Error "unexpected tokens after translation")
-        | "on" :: name :: rest -> loop { state with interface = parse_reference name } diagnostics rest
-        | "proto" :: proto :: rest -> loop { state with protocol = Proto_named proto } diagnostics rest
-        | "from" :: source :: rest -> loop { state with source = parse_reference source } diagnostics rest
-        | "to" :: destination :: rest -> loop { state with destination = parse_reference destination } diagnostics rest
-        | "port" :: port_token :: rest -> (
-            match parse_port port_token with
-            | Ok port -> loop { state with port } diagnostics rest
-            | Error message -> Error message)
-        | token :: _ -> Error ("unexpected token `" ^ token ^ "`")
-      in
+  | keyword :: rest when text_is "rdr" keyword -> (
+      let rule_span = span_of_tokens (line_span 1 original) tokens in
       let initial : rdr =
         {
           interface = Any;
+          interface_span = rule_span;
           protocol = Proto_any;
+          protocol_span = None;
           source = Any;
+          source_span = rule_span;
           destination = Any;
+          destination_span = rule_span;
           port = Port_any;
+          port_span = None;
           translation = Any;
+          translation_span = rule_span;
           translation_port = Port_any;
+          translation_port_span = None;
           span = rule_span;
         }
       in
-      match loop initial diagnostics rest with
-      | Ok (rdr, diagnostics) -> ({ policy with rdrs = rdr :: policy.rdrs }, diagnostics)
-      | Error message ->
-          ( policy,
-            add_diagnostic diagnostics
-              (syntax_error rule_span ("invalid rdr: " ^ message)) ))
+      let rec loop (state : rdr) source_seen destination_seen port_seen = function
+        | [] -> Error (rule_span, "missing translation `->`")
+        | token :: [] when text_is "on" token -> Error (missing_after "on" token)
+        | token :: value :: rest when text_is "on" token ->
+            if state.interface <> Any then Error (token.span, "duplicate interface matcher")
+            else
+              loop
+                {
+                  state with
+                  interface = parse_reference_token value;
+                  interface_span = value.span;
+                }
+                source_seen destination_seen port_seen rest
+        | token :: [] when text_is "proto" token -> Error (missing_after "proto" token)
+        | token :: value :: rest when text_is "proto" token -> (
+            match state.protocol_span with
+            | Some _ -> Error (token.span, "duplicate protocol matcher")
+            | None ->
+                loop
+                  { state with protocol = Proto_named value.text; protocol_span = Some value.span }
+                  source_seen destination_seen port_seen rest)
+        | token :: [] when text_is "from" token -> Error (missing_after "from" token)
+        | token :: value :: rest when text_is "from" token ->
+            if source_seen then Error (token.span, "duplicate source matcher")
+            else
+              loop
+                { state with source = parse_reference_token value; source_span = value.span }
+                true destination_seen port_seen rest
+        | token :: [] when text_is "to" token -> Error (missing_after "to" token)
+        | token :: value :: rest when text_is "to" token ->
+            if destination_seen then Error (token.span, "duplicate destination matcher")
+            else
+              loop
+                {
+                  state with
+                  destination = parse_reference_token value;
+                  destination_span = value.span;
+                }
+                source_seen true port_seen rest
+        | token :: [] when text_is "port" token -> Error (missing_after "port" token)
+        | token :: value :: rest when text_is "port" token ->
+            if port_seen then Error (token.span, "duplicate port matcher")
+            else (
+              match parse_port_token value with
+              | Ok (port, port_span) ->
+                  loop { state with port; port_span = Some port_span } source_seen
+                    destination_seen true rest
+              | Error error -> Error error)
+        | token :: [] when text_is "->" token -> Error (missing_after "->" token)
+        | token :: translation :: rest when text_is "->" token ->
+            let state =
+              {
+                state with
+                translation = parse_reference_token translation;
+                translation_span = translation.span;
+              }
+            in
+            (match rest with
+            | [] -> Ok state
+            | [ port_keyword; port_value ] when text_is "port" port_keyword -> (
+                match parse_port_token port_value with
+                | Ok (translation_port, translation_port_span) ->
+                    Ok { state with translation_port; translation_port_span = Some translation_port_span }
+                | Error error -> Error error)
+            | [ port_keyword ] when text_is "port" port_keyword ->
+                Error (missing_after "port" port_keyword)
+            | extra :: _ -> Error (extra.span, "unexpected token after translation"))
+        | token :: _ -> Error (token.span, "unexpected token `" ^ token.text ^ "`")
+      in
+      match loop initial false false false rest with
+      | Ok rdr -> ({ policy with rdrs = rdr :: policy.rdrs }, diagnostics)
+      | Error (span, message) ->
+          (policy, add_diagnostic diagnostics (syntax_error span ("invalid rdr: " ^ message))))
   | _ -> (policy, diagnostics)
 
 let parse_line ?file line policy diagnostics original =
-  let text = original |> strip_comment |> trim in
-  if text = "" then (policy, diagnostics)
-  else if starts_with ~prefix:"set " text then parse_default ?file line original text policy diagnostics
-  else if starts_with ~prefix:"interface " text then
-    parse_interface ?file line original text policy diagnostics
-  else if starts_with ~prefix:"table " text then parse_table ?file line original text policy diagnostics
-  else if starts_with ~prefix:"nat " text then parse_nat ?file line original text policy diagnostics
-  else if starts_with ~prefix:"rdr " text then parse_rdr ?file line original text policy diagnostics
-  else if starts_with ~prefix:"pass " text || starts_with ~prefix:"block " text then
-    parse_rule ?file line original text policy diagnostics
-  else if String.contains text '=' then parse_macro ?file line original text policy diagnostics
-  else
-    ( policy,
-      add_diagnostic diagnostics
-        (syntax_error (line_span ?file line original)
-           "unrecognized statement; expected set, interface, table, macro, nat, rdr, pass, or block") )
+  let tokens, lexical_diagnostics = lex_line ?file line original in
+  let diagnostics = add_diagnostics diagnostics lexical_diagnostics in
+  match tokens with
+  | [] -> (policy, diagnostics)
+  | first :: _ when text_is "set" first -> parse_default original tokens policy diagnostics
+  | first :: _ when text_is "interface" first -> parse_interface original tokens policy diagnostics
+  | first :: _ when text_is "table" first -> parse_table original tokens policy diagnostics
+  | first :: _ when text_is "nat" first -> parse_nat original tokens policy diagnostics
+  | first :: _ when text_is "rdr" first -> parse_rdr original tokens policy diagnostics
+  | first :: _ when text_is "pass" first || text_is "block" first ->
+      parse_rule original tokens policy diagnostics
+  | _ when has_token "=" tokens -> parse_macro original tokens policy diagnostics
+  | first :: _ ->
+      ( policy,
+        add_diagnostic diagnostics
+          (syntax_error first.span
+             "unrecognized statement; expected set, interface, table, macro, nat, rdr, pass, or block") )
 
 let parse ?file text =
   let lines = String.split_on_char '\n' text in
@@ -552,24 +812,39 @@ let validate policy =
   let rule_diagnostics =
     (policy.rules
     |> List.concat_map (fun (rule : rule) ->
-           validate_reference ~tables ~macros rule.span "rule source" rule.source
-           @ validate_reference ~tables ~macros rule.span "rule destination" rule.destination
-           @ validate_interface_reference ~interfaces ~macros rule.span rule.interface
-           @ validate_port ~macros rule.span rule.port))
+           validate_reference ~tables ~macros rule.source_span "rule source" rule.source
+           @ validate_reference ~tables ~macros rule.destination_span "rule destination"
+               rule.destination
+           @ validate_interface_reference ~interfaces ~macros
+               (Option.value rule.interface_span ~default:rule.span)
+               rule.interface
+           @ validate_port ~macros
+               (Option.value rule.port_span ~default:rule.span)
+               rule.port))
     @ (policy.nats
       |> List.concat_map (fun (nat : nat) ->
-             validate_reference ~tables ~macros nat.span "nat source" nat.source
-             @ validate_reference ~tables ~macros nat.span "nat destination" nat.destination
-             @ validate_interface_reference ~interfaces ~macros nat.span (Some nat.interface)
-             @ validate_reference ~tables ~macros nat.span "nat translation" nat.translation))
+             validate_reference ~tables ~macros nat.source_span "nat source" nat.source
+             @ validate_reference ~tables ~macros nat.destination_span "nat destination"
+                 nat.destination
+             @ validate_interface_reference ~interfaces ~macros nat.interface_span
+                 (Some nat.interface)
+             @ validate_reference ~tables ~macros nat.translation_span "nat translation"
+                 nat.translation))
     @ (policy.rdrs
       |> List.concat_map (fun (rdr : rdr) ->
-             validate_reference ~tables ~macros rdr.span "rdr source" rdr.source
-             @ validate_reference ~tables ~macros rdr.span "rdr destination" rdr.destination
-             @ validate_interface_reference ~interfaces ~macros rdr.span (Some rdr.interface)
-             @ validate_reference ~tables ~macros rdr.span "rdr translation" rdr.translation
-             @ validate_port ~macros rdr.span rdr.port
-             @ validate_port ~macros rdr.span rdr.translation_port))
+             validate_reference ~tables ~macros rdr.source_span "rdr source" rdr.source
+             @ validate_reference ~tables ~macros rdr.destination_span "rdr destination"
+                 rdr.destination
+             @ validate_interface_reference ~interfaces ~macros rdr.interface_span
+                 (Some rdr.interface)
+             @ validate_reference ~tables ~macros rdr.translation_span "rdr translation"
+                 rdr.translation
+             @ validate_port ~macros
+                 (Option.value rdr.port_span ~default:rdr.span)
+                 rdr.port
+             @ validate_port ~macros
+                 (Option.value rdr.translation_port_span ~default:rdr.span)
+                 rdr.translation_port))
   in
   List.rev (rule_diagnostics @ diagnostics)
 
