@@ -383,7 +383,15 @@ let handle_diff args =
        | "tc" ->
            let live = match source with
              | Observed_path p -> read_file p
-             | Live -> (match Lpf.Tc.qdisc_show "eth0" with Ok s -> s | _ -> "")
+             | Live ->
+                 let device = match Lpf.plan_policy_text ~file:path input with
+                   | Ok (plan, _) ->
+                       (match plan.Lpf.Plan.policy.Lpf.Ir.interfaces with
+                        | iface :: _ -> iface.Lpf.Ir.device
+                        | [] -> "eth0")
+                   | _ -> "eth0"
+                 in
+                 (match Lpf.Tc.qdisc_show device with Ok s -> s | _ -> "")
            in
            (match Lpf.render_tc_policy_text ~file:path input with
             | Ok (rendered, diagnostics) ->
