@@ -135,6 +135,8 @@ let rec ensure_dir dir =
     ensure_dir (Filename.dirname dir);
     Unix.mkdir dir 0o755)
 
+let ensure_parent path = ensure_dir (Filename.dirname path)
+
 let close_noerr fd = try Unix.close fd with Unix.Unix_error _ -> ()
 
 let with_temp_file prefix f =
@@ -594,7 +596,11 @@ let scenario_log_line result =
 let scenario_log suite = String.concat "" (List.map scenario_log_line suite.results)
 
 let write_outputs (config : config) (suite : suite_result) =
-  (match config.junit_path with Some path -> write_file path (to_junit suite) | None -> ());
+  (match config.junit_path with
+  | Some path ->
+      ensure_parent path;
+      write_file path (to_junit suite)
+  | None -> ());
   (match config.allure_dir with
   | None -> ()
   | Some dir ->

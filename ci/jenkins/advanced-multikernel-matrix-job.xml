@@ -14,13 +14,13 @@
         <hudson.model.StringParameterDefinition>
           <name>REQUESTED_KERNELS</name>
           <description>Comma-separated labels requested for coverage. Missing labels are archived separately and are not counted as covered.</description>
-          <defaultValue>7.1,7.0.12,6.18.35,6.12.93,6.6.142,6.1.175,5.15.209,5.10.258,next-20260616,lab-141-default</defaultValue>
+          <defaultValue>7.1,7.0.12,6.18.35,6.12.93,6.6.142,6.1.175,5.15.209,5.10.258,ubuntu-mainline-daily-20260616,lab-141-default</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>AVAILABLE_KERNELS</name>
           <description>Comma-separated label=image entries for real registered Firecracker base images.</description>
-          <defaultValue>lab-141-default=ubuntu-docker-24.04</defaultValue>
+          <defaultValue>7.1=korg-7.1,7.0.12=korg-7.0.12,6.18.35=korg-6.18.35,6.12.93=korg-6.12.93,6.6.142=korg-6.6.142,6.1.175=korg-6.1.175,5.15.209=korg-5.15.209,5.10.258=korg-5.10.258,ubuntu-mainline-daily-20260616=ubuntu-mainline-daily-20260616,lab-141-default=ubuntu-docker-24.04</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>

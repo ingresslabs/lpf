@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build and attach release artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.2.1
+
+      - run: opam install . --deps-only --with-test
+      - run: opam exec -- dune build
+
+      - name: Build release binary
+        run: |
+          mkdir -p release
+          cp _build/default/bin/main.exe release/lpf
+          strip release/lpf
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum lpf > SHA256SUMS
+
+      - name: Generate man pages
+        run: |
+          opam exec -- dune exec -- lpf man generate --dir man/generated
+          mkdir -p release/man
+          cp man/generated/*.8 man/generated/*.5 release/man/
+
+      - name: Create tarball
+        run: |
+          VERSION=$(opam exec -- dune exec -- lpf version)
+          cd release
+          tar czf "../lpf-${VERSION}-linux-x86_64.tar.gz" lpf man/ SHA256SUMS
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: lpf-*.tar.gz
+          generate_release_notes: true

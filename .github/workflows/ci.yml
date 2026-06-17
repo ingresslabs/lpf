@@ -8,13 +8,16 @@ on:
 
 jobs:
   ocaml:
-    name: OCaml build and tests
+    name: OCaml ${{ matrix.ocaml }} build and tests
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ocaml: ["5.1.1", "5.2.1"]
     steps:
       - uses: actions/checkout@v4
       - uses: ocaml/setup-ocaml@v3
         with:
-          ocaml-compiler: 5.2.1
+          ocaml-compiler: ${{ matrix.ocaml }}
       - run: opam install . --deps-only --with-test
       - run: opam exec -- dune build
       - run: opam exec -- dune runtest

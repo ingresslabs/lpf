@@ -58,7 +58,7 @@ let () =
     Lpf.E2e.run
       {
         scenario_count = 960;
-        junit_path = None;
+        junit_path = Some (Filename.concat evidence_dir "nested/junit.xml");
         allure_dir = None;
         evidence_dir = Some evidence_dir;
         kernel_id = Some "unit-kernel";
@@ -68,7 +68,10 @@ let () =
   require (dry_suite.scenario_count = 960) "expected dry-run suite to contain 960 scenarios";
   let scenario_log_path = Filename.concat evidence_dir "scenario-log.jsonl" in
   require (Sys.file_exists scenario_log_path) "expected scenario-log.jsonl evidence";
+  require (Sys.file_exists (Filename.concat evidence_dir "nested/junit.xml")) "expected nested JUnit output";
   require (line_count (read_file scenario_log_path) = 960) "expected one scenario-log line per scenario";
+  Sys.remove (Filename.concat evidence_dir "nested/junit.xml");
+  Unix.rmdir (Filename.concat evidence_dir "nested");
   Sys.remove scenario_log_path;
   Sys.remove (Filename.concat evidence_dir "manifest.json");
   Unix.rmdir evidence_dir
