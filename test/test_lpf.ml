@@ -233,6 +233,31 @@ let assert_nftables_diff_fixtures () =
   assert_nftables_diff "basic.lpf" (nft_observed_fixture "changed-rule.nft")
     "changed-rule.diff"
 
+let assert_live_nftables_readback_wrapper () =
+  let seen = ref None in
+  let observed = read_file (nft_fixture "basic.nft") in
+  let runner invocation =
+    seen := Some invocation;
+    Ok observed
+  in
+  let live_observed =
+    match Lpf.Nft.list_ruleset_with_runner runner with
+    | Ok ruleset -> ruleset
+    | Error error -> failwith (Lpf.Nft.string_of_run_error error)
+  in
+  (match !seen with
+   | Some { Lpf.Nft.program; argv } ->
+       assert (String.equal program "nft");
+       assert (argv = [ "nft"; "list"; "ruleset" ])
+   | None -> failwith "nft runner was not called");
+  let path = fixture "basic.lpf" in
+  match Lpf.diff_nftables_policy_text ~file:path ~observed:live_observed (read_file path) with
+  | Ok (diff, diagnostics) ->
+      assert (diagnostics = []);
+      assert (String.equal diff (read_file (nft_diff_fixture "unchanged.diff")))
+  | Error diagnostics ->
+      failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics))
+
 let assert_inline_check_has_diagnostic ~file ~text ~line ~column ~message =
   match Lpf.check_policy_text ~file text with
   | { Lpf.Policy.policy = None; diagnostics } ->
@@ -372,6 +397,7 @@ let () =
   assert_plan_json ();
   assert_nftables_golden_fixtures ();
   assert_nftables_diff_fixtures ();
+  assert_live_nftables_readback_wrapper ();
   let basic = read_file (fixture "basic.lpf") in
   (match Lpf.format_policy_text ~file:(fixture "basic.lpf") basic with
    | Ok formatted -> assert (String.equal formatted basic)

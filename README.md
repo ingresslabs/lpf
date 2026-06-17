@@ -36,14 +36,16 @@ The first typed IR slice is implemented for the Phase 1 policy surface. `lpf
 check` now lowers valid policies into IR and reports shadowed-rule warnings.
 `lpf plan [--json]` emits a versioned backend-neutral semantic JSON plan with a
 stable checksum. Supplied nftables readback/diff input is supported for
-`lpf`-owned tables. Host inspection, apply, rollback, and installed networking
-backend behavior are intentionally not implemented yet.
+`lpf`-owned tables, and live readback can run `nft list ruleset` for read-only
+comparison. Apply, rollback, and installed networking mutation are
+intentionally not implemented yet.
 
 The first read-only nftables renderer is implemented behind `lpf rules show
 <policy>`. It renders deterministic rules for review and tests, but it does not
 inspect installed host state or apply changes. `lpf rules diff --observed
 <ruleset> <policy>` compares rendered intent with supplied observed ruleset
-text and reports only `lpf`-owned nftables table differences.
+text and reports only `lpf`-owned nftables table differences. `lpf rules diff
+--live <policy>` uses the same diff path with live `nft list ruleset` output.
 
 ## Planned CLI
 

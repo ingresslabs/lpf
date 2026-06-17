@@ -42,6 +42,7 @@ type man_page = {
 module Policy = Policy
 module Ir = Ir
 module Plan = Plan
+module Nft = Nft
 
 let ir_of_policy = Ir.of_policy
 
@@ -266,22 +267,26 @@ let command_docs =
       section = 8;
       synopsis =
         "lpf rules show <policy>\n\
-         lpf rules diff --observed <ruleset> <policy>";
+         lpf rules diff --observed <ruleset> <policy>\n\
+         lpf rules diff --live <policy>";
       description =
         [
           "Render deterministic read-only nftables rules from a checked lpf policy.";
           "Diff rendered rules against observed lpf-owned nftables table blocks.";
-          "This command reads supplied observed ruleset text and does not apply host changes.";
+          "Observed rules can be supplied from a file/stdin or read live with `nft list ruleset`.";
+          "This command does not apply host changes.";
         ];
       options =
         [
           ("--backend nftables", "select nftables rendering; currently the only backend");
           ("--observed <ruleset>", "read observed nftables ruleset text from a file or - for stdin");
+          ("--live", "read observed nftables ruleset text with `nft list ruleset`");
         ];
       examples =
         [
           "lpf rules show fixtures/policies/basic.lpf";
           "lpf rules diff --observed current.nft fixtures/policies/basic.lpf";
+          "lpf rules diff --live /etc/lpf.conf";
         ];
       files = shared_files;
       safety_notes = [ "This command is read-only." ];

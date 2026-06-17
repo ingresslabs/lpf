@@ -39,3 +39,5 @@
   with golden fixture coverage.
 - Added read-only `lpf rules diff --observed <ruleset> <policy>` comparison
   for supplied lpf-owned nftables table readback text.
+- Added read-only live nftables readback through `lpf rules diff --live
+  <policy>`, using an OCaml `nft list ruleset` execution wrapper.

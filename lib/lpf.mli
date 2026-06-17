@@ -42,6 +42,7 @@ type man_page = {
 module Policy : module type of Policy
 module Ir : module type of Ir
 module Plan : module type of Plan
+module Nft : module type of Nft
 
 val version : string
 val all_commands : (string * command * string) list

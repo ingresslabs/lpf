@@ -4,10 +4,12 @@ lpf\-rules \- show or diff generated backend rules
 .SH SYNOPSIS
 lpf rules show <policy>
 lpf rules diff \-\-observed <ruleset> <policy>
+lpf rules diff \-\-live <policy>
 .SH DESCRIPTION
 Render deterministic read\-only nftables rules from a checked lpf policy.
 Diff rendered rules against observed lpf\-owned nftables table blocks.
-This command reads supplied observed ruleset text and does not apply host changes.
+Observed rules can be supplied from a file/stdin or read live with `nft list ruleset`.
+This command does not apply host changes.
 .SH OPTIONS
 .TP
 \-\-backend nftables
@@ -15,9 +17,13 @@ select nftables rendering; currently the only backend
 .TP
 \-\-observed <ruleset>
 read observed nftables ruleset text from a file or \- for stdin
+.TP
+\-\-live
+read observed nftables ruleset text with `nft list ruleset`
 .SH EXAMPLES
 lpf rules show fixtures/policies/basic.lpf
 lpf rules diff \-\-observed current.nft fixtures/policies/basic.lpf
+lpf rules diff \-\-live /etc/lpf.conf
 .SH FILES
 /etc/lpf.conf
 /var/lib/lpf/history

@@ -151,6 +151,14 @@ current implementation extracts only `lpf`-owned nftables tables from the
 observed input and reports deterministic text differences. It does not call
 `nft`, inspect the live host, or change host networking state.
 
+### `lpf rules diff [--backend nftables] --live <policy>`
+
+Compare rendered nftables intent with the live ruleset read by `nft list
+ruleset`. The command invokes `nft` through typed OCaml argv construction,
+extracts only `lpf`-owned nftables tables, and reports the same deterministic
+diff format as `--observed`. It is read-only and must not change host
+networking state.
+
 ### `lpf history`
 
 Show applied policy versions, operator, timestamp, checksum, test result, and
