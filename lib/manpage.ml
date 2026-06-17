@@ -81,7 +81,7 @@ let overview_page () =
       "lpf plan --json /etc/lpf.conf";
       "lpf diff --live /etc/lpf.conf";
       "lpf apply /etc/lpf.conf --confirm 60s";
-      "lpf explain from 10.0.0.5 to 1.1.1.1 proto tcp port 443 /etc/lpf.conf"; ];
+      "lpf explain from 10.0.0.5 to 1.1.1.1 proto tcp port 443 /etc/lpf.conf" ];
   add_section buffer "FILES" Command.shared_files;
   add_section buffer "SAFETY NOTES" Command.shared_safety_notes;
   add_section buffer "SEE ALSO" [ "lpf.conf(5), lpf-policy-tests(5), lpf-apply(8), lpf-man(8)" ];

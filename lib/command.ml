@@ -91,6 +91,7 @@ let shared_safety_notes =
     "Keep rollback evidence server-side; never rely on browser-only state.";
   ]
 
+
 let command_docs =
   [
     {
@@ -313,23 +314,25 @@ let command_docs =
         [
           "Run real end-to-end Linux networking scenarios intended for Firecracker guest validation.";
           "The runner creates isolated network namespaces, veth links, nftables rules, policy routing entries, tc HTB shaping state, and conntrack evidence.";
-          "The default catalog contains 480 deterministic scenarios across nftables accept/drop/logging, policy routing, traffic shaping, and conntrack families.";
+          "The default catalog contains 480 deterministic scenarios and supports up to 1000 scenarios across nftables accept/drop/logging, policy routing, traffic shaping, and conntrack families.";
         ];
       options =
         [
-          ("--scenario-count <n>", "number of scenarios to run; must be between 1 and 600, default 480");
+          ("--scenario-count <n>", "number of scenarios to run; must be between 1 and 1000, default 480");
           ("--junit <path>", "write JUnit XML for Jenkins trend reporting");
           ("--allure-dir <dir>", "write Allure result JSON files");
-          ("--evidence-dir <dir>", "write a sanitized evidence manifest");
+          ("--evidence-dir <dir>", "write a sanitized evidence manifest and per-scenario JSONL command log");
           ("--kernel-id <id>", "attach a CI kernel label to reports");
           ("--dry-run", "generate catalog reports without changing networking state");
         ];
       examples =
         [
           "lpf e2e run --scenario-count 480 --junit evidence/junit.xml --allure-dir allure-results";
+          "lpf e2e run --scenario-count 960 --junit evidence/junit.xml --allure-dir allure-results --evidence-dir evidence/lab --kernel-id lab-141-default";
+          "lpf e2e run --dry-run --scenario-count 1000 --evidence-dir evidence/dry-run";
           "lpf e2e list --scenario-count 12";
         ];
-      files = [ "/run/netns"; "/var/lib/lpf/e2e"; "allure-results"; "evidence/junit.xml" ];
+      files = [ "/run/netns"; "/var/lib/lpf/e2e"; "allure-results"; "evidence/junit.xml"; "evidence/scenario-log.jsonl" ];
       safety_notes =
         [
           "Run inside an isolated Firecracker VM or disposable lab host.";
