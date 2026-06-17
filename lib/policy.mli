@@ -118,6 +118,13 @@ type queue = {
   span : span;
 }
 
+type anchor = {
+  name : string;
+  name_span : span;
+  rules : rule list;
+  span : span;
+}
+
 type policy = {
   default_action : default_action option;
   interfaces : interface_decl list;
@@ -126,6 +133,7 @@ type policy = {
   nats : nat list;
   rdrs : rdr list;
   queues : queue list;
+  anchors : anchor list;
   rules : rule list;
 }
 

@@ -1,0 +1,5 @@
+set default deny
+
+anchor office {
+  queue std on wan bandwidth 10M
+}

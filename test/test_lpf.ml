@@ -80,6 +80,7 @@ let () =
   assert_check_ok "nat-rdr.lpf";
   assert_check_ok "queue-route.lpf";
   assert_check_ok "logging.lpf";
+  assert_check_ok "anchor-log.lpf";
   assert_check_fails ~contains:'m' "invalid-unknown-table.lpf";
   assert_check_fails ~contains:'e' "invalid-syntax.lpf";
   assert_check_fails ~contains:'d' "invalid-queue-duplicate-fields.lpf";
@@ -89,6 +90,11 @@ let () =
   assert_check_fails ~contains:'l' "invalid-log-duplicate.lpf";
   assert_check_fails ~contains:'l' "invalid-log-option.lpf";
   assert_check_fails ~contains:'l' "invalid-log-syntax.lpf";
+  assert_check_fails ~contains:'a' "invalid-anchor-duplicate.lpf";
+  assert_check_fails ~contains:'a' "invalid-anchor-name.lpf";
+  assert_check_fails ~contains:'a' "invalid-anchor-statement.lpf";
+  assert_check_fails ~contains:'a' "invalid-anchor-unknown-reference.lpf";
+  assert_check_fails ~contains:'a' "invalid-anchor-unclosed.lpf";
   assert_check_has_diagnostic ~line:5 ~column:14
     ~message:"rule source references unknown table `<missing>`"
     "invalid-unknown-table.lpf";
@@ -119,6 +125,24 @@ let () =
   assert_check_has_diagnostic ~line:3 ~column:15
     ~message:"invalid rule: expected closing `)` after log option"
     "invalid-log-syntax.lpf";
+  assert_check_has_diagnostic ~line:7 ~column:8
+    ~message:"duplicate anchor `office`"
+    "invalid-anchor-duplicate.lpf";
+  assert_check_has_diagnostic ~line:3 ~column:8
+    ~message:"invalid anchor name `bad/name`"
+    "invalid-anchor-name.lpf";
+  assert_check_has_diagnostic ~line:4 ~column:3
+    ~message:"anchors currently support pass/block rules only"
+    "invalid-anchor-statement.lpf";
+  assert_check_has_diagnostic ~line:4 ~column:14
+    ~message:"rule references unknown interface `missing`"
+    "invalid-anchor-unknown-reference.lpf";
+  assert_check_has_diagnostic ~line:4 ~column:44
+    ~message:"rule references unknown queue `missing-queue`"
+    "invalid-anchor-unknown-reference.lpf";
+  assert_check_has_diagnostic ~line:3 ~column:1
+    ~message:"expected closing `}`"
+    "invalid-anchor-unclosed.lpf";
   assert_inline_check_has_diagnostic ~file:"inline-invalid-port.lpf"
     ~text:"set default deny\npass out proto tcp from any to any port 70000\n"
     ~line:2 ~column:41 ~message:"invalid rule: invalid port `70000`";
@@ -143,6 +167,12 @@ let () =
   let logging = read_file (fixture "logging.lpf") in
   (match Lpf.format_policy_text ~file:(fixture "logging.lpf") logging with
    | Ok formatted -> assert (String.equal formatted logging)
+   | Error diagnostics ->
+       failwith
+         (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics)));
+  let anchor_log = read_file (fixture "anchor-log.lpf") in
+  (match Lpf.format_policy_text ~file:(fixture "anchor-log.lpf") anchor_log with
+   | Ok formatted -> assert (String.equal formatted anchor_log)
    | Error diagnostics ->
        failwith
          (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics)));

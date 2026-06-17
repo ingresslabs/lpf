@@ -26,3 +26,5 @@
   syntax diagnostics.
 - Added rule-level `log`, `log (all)`, `log (matches)`, and `log (user)`
   parsing, formatting, validation, and malformed syntax diagnostics.
+- Added top-level anchor parsing, formatting, validation, and valid/invalid
+  fixtures for rule-only anchor blocks.

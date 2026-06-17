@@ -1,0 +1,9 @@
+set default deny
+
+anchor office {
+  pass from any to any
+}
+
+anchor office {
+  block from any to any
+}

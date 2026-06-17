@@ -1,0 +1,4 @@
+set default deny
+
+anchor office {
+  pass from any to any

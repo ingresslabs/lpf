@@ -1,0 +1,13 @@
+set default deny
+
+interface lan = "eth1"
+interface wan = "eth0"
+
+queue std on wan bandwidth 10M
+
+anchor internal {
+  pass in on lan from 10.0.0.0/24 to any queue std
+}
+
+pass out log on wan proto tcp from any to any port 443 route-to 1.1.1.1 (wan) keep state
+pass in log (all) on wan proto icmp from any to any

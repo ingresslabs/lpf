@@ -1,0 +1,5 @@
+set default deny
+
+anchor office {
+  pass in on missing from any to any queue missing-queue
+}

@@ -118,6 +118,13 @@ type queue = {
   span : span;
 }
 
+type anchor = {
+  name : string;
+  name_span : span;
+  rules : rule list;
+  span : span;
+}
+
 type policy = {
   default_action : default_action option;
   interfaces : interface_decl list;
@@ -126,6 +133,7 @@ type policy = {
   nats : nat list;
   rdrs : rdr list;
   queues : queue list;
+  anchors : anchor list;
   rules : rule list;
 }
 
@@ -143,6 +151,7 @@ let empty_policy =
     nats = [];
     rdrs = [];
     queues = [];
+    anchors = [];
     rules = [];
   }
 
@@ -838,6 +847,77 @@ let parse_queue original tokens policy diagnostics =
           (syntax_error statement_span
              "expected `queue <name> on <interface> bandwidth <value> [parent <name>]`") )
 
+let brace_delta tokens =
+  List.fold_left
+    (fun depth token ->
+      if text_is "{" token then depth + 1 else if text_is "}" token then depth - 1 else depth)
+    0 tokens
+
+let split_anchor_rules tokens =
+  let rec loop current rules = function
+    | [] ->
+        let rules = if current = [] then rules else List.rev current :: rules in
+        List.rev rules
+    | token :: rest when Option.is_some (parse_action token.text) && current <> [] ->
+        loop [ token ] (List.rev current :: rules) rest
+    | token :: rest -> loop (token :: current) rules rest
+  in
+  loop [] [] tokens
+
+let parse_anchor original tokens policy diagnostics =
+  let statement_span = span_of_tokens (line_span 1 original) tokens in
+  let parse_body body_tokens =
+    split_anchor_rules body_tokens
+    |> List.fold_left
+         (fun (rules, diagnostics) rule_tokens ->
+           match rule_tokens with
+           | [] -> (rules, diagnostics)
+           | first :: _ when Option.is_some (parse_action first.text) ->
+               let rule_policy, rule_diagnostics = parse_rule original rule_tokens empty_policy [] in
+               let diagnostics = add_diagnostics diagnostics rule_diagnostics in
+               (rule_policy.rules @ rules, diagnostics)
+           | first :: _ ->
+               ( rules,
+                 add_diagnostic diagnostics
+                   (syntax_error first.span "anchors currently support pass/block rules only") ))
+         ([], [])
+  in
+  match tokens with
+  | keyword :: name :: open_token :: rest
+    when text_is "anchor" keyword && text_is "{" open_token -> (
+      if not (valid_name name.text) then
+        ( policy,
+          add_diagnostic diagnostics
+            (syntax_error name.span ("invalid anchor name `" ^ name.text ^ "`")) )
+      else
+        let rec collect_body depth body = function
+          | [] -> Error (statement_span, "expected closing `}`")
+          | token :: rest when text_is "{" token -> collect_body (depth + 1) (token :: body) rest
+          | token :: rest when text_is "}" token ->
+              if depth = 0 then Ok (List.rev body, rest)
+              else collect_body (depth - 1) (token :: body) rest
+          | token :: rest -> collect_body depth (token :: body) rest
+        in
+        match collect_body 0 [] rest with
+        | Error (span, message) ->
+            (policy, add_diagnostic diagnostics (syntax_error span message))
+        | Ok (body_tokens, after_close) ->
+            if after_close <> [] then
+              ( policy,
+                add_diagnostic diagnostics
+                  (syntax_error (List.hd after_close).span
+                     "unexpected token after anchor declaration") )
+            else
+              let rules, body_diagnostics = parse_body body_tokens in
+              let anchor =
+                { name = name.text; name_span = name.span; rules = List.rev rules; span = statement_span }
+              in
+              ({ policy with anchors = anchor :: policy.anchors }, add_diagnostics diagnostics body_diagnostics))
+  | _ ->
+      ( policy,
+        add_diagnostic diagnostics
+          (syntax_error statement_span "expected `anchor <name> { rules }`") )
+
 let parse_line ?file line policy diagnostics original =
   let tokens, lexical_diagnostics = lex_line ?file line original in
   let diagnostics = add_diagnostics diagnostics lexical_diagnostics in
@@ -849,6 +929,7 @@ let parse_line ?file line policy diagnostics original =
   | first :: _ when text_is "nat" first -> parse_nat original tokens policy diagnostics
   | first :: _ when text_is "rdr" first -> parse_rdr original tokens policy diagnostics
   | first :: _ when text_is "queue" first -> parse_queue original tokens policy diagnostics
+  | first :: _ when text_is "anchor" first -> parse_anchor original tokens policy diagnostics
   | first :: _ when text_is "pass" first || text_is "block" first ->
       parse_rule original tokens policy diagnostics
   | _ when has_token "=" tokens -> parse_macro original tokens policy diagnostics
@@ -856,17 +937,48 @@ let parse_line ?file line policy diagnostics original =
       ( policy,
         add_diagnostic diagnostics
           (syntax_error first.span
-             "unrecognized statement; expected set, interface, table, macro, nat, rdr, queue, pass, or block") )
+             "unrecognized statement; expected set, interface, table, macro, nat, rdr, queue, anchor, pass, or block") )
 
 let parse ?file text =
   let lines = String.split_on_char '\n' text in
-  let policy, diagnostics, _ =
-    List.fold_left
-      (fun (policy, diagnostics, line) original ->
-        let policy, diagnostics = parse_line ?file line policy diagnostics original in
-        (policy, diagnostics, line + 1))
-      (empty_policy, [], 1) lines
+  let collect_multiline ?file start_line first_text first_tokens rest_lines =
+    let rec loop line tokens depth collected_text diagnostics rest =
+      if depth <= 0 then (tokens, line, collected_text, rest, diagnostics)
+      else
+        match rest with
+        | [] -> (tokens, line, collected_text, [], diagnostics)
+        | next_text :: rest_lines ->
+            let next_line = line + 1 in
+            let next_tokens, lexical_diagnostics = lex_line ?file next_line next_text in
+            loop next_line (tokens @ next_tokens) (depth + brace_delta next_tokens)
+              (collected_text @ [ next_text ]) (diagnostics @ lexical_diagnostics)
+              rest_lines
+    in
+    loop start_line first_tokens (brace_delta first_tokens) [ first_text ] [] rest_lines
   in
+  let rec parse_lines line policy diagnostics = function
+    | [] -> (policy, diagnostics)
+    | original :: rest -> (
+        let tokens, lexical_diagnostics = lex_line ?file line original in
+        match tokens with
+        | [] ->
+            let diagnostics = add_diagnostics diagnostics lexical_diagnostics in
+            parse_lines (line + 1) policy diagnostics rest
+        | first :: _ when text_is "anchor" first && has_token "{" tokens ->
+            let diagnostics = add_diagnostics diagnostics lexical_diagnostics in
+            let block_tokens, end_line, block_lines, remaining, block_diagnostics =
+              collect_multiline ?file line original tokens rest
+            in
+            let diagnostics = add_diagnostics diagnostics block_diagnostics in
+            let policy, diagnostics =
+              parse_anchor (String.concat "\n" block_lines) block_tokens policy diagnostics
+            in
+            parse_lines (end_line + 1) policy diagnostics remaining
+        | _ ->
+            let policy, diagnostics = parse_line ?file line policy diagnostics original in
+            parse_lines (line + 1) policy diagnostics rest)
+  in
+  let policy, diagnostics = parse_lines 1 empty_policy [] lines in
   let policy =
     {
       policy with
@@ -876,6 +988,7 @@ let parse ?file text =
       nats = List.rev policy.nats;
       rdrs = List.rev policy.rdrs;
       queues = List.rev policy.queues;
+      anchors = List.rev policy.anchors;
       rules = List.rev policy.rules;
     }
   in
@@ -902,6 +1015,9 @@ let names_of_interfaces (policy : policy) =
 
 let names_of_queues (policy : policy) =
   List.map (fun (queue : queue) -> (queue.name, queue.name_span)) policy.queues
+
+let names_of_anchors (policy : policy) =
+  List.map (fun (anchor : anchor) -> (anchor.name, anchor.name_span)) policy.anchors
 
 let table_names (policy : policy) = List.map (fun (table : table) -> table.name) policy.tables
 let macro_names (policy : policy) = List.map (fun (macro : macro) -> macro.name) policy.macros
@@ -950,6 +1066,30 @@ let validate_queue_reference ~queues span = function
       if List.mem name queues then []
       else [ diagnostic Diag_error span ("rule references unknown queue `" ^ name ^ "`") ]
 
+let validate_rules ~tables ~macros ~interfaces ~queues rules =
+  rules
+  |> List.concat_map (fun (rule : rule) ->
+         validate_reference ~tables ~macros rule.source_span "rule source" rule.source
+         @ validate_reference ~tables ~macros rule.destination_span "rule destination"
+             rule.destination
+         @ validate_interface_reference ~interfaces ~macros
+             (Option.value rule.interface_span ~default:rule.span)
+             rule.interface
+         @ validate_port ~macros (Option.value rule.port_span ~default:rule.span) rule.port
+         @ validate_queue_reference ~queues
+             (Option.value rule.queue_span ~default:rule.span)
+             rule.queue
+         @
+         match rule.route_to with
+         | None -> []
+         | Some (gateway, interface) ->
+             validate_reference ~tables ~macros
+               (Option.value rule.route_to_gateway_span ~default:rule.span)
+               "route-to gateway" gateway
+             @ validate_interface_reference ~context:"route-to" ~interfaces ~macros
+                 (Option.value rule.route_to_interface_span ~default:rule.span)
+                 interface)
+
 let validate policy =
   let diagnostics = [] in
   let diagnostics =
@@ -988,32 +1128,19 @@ let validate policy =
            diagnostic Diag_error span ("duplicate queue `" ^ name ^ "`") :: diagnostics)
          diagnostics
   in
+  let diagnostics =
+    has_duplicate (names_of_anchors policy)
+    |> List.fold_left
+         (fun diagnostics (name, span) ->
+           diagnostic Diag_error span ("duplicate anchor `" ^ name ^ "`") :: diagnostics)
+         diagnostics
+  in
   let tables = table_names policy in
   let macros = macro_names policy in
   let interfaces = interface_names policy in
   let queues = queue_names policy in
   let rule_diagnostics =
-    (policy.rules
-    |> List.concat_map (fun (rule : rule) ->
-           validate_reference ~tables ~macros rule.source_span "rule source" rule.source
-           @ validate_reference ~tables ~macros rule.destination_span "rule destination"
-               rule.destination
-           @ validate_interface_reference ~interfaces ~macros
-               (Option.value rule.interface_span ~default:rule.span)
-               rule.interface
-           @ validate_port ~macros (Option.value rule.port_span ~default:rule.span) rule.port
-           @ validate_queue_reference ~queues
-               (Option.value rule.queue_span ~default:rule.span)
-               rule.queue
-           @ (match rule.route_to with
-             | None -> []
-             | Some (gateway, interface) ->
-                 validate_reference ~tables ~macros
-                   (Option.value rule.route_to_gateway_span ~default:rule.span)
-                   "route-to gateway" gateway
-                 @ validate_interface_reference ~context:"route-to" ~interfaces ~macros
-                     (Option.value rule.route_to_interface_span ~default:rule.span)
-                     interface)))
+    validate_rules ~tables ~macros ~interfaces ~queues policy.rules
     @ (policy.nats
       |> List.concat_map (fun (nat : nat) ->
              validate_reference ~tables ~macros nat.source_span "nat source" nat.source
@@ -1059,6 +1186,9 @@ let validate policy =
              validate_interface_reference ~context:"queue" ~interfaces ~macros
                queue.interface_span (Some queue.interface)
              @ parent_diagnostics))
+    @ (policy.anchors
+      |> List.concat_map (fun (anchor : anchor) ->
+             validate_rules ~tables ~macros ~interfaces ~queues anchor.rules))
   in
   List.rev (rule_diagnostics @ diagnostics)
 
@@ -1201,8 +1331,23 @@ let format_policy (policy : policy) =
     let parts = if rule.keep_state then parts @ [ "keep"; "state" ] else parts in
     String.concat " " parts
   in
+  let anchor_lines =
+    policy.anchors
+    |> List.map (fun (anchor : anchor) ->
+           let rule_lines = List.map format_rule anchor.rules in
+           "anchor " ^ anchor.name ^ " {\n  " ^ String.concat "\n  " rule_lines ^ "\n}")
+  in
   let rule_lines = List.map format_rule policy.rules in
-  [ default_lines; macro_lines; interface_lines; table_lines; queue_lines; nat_lines @ rdr_lines; rule_lines ]
+  [
+    default_lines;
+    macro_lines;
+    interface_lines;
+    table_lines;
+    queue_lines;
+    nat_lines @ rdr_lines;
+    anchor_lines;
+    rule_lines;
+  ]
   |> List.filter (fun group -> group <> [])
   |> List.map (String.concat "\n")
   |> String.concat "\n\n"
@@ -1228,9 +1373,10 @@ let format_check_result result =
   | Some policy ->
       let summary =
         Printf.sprintf
-          "ok: %d interface(s), %d macro(s), %d table(s), %d queue(s), %d nat(s), %d rdr(s), %d rule(s)"
+          "ok: %d interface(s), %d macro(s), %d table(s), %d queue(s), %d nat(s), %d rdr(s), %d anchor(s), %d rule(s)"
           (List.length policy.interfaces) (List.length policy.macros)
           (List.length policy.tables) (List.length policy.queues)
-          (List.length policy.nats) (List.length policy.rdrs) (List.length policy.rules)
+          (List.length policy.nats) (List.length policy.rdrs)
+          (List.length policy.anchors) (List.length policy.rules)
       in
       String.concat "\n" (summary :: diagnostics)
