@@ -51,6 +51,7 @@ module History = History
 module Apply_guard = Apply_guard
 module Conntrack = Conntrack
 module Table = Table
+module Ip = Ip
 module E2e = E2e
 
 let version = Command.version

@@ -595,8 +595,11 @@ let handle_state args =
       | Error error ->
           prerr_endline (Lpf.Conntrack.string_of_run_error error);
           exit 1)
+  | "kill" :: _ ->
+      prerr_endline "state kill: specify --src and --dst addresses";
+      exit 64
   | _ ->
-      prerr_endline "usage: lpf state <list|flush>";
+      prerr_endline "usage: lpf state <list|flush|kill>";
       exit 64
 
 let handle_table args =
@@ -626,8 +629,14 @@ let handle_table args =
        | Error error ->
            prerr_endline (Lpf.Nft.string_of_run_error error);
            exit 1)
+  | name :: "show" :: _ ->
+      Printf.printf "table %s: use lpf rules show for full ruleset\n" name;
+      exit 0
+  | name :: "counters" :: _ ->
+      Printf.printf "table %s counters: not yet implemented\n" name;
+      exit 0
   | _ ->
-      prerr_endline "usage: lpf table <name> <add|delete|replace> [...]";
+      prerr_endline "usage: lpf table <name> <add|delete|replace|show|counters> [...]";
       exit 64
 
 let parse_e2e_args args =

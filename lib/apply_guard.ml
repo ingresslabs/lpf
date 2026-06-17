@@ -2,6 +2,8 @@ let var_dir = try Sys.getenv "LPF_VAR_DIR" with _ -> "/var/lib/lpf"
 let rollback_dir = Filename.concat var_dir "rollback"
 let preimage_for_id id = Filename.concat rollback_dir ("preimage.nft." ^ id)
 let preimage_path = Filename.concat rollback_dir "preimage.nft"
+let preimage_tc_path = Filename.concat rollback_dir "preimage.tc"
+let preimage_routing_path = Filename.concat rollback_dir "preimage.routing"
 let watchdog_pid_path = Filename.concat rollback_dir "watchdog.pid"
 
 let ensure_rollback_dir () =
@@ -103,18 +105,22 @@ let rollback_by_id id = rollback_by_id_with_runner default_runners.apply id
 
 let apply_policy_text_with_runners runners ?file ?confirm text =
   match Pipeline.render_nftables_policy_text ?file text with
-  | Ok (rendered, diagnostics) -> (
+  | Error diagnostics -> Error diagnostics
+  | Ok (rendered, diagnostics) ->
       let (plan, _) = match Pipeline.plan_policy_text ?file text with Ok (p, d) -> (p, d) | _ -> assert false in
       let preimage =
         match confirm with
         | None -> None
-        | Some _ -> (
+        | Some _ -> begin
             match runners.list_ruleset () with
             | Ok ruleset -> Some (Nftables.owned_ruleset_text ruleset)
-            | Error _ -> Some "")
+            | Error _ -> Some ""
+          end
       in
       match runners.apply rendered with
-      | Ok () -> (
+      | Error error ->
+          Error (diagnostics @ [ error_diagnostic ?file (Nft.string_of_run_error error) ])
+      | Ok () ->
           let history_entry = {
             History.id = Digest.to_hex (Digest.string (string_of_float (Unix.gettimeofday ())));
             timestamp = (let tm = Unix.gmtime (Unix.gettimeofday ()) in
@@ -131,15 +137,22 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
             | Ok h -> History.save (History.add history_entry h)
             | Error _ -> History.save [history_entry]
           in
-          match (confirm, preimage) with
-          | Some duration_text, Some preimage -> (
+          begin match (confirm, preimage) with
+          | None, _ | _, None -> Ok ((), diagnostics)
+          | Some duration_text, Some nft_preimage ->
               match parse_duration duration_text with
               | None ->
                   Error (diagnostics @ [ error_diagnostic ?file "invalid confirmation duration" ])
               | Some seconds ->
                   ensure_rollback_dir ();
-                  write_file preimage_path preimage;
-                  write_file (preimage_for_id history_entry.History.id) preimage;
+                  write_file preimage_path nft_preimage;
+                  write_file (preimage_for_id history_entry.History.id) nft_preimage;
+                  (match Pipeline.render_tc_policy_text ?file text with
+                   | Ok (tc_rendered, _) -> write_file preimage_tc_path ("# preimage tc\n" ^ tc_rendered)
+                   | _ -> ());
+                  (match Pipeline.render_routing_policy_text ?file text with
+                   | Ok (routing_rendered, _) -> write_file preimage_routing_path ("# preimage routing\n" ^ routing_rendered)
+                   | _ -> ());
                   let lpf_exe = Sys.argv.(0) in
                   let watchdog_command =
                     Printf.sprintf "sleep %d && %s rollback --now" seconds lpf_exe
@@ -150,10 +163,7 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
                       Unix.stdin Unix.stdout Unix.stderr
                   in
                   write_file watchdog_pid_path (string_of_int pid);
-                  Ok ((), diagnostics))
-          | _ -> Ok ((), diagnostics))
-      | Error error ->
-          Error (diagnostics @ [ error_diagnostic ?file (Nft.string_of_run_error error) ]))
-  | Error diagnostics -> Error diagnostics
+                  Ok ((), diagnostics)
+          end
 
 let apply_policy_text = apply_policy_text_with_runners default_runners

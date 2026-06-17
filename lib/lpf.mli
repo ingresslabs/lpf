@@ -51,6 +51,7 @@ module History : module type of History
 module Apply_guard : module type of Apply_guard
 module Conntrack : module type of Conntrack
 module Table : module type of Table
+module Ip : module type of Ip
 module E2e : module type of E2e
 
 val version : string

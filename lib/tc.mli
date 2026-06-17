@@ -7,3 +7,7 @@ type t = command list
 val queue_classid : Ir.queue list -> string -> string option
 val compile : Ir.t -> t
 val to_string : t -> string
+val qdisc_show : string -> (string, Nft.run_error) result
+val qdisc_show_with_runner : (Nft.invocation -> (string, Nft.run_error) result) -> string -> (string, Nft.run_error) result
+val class_show : string -> (string, Nft.run_error) result
+val class_show_with_runner : (Nft.invocation -> (string, Nft.run_error) result) -> string -> (string, Nft.run_error) result
