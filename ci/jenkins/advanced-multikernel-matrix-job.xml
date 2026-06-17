@@ -116,12 +116,11 @@ pipeline {
           def available = parseAvailable(params.AVAILABLE_KERNELS)
           def availableLabels = available.collect { it.label }
           def missing = requested.findAll { !availableLabels.contains(it) }
-          def branches = [:]
           for (def entry in available) {
             def kernelId = entry.label
             def imageName = entry.image
             def safeKernel = safeName(kernelId)
-            branches[kernelId] = {
+            stage("Kernel ${kernelId}") {
               firecrackerAgent(cloud: 'firecracker', image: imageName, cpus: 2, memory: '2g', evidence: true) {
                 withEnv([
                   "OPAMROOT=${env.WORKSPACE}/.opam",
@@ -265,7 +264,6 @@ pipeline {
               }
             }
           }
-          parallel branches
           if (params.REQUIRE_ALL_KERNELS && !missing.isEmpty()) {
             error("Missing requested Firecracker kernels: ${missing.join(', ')}")
           }
