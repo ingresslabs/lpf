@@ -148,12 +148,17 @@ pipeline {
                         printf 'conntrack_version='
                         conntrack -V
                       } > "../evidence/${LPF_SAFE_KERNEL}/environment.txt"
+                      set +e
                       ./_build/default/bin/main.exe e2e run \
                         --scenario-count "$SCENARIO_COUNT" \
                         --junit "../evidence/${LPF_SAFE_KERNEL}/junit.xml" \
                         --allure-dir "../allure-results/${LPF_SAFE_KERNEL}" \
                         --evidence-dir "../evidence/${LPF_SAFE_KERNEL}" \
                         --kernel-id "$LPF_KERNEL_ID"
+                      e2e_status="$?"
+                      set -e
+                      printf '%s\n' "$e2e_status" > "../evidence/${LPF_SAFE_KERNEL}/e2e.exit"
+                      exit 0
                     '''
                   }
                   stage("Publish ${kernelId}") {
@@ -162,6 +167,7 @@ pipeline {
                       allure includeProperties: false, reportBuildPolicy: 'ALWAYS', results: [[path: "allure-results/${safeKernel}"]]
                     }
                     archiveArtifacts artifacts: "kernel-${safeKernel}.txt,evidence/${safeKernel}/**,allure-results/${safeKernel}/**", fingerprint: true
+                    sh "test \"\$(cat evidence/${safeKernel}/e2e.exit)\" = 0"
                   }
                 }
               }
