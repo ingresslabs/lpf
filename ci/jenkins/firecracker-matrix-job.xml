@@ -1,0 +1,181 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<flow-definition plugin="workflow-job">
+  <description>Firecracker VM matrix for lpf end-to-end networking scenarios with JUnit and Allure evidence.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>EXPECTED_COMMIT</name>
+          <description>Short or full lpf commit expected in the source archive.</description>
+          <defaultValue>eea022bf8669</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>KERNEL_MATRIX</name>
+          <description>Comma-separated kernel labels. Lab 141 currently registers one usable Firecracker kernel image.</description>
+          <defaultValue>lab-141-default</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>SCENARIO_COUNT</name>
+          <description>Number of lpf e2e scenarios to run per kernel label. The normal range is 400-600.</description>
+          <defaultValue>480</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>SOURCE_ARCHIVE_BASE_URL</name>
+          <description>Optional archive base URL. Defaults to the Firecracker guest default gateway on port 18081.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+    <jenkins.model.BuildDiscarderProperty>
+      <strategy class="hudson.tasks.LogRotator">
+        <daysToKeep>-1</daysToKeep>
+        <numToKeep>20</numToKeep>
+        <artifactDaysToKeep>-1</artifactDaysToKeep>
+        <artifactNumToKeep>-1</artifactNumToKeep>
+        <removeLastBuild>false</removeLastBuild>
+      </strategy>
+    </jenkins.model.BuildDiscarderProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps">
+    <script><![CDATA[
+pipeline {
+  agent none
+  options {
+    timeout(time: 90, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+  stages {
+    stage('Firecracker E2E matrix') {
+      steps {
+        script {
+          def kernels = params.KERNEL_MATRIX.split(',').collect { it.trim() }.findAll { it }
+          if (kernels.isEmpty()) {
+            error('KERNEL_MATRIX did not contain any kernel labels')
+          }
+          def branches = [:]
+          for (def kernel in kernels) {
+            def kernelId = kernel
+            def safeKernel = kernelId.replaceAll('[^A-Za-z0-9_.-]', '_')
+            branches[kernelId] = {
+              node('firecracker-agent') {
+                withEnv([
+                  "OPAMROOT=${env.WORKSPACE}/.opam",
+                  'DEBIAN_FRONTEND=noninteractive',
+                  "LPF_KERNEL_ID=${kernelId}",
+                  "LPF_SAFE_KERNEL=${safeKernel}"
+                ]) {
+                  stage("VM identity ${kernelId}") {
+                    sh '''
+                      set -eu
+                      uname -a | tee "kernel-${LPF_SAFE_KERNEL}.txt"
+                      id
+                      hostname || true
+                    '''
+                  }
+                  stage("Install toolchain ${kernelId}") {
+                    sh '''
+                      set -eux
+                      if command -v sudo >/dev/null 2>&1; then SUDO=sudo; else SUDO=; fi
+                      $SUDO apt-get update -qq
+                      $SUDO apt-get install -y --no-install-recommends \
+                        ca-certificates curl git build-essential ocaml opam m4 pkg-config bubblewrap \
+                        nftables iproute2 iputils-ping conntrack kmod procps
+                      ocamlc -version
+                      opam --version
+                      if [ ! -d "$OPAMROOT" ]; then opam init --bare --disable-sandboxing -y; fi
+                      if ! opam switch list --short | grep -qx lpf-ci; then
+                        opam switch create lpf-ci ocaml-system -y
+                      fi
+                      eval "$(opam env --switch=lpf-ci)"
+                      opam install dune -y
+                      dune --version
+                      nft --version
+                      ip -Version
+                      tc -Version
+                      conntrack -V
+                    '''
+                  }
+                  stage("Checkout ${kernelId}") {
+                    sh '''
+                      set -eux
+                      rm -rf lpf lpf.tar.gz lpf.commit evidence allure-results
+                      host_gateway="$(ip route show default | awk 'NR==1 {print $3}')"
+                      base_url="${SOURCE_ARCHIVE_BASE_URL:-http://${host_gateway}:18081}"
+                      curl -fsSL "${base_url}/lpf-${EXPECTED_COMMIT}.tar.gz" -o lpf.tar.gz
+                      mkdir lpf
+                      tar -xzf lpf.tar.gz -C lpf
+                      curl -fsSL "${base_url}/lpf-${EXPECTED_COMMIT}.commit" -o lpf/.source-commit
+                      grep -q "^${EXPECTED_COMMIT}" lpf/.source-commit
+                    '''
+                  }
+                  stage("Build and unit tests ${kernelId}") {
+                    sh '''
+                      set -eux
+                      eval "$(opam env --switch=lpf-ci)"
+                      cd lpf
+                      dune build
+                      dune runtest
+                      ./_build/default/bin/main.exe man check --dir man/generated
+                    '''
+                  }
+                  stage("E2E scenarios ${kernelId}") {
+                    sh '''
+                      set -eux
+                      eval "$(opam env --switch=lpf-ci)"
+                      mkdir -p "evidence/${LPF_SAFE_KERNEL}" "allure-results/${LPF_SAFE_KERNEL}"
+                      cd lpf
+                      {
+                        printf 'git_commit='
+                        cat .source-commit
+                        printf 'kernel_id=%s\n' "$LPF_KERNEL_ID"
+                        printf 'kernel_release='
+                        uname -r
+                        printf 'ocaml_version='
+                        ocamlc -version
+                        printf 'dune_version='
+                        dune --version
+                        printf 'nft_version='
+                        nft --version
+                        printf 'iproute2_version='
+                        ip -Version
+                        printf 'tc_version='
+                        tc -Version
+                        printf 'conntrack_version='
+                        conntrack -V
+                      } > "../evidence/${LPF_SAFE_KERNEL}/environment.txt"
+                      ./_build/default/bin/main.exe e2e run \
+                        --scenario-count "$SCENARIO_COUNT" \
+                        --junit "../evidence/${LPF_SAFE_KERNEL}/junit.xml" \
+                        --allure-dir "../allure-results/${LPF_SAFE_KERNEL}" \
+                        --evidence-dir "../evidence/${LPF_SAFE_KERNEL}" \
+                        --kernel-id "$LPF_KERNEL_ID"
+                    '''
+                  }
+                  stage("Publish ${kernelId}") {
+                    junit "evidence/${safeKernel}/junit.xml"
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                      allure includeProperties: false, reportBuildPolicy: 'ALWAYS', results: [[path: "allure-results/${safeKernel}"]]
+                    }
+                    archiveArtifacts artifacts: "kernel-${safeKernel}.txt,evidence/${safeKernel}/**,allure-results/${safeKernel}/**", fingerprint: true
+                  }
+                }
+              }
+            }
+          }
+          parallel branches
+        }
+      }
+    }
+  }
+}
+    ]]></script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
