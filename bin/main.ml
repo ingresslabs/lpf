@@ -378,6 +378,183 @@ let handle_diff args =
         "usage: lpf diff [--backend nftables] [--observed <ruleset|->|--live] [--json] <policy>";
       exit 64
 
+let handle_apply args =
+  let _, paths =
+    List.fold_left
+      (fun (confirm, paths) arg ->
+        if String.equal arg "--confirm" then (confirm, paths) (* handled below *)
+        else if String.length arg > 0 && arg.[0] = '-' then (confirm, paths) (* ignore other flags for now *)
+        else (confirm, paths @ [ arg ]))
+      (None, []) args
+  in
+  let confirm =
+    let rec find = function
+      | flag :: value :: _ when String.equal flag "--confirm" -> Some value
+      | _ :: rest -> find rest
+      | [] -> None
+    in
+    find args
+  in
+  match paths with
+  | [ path ] -> (
+      let input = read_file path in
+      match Lpf.apply_policy_text ?confirm ~file:path input with
+      | Ok ((), diagnostics) ->
+          print_diagnostics diagnostics;
+          if confirm <> None then
+            Printf.printf "guarded apply of %s started; use lpf confirm to promote\n" path
+          else Printf.printf "applied %s\n" path;
+          exit 0
+      | Error diagnostics ->
+          print_diagnostics diagnostics;
+          exit 1)
+  | _ ->
+      prerr_endline "usage: lpf apply [--confirm <duration>] <policy>";
+      exit 64
+
+let handle_confirm () =
+  match Lpf.confirm () with
+  | Ok ((), diagnostics) ->
+      print_diagnostics diagnostics;
+      Printf.printf "apply confirmed\n";
+      exit 0
+  | Error diagnostics ->
+      print_diagnostics diagnostics;
+      exit 1
+
+let handle_rollback args =
+  let now = List.exists (String.equal "--now") args in
+  if now then
+    match Lpf.rollback_now () with
+    | Ok ((), diagnostics) ->
+        print_diagnostics diagnostics;
+        Printf.printf "rolled back to preimage\n";
+        exit 0
+    | Error diagnostics ->
+        print_diagnostics diagnostics;
+        exit 1
+  else (
+    prerr_endline "manual lpf rollback by ID is planned; use --now for watchdog rollback";
+    exit 2)
+
+let handle_explain args =
+  let json, args =
+    List.fold_left
+      (fun (json, rest) arg ->
+        if String.equal arg "--json" then (true, rest) else (json, rest @ [ arg ]))
+      (false, []) args
+  in
+  let rec parse_packet pkt = function
+    | [] -> pkt
+    | "from" :: addr :: rest -> parse_packet { pkt with Lpf.Explain.source = addr } rest
+    | "to" :: addr :: rest -> parse_packet { pkt with Lpf.Explain.destination = addr } rest
+    | "proto" :: proto :: rest ->
+        let p = if String.equal proto "any" then Lpf.Policy.Proto_any else Lpf.Policy.Proto_named proto in
+        parse_packet { pkt with Lpf.Explain.protocol = p } rest
+    | "port" :: port :: rest ->
+        let p = int_of_string_opt port in
+        parse_packet { pkt with Lpf.Explain.port = p } rest
+    | ("in" | "on") :: iface :: rest ->
+        parse_packet { pkt with Lpf.Explain.interface = iface } rest
+    | "out" :: rest ->
+        parse_packet { pkt with Lpf.Explain.direction = Lpf.Policy.Out } rest
+    | _ :: rest -> parse_packet pkt rest
+  in
+  let initial_pkt = {
+    Lpf.Explain.direction = Lpf.Policy.In;
+    interface = "eth0";
+    protocol = Lpf.Policy.Proto_any;
+    source = "0.0.0.0";
+    destination = "0.0.0.0";
+    port = None;
+  } in
+  let policy_path = List.find_opt (fun arg -> String.ends_with ~suffix:".lpf" arg || String.equal arg "/etc/lpf.conf") args in
+  match policy_path with
+  | None ->
+      prerr_endline "usage: lpf explain [--json] [in|on <iface>] [from <addr>] [to <addr>] [proto <proto>] [port <port>] <policy>";
+      exit 64
+  | Some path ->
+      let pkt = parse_packet initial_pkt args in
+      let input = read_file path in
+      match Lpf.explain_policy_text ~file:path ~packet:pkt input with
+      | Ok (explanation, diagnostics) ->
+          print_diagnostics diagnostics;
+          if json then print_endline (Lpf.Explain.to_json explanation)
+          else print_endline (Lpf.Explain.to_string explanation);
+          exit 0
+      | Error diagnostics ->
+          print_diagnostics diagnostics;
+          exit 1
+
+let handle_test args =
+  let junit_path, paths =
+    let rec find junit_path paths = function
+      | [] -> (junit_path, List.rev paths)
+      | "--junit" :: path :: rest -> find (Some path) paths rest
+      | path :: rest -> find junit_path (path :: paths) rest
+    in
+    find None [] args
+  in
+  match paths with
+  | [ path ] -> (
+      let input = read_file path in
+      match Lpf.run_policy_tests ~file:path input with
+      | Ok (results, diagnostics) ->
+          print_diagnostics diagnostics;
+          let total_tests = List.fold_left (fun acc (_, r) -> acc + List.length r) 0 results in
+          let total_failed =
+            List.fold_left
+              (fun acc (_, r) ->
+                acc + List.length (List.filter (function Lpf.Test_engine.Fail _ -> true | _ -> false) r))
+              0 results
+          in
+          List.iter
+            (fun (case, r) ->
+              Printf.printf "Test: %s\n" case.Lpf.Test_engine.name;
+              List.iteri
+                (fun i result ->
+                  match result with
+                  | Lpf.Test_engine.Pass -> Printf.printf "  expectation %d: ok\n" i
+                  | Lpf.Test_engine.Fail { actual; explanation } ->
+                      Printf.printf "  expectation %d: FAILED (expected %s but got %s)\n" i
+                        (if actual = Lpf.Policy.Pass then "block" else "pass")
+                        (if actual = Lpf.Policy.Pass then "pass" else "block");
+                      let explanation_text = Lpf.Explain.to_string explanation in
+                      let lines = String.split_on_char '\n' explanation_text in
+                      List.iter (fun line -> Printf.printf "    %s\n" line) lines)
+                r)
+            results;
+          (match junit_path with
+          | Some jpath ->
+              let xml = Lpf.Test_engine.to_junit results in
+              write_file jpath xml
+          | None -> ());
+          if total_failed > 0 then (
+            Printf.printf "\nFAILED: %d failed, %d passed, %d total\n" total_failed
+              (total_tests - total_failed) total_tests;
+            exit 1)
+          else (
+            Printf.printf "\nOK: %d passed\n" total_tests;
+            exit 0)
+      | Error diagnostics ->
+          print_diagnostics diagnostics;
+          exit 1)
+  | _ ->
+      prerr_endline "usage: lpf test [--junit <path>] <fixture>";
+      exit 64
+
+let handle_history args =
+  let json = List.exists (String.equal "--json") args in
+  match Lpf.get_history () with
+  | Ok (h, diagnostics) ->
+      print_diagnostics diagnostics;
+      if json then print_endline (Lpf.History.to_json h)
+      else print_endline (Lpf.History.to_string h);
+      exit 0
+  | Error diagnostics ->
+      print_diagnostics diagnostics;
+      exit 1
+
 let planned command =
   print_end (Lpf.command_help command);
   exit 2
@@ -398,6 +575,12 @@ let () =
   | _ :: "fmt" :: args -> handle_fmt args
   | _ :: "plan" :: args -> handle_plan args
   | _ :: "diff" :: args -> handle_diff args
+  | _ :: "apply" :: args -> handle_apply args
+  | _ :: "confirm" :: _ -> handle_confirm ()
+  | _ :: "rollback" :: args -> handle_rollback args
+  | _ :: "explain" :: args -> handle_explain args
+  | _ :: "test" :: args -> handle_test args
+  | _ :: "history" :: args -> handle_history args
   | _ :: "rules" :: args -> handle_rules args
   | _ :: "man" :: args -> handle_man args
   | _ :: name :: _ -> (

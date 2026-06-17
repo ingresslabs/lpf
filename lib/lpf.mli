@@ -1,4 +1,4 @@
-type command =
+type command = Command.command =
   | Check
   | Fmt
   | Plan
@@ -20,7 +20,7 @@ type command =
   | Version
   | Help
 
-type command_doc = {
+type command_doc = Command.command_doc = {
   command : command;
   section : int;
   synopsis : string;
@@ -32,7 +32,7 @@ type command_doc = {
   see_also : string list;
 }
 
-type man_page = {
+type man_page = Manpage.man_page = {
   filename : string;
   section : int;
   title : string;
@@ -46,6 +46,10 @@ module Nftables : module type of Nftables
 module Tc : module type of Tc
 module Routing : module type of Routing
 module Nft : module type of Nft
+module Explain : module type of Explain
+module Test_engine : module type of Test_engine
+module Test_parser : module type of Test_parser
+module History : module type of History
 
 val version : string
 val all_commands : (string * command * string) list
@@ -79,3 +83,21 @@ val diff_nftables_policy :
   observed:string ->
   string ->
   (Nftables.diff_result * Policy.diagnostic list, Policy.diagnostic list) result
+val explain_policy_text :
+  ?file:string ->
+  packet:Explain.packet ->
+  string ->
+  (Explain.explanation * Policy.diagnostic list, Policy.diagnostic list) result
+val run_policy_tests :
+  ?file:string ->
+  string ->
+  ((Test_engine.test_case * Test_engine.test_result list) list * Policy.diagnostic list,
+   Policy.diagnostic list) result
+val apply_policy_text :
+  ?file:string ->
+  ?confirm:string ->
+  string ->
+  (unit * Policy.diagnostic list, Policy.diagnostic list) result
+val confirm : unit -> (unit * Policy.diagnostic list, Policy.diagnostic list) result
+val rollback_now : unit -> (unit * Policy.diagnostic list, Policy.diagnostic list) result
+val get_history : unit -> (History.t * Policy.diagnostic list, Policy.diagnostic list) result

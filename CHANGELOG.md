@@ -41,5 +41,14 @@
   for supplied lpf-owned nftables table readback text.
 - Added read-only live nftables readback through `lpf rules diff --live
   <policy>`, using an OCaml `nft list ruleset` execution wrapper.
-- Implemented the top-level read-only `lpf diff` command for live or supplied
-  lpf-owned nftables state, including machine-readable JSON status output.
+- Implemented the first `lpf diff` top-level command for read-only comparison
+  of planned policy against live host nftables state, including
+  machine-readable JSON status output.
+- Implemented `lpf apply` with atomic nftables updates via `nft -f`.
+- Added guarded apply support with `lpf apply --confirm <duration>`, capturing
+  a rollback preimage of lpf-owned nftables tables and scheduling an automatic
+  watchdog rollback.
+- Implemented `lpf confirm` to promote a pending guarded apply and cancel the
+  rollback watchdog.
+- Implemented `lpf rollback --now` for immediate restoration of the captured
+  preimage.

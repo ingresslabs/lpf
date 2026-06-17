@@ -17,6 +17,8 @@ type run_error = {
 
 let list_ruleset_invocation () = { program = "nft"; argv = [ "nft"; "list"; "ruleset" ] }
 
+let apply_invocation path = { program = "nft"; argv = [ "nft"; "-f"; path ] }
+
 let read_file path =
   let channel = open_in path in
   Fun.protect
@@ -66,6 +68,14 @@ let run invocation =
 
 let list_ruleset_with_runner runner = runner (list_ruleset_invocation ())
 let list_ruleset () = list_ruleset_with_runner run
+
+let apply ruleset =
+  with_temp_file "lpf-apply" (fun path ->
+      let out = open_out path in
+      Fun.protect ~finally:(fun () -> close_out out) (fun () -> output_string out ruleset);
+      match run (apply_invocation path) with
+      | Ok _ -> Ok ()
+      | Error error -> Error error)
 
 let string_of_run_status = function
   | Exited code -> "exit " ^ string_of_int code
