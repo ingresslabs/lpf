@@ -2,10 +2,10 @@
 .SH NAME
 lpf\-plan \- compile policy to a typed backend change plan
 .SH SYNOPSIS
-lpf plan <policy>
+lpf plan [\-\-json] <policy>
 .SH DESCRIPTION
-Compile policy into a typed backend change plan.
-Plans include nftables, routing, tc, conntrack, logging, sysctl, and rollback preimage requirements.
+Lower policy into a versioned, backend\-neutral semantic JSON plan.
+The current Phase 2 plan covers typed policy semantics and stable checksums; later backend phases add nftables, routing, tc, conntrack, logging, sysctl, and rollback preimages.
 .SH OPTIONS
 .TP
 \-\-json

@@ -33,3 +33,5 @@
   round-trip coverage.
 - Added the first typed IR model for the Phase 1 policy surface and
   shadowed-rule warnings during `lpf check`.
+- Implemented `lpf plan [--json]` for versioned backend-neutral semantic plan
+  JSON with stable checksums.

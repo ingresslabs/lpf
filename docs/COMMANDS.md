@@ -42,9 +42,11 @@ Must detect:
 Format policy files deterministically. This enables code review and generated
 policy normalization.
 
-### `lpf plan <policy>`
+### `lpf plan [--json] <policy>`
 
-Compile policy into a typed backend plan. The plan must include:
+Lower policy into a versioned backend-neutral semantic JSON plan. The current
+implementation includes typed policy semantics and a stable checksum; later
+backend phases must add:
 
 - nftables table, chain, set, map, rule changes
 - NAT changes

@@ -83,7 +83,10 @@ Initial implementation status:
 - Typed IR now covers the Phase 1 policy surface: interfaces, tables, queues,
   NAT, redirects, anchors, logging, route-to, and pass/block rules.
 - `lpf check` lowers valid policies into IR and reports shadowed-rule warnings.
-- Stable JSON `lpf plan` output and backend-neutral plan checksums remain open.
+- `lpf plan [--json]` emits a versioned backend-neutral semantic JSON plan.
+- Plan checksums are stable across source-span changes and formatter
+  normalization.
+- Backend operation planning remains open for later phases.
 
 Exit criteria:
 

@@ -34,8 +34,9 @@ actionable diagnostics.
 
 The first typed IR slice is implemented for the Phase 1 policy surface. `lpf
 check` now lowers valid policies into IR and reports shadowed-rule warnings.
-Stable `lpf plan` JSON, backend plan generation, and networking backend
-behavior are intentionally not implemented yet.
+`lpf plan [--json]` emits a versioned backend-neutral semantic JSON plan with a
+stable checksum. Backend plan generation and networking backend behavior are
+intentionally not implemented yet.
 
 ## Planned CLI
 

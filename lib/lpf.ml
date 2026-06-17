@@ -41,8 +41,14 @@ type man_page = {
 
 module Policy = Policy
 module Ir = Ir
+module Plan = Plan
 
 let ir_of_policy = Ir.of_policy
+
+let plan_of_policy policy =
+  match Ir.of_policy policy with
+  | Ok ir -> Ok (Plan.of_ir ir)
+  | Error diagnostics -> Error diagnostics
 
 let version = "0.1.0-dev"
 
@@ -143,11 +149,11 @@ let command_docs =
     {
       command = Plan;
       section = 8;
-      synopsis = "lpf plan <policy>";
+      synopsis = "lpf plan [--json] <policy>";
       description =
         [
-          "Compile policy into a typed backend change plan.";
-          "Plans include nftables, routing, tc, conntrack, logging, sysctl, and rollback preimage requirements.";
+          "Lower policy into a versioned, backend-neutral semantic JSON plan.";
+          "The current Phase 2 plan covers typed policy semantics and stable checksums; later backend phases add nftables, routing, tc, conntrack, logging, sysctl, and rollback preimages.";
         ];
       options = [ ("--json", "emit machine-readable plan output") ];
       examples = [ "lpf plan /etc/lpf.conf"; "lpf plan --json /etc/lpf.conf" ];
@@ -493,6 +499,15 @@ let format_policy_text ?file text =
   | { policy = Some policy; diagnostics = _ } -> Ok (Policy.format policy)
   | { policy = None; diagnostics } -> Error diagnostics
 
+let plan_policy_text ?file text =
+  let result = check_policy_text ?file text in
+  match result.policy with
+  | None -> Error result.diagnostics
+  | Some policy -> (
+      match plan_of_policy policy with
+      | Ok plan -> Ok (plan, result.diagnostics)
+      | Error diagnostics -> Error (result.diagnostics @ diagnostics))
+
 let usage_lines () =
   let render (name, _, summary) = Printf.sprintf "  %-15s %s" name summary in
   List.map render all_commands
@@ -514,7 +529,7 @@ let help () =
       ])
 
 let command_status = function
-  | Check | Fmt | Man -> "implemented"
+  | Check | Fmt | Plan | Man -> "implemented"
   | Version | Help -> "implemented"
   | _ -> "planned; implementation must be OCaml"
 

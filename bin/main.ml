@@ -95,6 +95,10 @@ let exit_for_policy_check result =
   | Some _ -> exit 0
   | None -> exit 1
 
+let print_diagnostics diagnostics =
+  diagnostics
+  |> List.iter (fun diagnostic -> prerr_endline (Lpf.Policy.diagnostic_to_string diagnostic))
+
 let handle_check args =
   match args with
   | [ path ] ->
@@ -124,10 +128,39 @@ let handle_fmt args =
               exit 1))
           else print_string formatted
       | Error diagnostics ->
-          diagnostics |> List.iter (fun diagnostic -> prerr_endline (Lpf.Policy.diagnostic_to_string diagnostic));
+          print_diagnostics diagnostics;
           exit 1)
   | _ ->
       prerr_endline "usage: lpf fmt [--check] <policy>";
+      exit 64
+
+let parse_plan_args args =
+  let is_option arg = String.length arg > 0 && arg.[0] = '-' in
+  let rec loop paths = function
+    | [] -> Ok (List.rev paths)
+    | "--json" :: rest -> loop paths rest
+    | arg :: _ when is_option arg -> Error arg
+    | path :: rest -> loop (path :: paths) rest
+  in
+  loop [] args
+
+let handle_plan args =
+  match parse_plan_args args with
+  | Error option ->
+      prerr_endline ("unknown lpf plan option: " ^ option);
+      prerr_endline "usage: lpf plan [--json] <policy>";
+      exit 64
+  | Ok [ path ] -> (
+      let input = read_file path in
+      match Lpf.plan_policy_text ~file:path input with
+      | Ok (plan, diagnostics) ->
+          print_diagnostics diagnostics;
+          print_string (Lpf.Plan.to_json plan)
+      | Error diagnostics ->
+          print_diagnostics diagnostics;
+          exit 1)
+  | Ok _ ->
+      prerr_endline "usage: lpf plan [--json] <policy>";
       exit 64
 
 let planned command =
@@ -148,6 +181,7 @@ let () =
           exit 64)
   | _ :: "check" :: args -> handle_check args
   | _ :: "fmt" :: args -> handle_fmt args
+  | _ :: "plan" :: args -> handle_plan args
   | _ :: "man" :: args -> handle_man args
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with
