@@ -24,13 +24,15 @@ Every command must include:
 
 ### `lpf check <policy>`
 
-Parse, type-check, and validate a policy without touching host state.
+Parse, type-check, validate, and lower a policy into the typed intermediate
+representation without touching host state.
 
 Must detect:
 
 - syntax errors
 - duplicate object names
 - undefined tables, interfaces, queues, and anchors
+- shadowed rules that cannot match
 - unsafe defaults
 - impossible route or queue references
 - unsupported backend features on the current kernel

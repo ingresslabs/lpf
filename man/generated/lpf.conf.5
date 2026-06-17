@@ -4,8 +4,9 @@ lpf.conf \- lpf policy file format
 .SH DESCRIPTION
 The lpf policy format is a PF\-inspired language for Linux networking.
 The current parser covers default actions, interfaces, macros, tables, queues, anchors, pass/block rules, rule logging, NAT, redirects, and rule\-level route\-to annotations.
+Checked policies are lowered into a typed intermediate representation before backend planning.
 Rule logging supports log, log (all), log (matches), and log (user).
-Later phases will add typed plans and backend compilation.
+Later phases will add stable JSON plans and backend compilation.
 .SH EXAMPLES
 set default deny
 interface wan = "eth0"

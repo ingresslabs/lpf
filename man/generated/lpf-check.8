@@ -4,8 +4,8 @@ lpf\-check \- parse and validate policy without touching the host
 .SH SYNOPSIS
 lpf check <policy>
 .SH DESCRIPTION
-Parse, type\-check, and validate an lpf policy without changing host state.
-Diagnostics must include source locations and actionable recovery guidance.
+Parse, type\-check, validate, and lower an lpf policy into the typed intermediate representation without changing host state.
+Diagnostics must include source locations, shadowed\-rule warnings, and actionable recovery guidance.
 .SH EXAMPLES
 lpf check /etc/lpf.conf
 lpf check fixtures/policies/basic.lpf

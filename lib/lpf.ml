@@ -40,6 +40,9 @@ type man_page = {
 }
 
 module Policy = Policy
+module Ir = Ir
+
+let ir_of_policy = Ir.of_policy
 
 let version = "0.1.0-dev"
 
@@ -117,8 +120,8 @@ let command_docs =
       synopsis = "lpf check <policy>";
       description =
         [
-          "Parse, type-check, and validate an lpf policy without changing host state.";
-          "Diagnostics must include source locations and actionable recovery guidance.";
+          "Parse, type-check, validate, and lower an lpf policy into the typed intermediate representation without changing host state.";
+          "Diagnostics must include source locations, shadowed-rule warnings, and actionable recovery guidance.";
         ];
       options = [];
       examples = [ "lpf check /etc/lpf.conf"; "lpf check fixtures/policies/basic.lpf" ];
@@ -429,8 +432,9 @@ let config_page () =
     [
       "The lpf policy format is a PF-inspired language for Linux networking.";
       "The current parser covers default actions, interfaces, macros, tables, queues, anchors, pass/block rules, rule logging, NAT, redirects, and rule-level route-to annotations.";
+      "Checked policies are lowered into a typed intermediate representation before backend planning.";
       "Rule logging supports log, log (all), log (matches), and log (user).";
-      "Later phases will add typed plans and backend compilation.";
+      "Later phases will add stable JSON plans and backend compilation.";
     ];
   add_section buffer "EXAMPLES"
     [
@@ -472,7 +476,17 @@ let man_pages () = overview_page () :: List.map command_page command_docs @ [ co
 
 let man_page_content page = page.content
 
-let check_policy_text ?file text = Policy.check ?file text
+let check_policy_text ?file text =
+  let result = Policy.check ?file text in
+  match result.policy with
+  | None -> result
+  | Some policy -> (
+      match Ir.of_policy policy with
+      | Error ir_diags ->
+          { Policy.diagnostics = result.diagnostics @ ir_diags; policy = None }
+      | Ok ir ->
+          let shadow_diags = Ir.shadow_diagnostics ir in
+          { Policy.diagnostics = result.diagnostics @ shadow_diags; policy = Some policy })
 
 let format_policy_text ?file text =
   match Policy.check ?file text with

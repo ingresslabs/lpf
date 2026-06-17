@@ -34,6 +34,85 @@ let assert_check_has_diagnostic ~line ~column ~message path =
           diagnostics)
   | { policy = Some _; diagnostics = _ } -> failwith (path ^ " unexpectedly passed")
 
+let assert_check_has_warning ~line ~column ~message path =
+  let path = fixture path in
+  match Lpf.check_policy_text ~file:path (read_file path) with
+  | { Lpf.Policy.policy = Some _; diagnostics } ->
+      if
+        not
+          (List.exists
+             (fun (diagnostic : Lpf.Policy.diagnostic) ->
+               diagnostic.severity = Diag_warning && diagnostic.span.line = line
+               && diagnostic.span.column = column && String.equal diagnostic.message message)
+             diagnostics)
+      then
+        failwith
+          ("expected warning not found in " ^ path ^ ":\n"
+          ^ String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics))
+  | { policy = None; diagnostics = _ } -> failwith (path ^ " unexpectedly failed")
+
+let ir_of_fixture path =
+  let path = fixture path in
+  match Lpf.check_policy_text ~file:path (read_file path) with
+  | { Lpf.Policy.policy = Some policy; diagnostics } ->
+      let errors =
+        diagnostics
+        |> List.filter (fun (diagnostic : Lpf.Policy.diagnostic) ->
+               diagnostic.severity = Diag_error)
+      in
+      if errors <> [] then
+        failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string errors));
+      (match Lpf.ir_of_policy policy with
+       | Ok ir -> ir
+       | Error diagnostics ->
+           failwith
+             (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics)))
+  | result -> failwith (Lpf.Policy.format_check_result result)
+
+let assert_interface (interface : Lpf.Ir.interface_ref) ~name ~device =
+  assert (interface.name = name);
+  assert (String.equal interface.device device)
+
+let assert_phase1_fixture_ir () =
+  let basic = ir_of_fixture "basic.lpf" in
+  assert (basic.default_action = Lpf.Policy.Default_deny);
+  assert (List.length basic.tables = 1);
+  assert (List.length basic.rules = 2);
+  let queue_route = ir_of_fixture "queue-route.lpf" in
+  assert (List.length queue_route.interfaces = 2);
+  assert (List.length queue_route.queues = 2);
+  assert (List.length queue_route.nats = 1);
+  assert (List.length queue_route.rdrs = 1);
+  (match queue_route.queues with
+   | std :: voip :: [] ->
+       assert (String.equal std.name "std");
+       assert_interface std.interface ~name:(Some "wan") ~device:"eth0";
+       assert (String.equal voip.name "voip");
+       assert (voip.parent = Some "std")
+   | _ -> assert false);
+  (match queue_route.rules with
+   | _in_rule :: out_rule :: [] ->
+       assert out_rule.keep_state;
+       (match out_rule.route_to with
+        | Some (Literal "1.1.1.1", Some interface) ->
+            assert_interface interface ~name:(Some "wan") ~device:"eth0"
+        | _ -> assert false)
+   | _ -> assert false);
+  let anchor_log = ir_of_fixture "anchor-log.lpf" in
+  (match anchor_log.anchors with
+   | anchor :: [] ->
+       assert (String.equal anchor.name "internal");
+       assert (List.length anchor.rules = 1)
+   | _ -> assert false);
+  let messy_full = ir_of_fixture "messy-full.lpf" in
+  (match List.rev messy_full.rules with
+   | block_rule :: pass_rule :: [] ->
+       assert (block_rule.action = Block);
+       assert (block_rule.log = Some Log_matches);
+       assert (pass_rule.log = Some Log_all);
+       assert (pass_rule.port = Lpf.Ir.Range (443, 443))
+   | _ -> assert false)
+
 let assert_inline_check_has_diagnostic ~file ~text ~line ~column ~message =
   match Lpf.check_policy_text ~file text with
   | { Lpf.Policy.policy = None; diagnostics } ->
@@ -87,6 +166,9 @@ let () =
   assert_check_fails ~contains:'q' "invalid-queue-name.lpf";
   assert_check_fails ~contains:'q' "invalid-queue-references.lpf";
   assert_check_fails ~contains:'r' "invalid-route-to-syntax.lpf";
+  assert_check_has_warning ~line:5 ~column:1
+    ~message:"rule is completely shadowed by rule at line 3"
+    "warning-shadowed-rule.lpf";
   assert_check_fails ~contains:'l' "invalid-log-duplicate.lpf";
   assert_check_fails ~contains:'l' "invalid-log-option.lpf";
   assert_check_fails ~contains:'l' "invalid-log-syntax.lpf";
@@ -166,6 +248,7 @@ let () =
   assert_inline_check_has_diagnostic ~file:"inline-invalid-port.lpf"
     ~text:"set default deny\npass out proto tcp from any to any port 70000\n"
     ~line:2 ~column:41 ~message:"invalid rule: invalid port `70000`";
+  assert_phase1_fixture_ir ();
   let basic = read_file (fixture "basic.lpf") in
   (match Lpf.format_policy_text ~file:(fixture "basic.lpf") basic with
    | Ok formatted -> assert (String.equal formatted basic)

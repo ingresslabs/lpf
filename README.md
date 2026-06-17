@@ -30,8 +30,12 @@ It parses and formats a small policy subset covering default actions,
 interfaces, macros, tables, queues, anchors, pass/block rules, rule logging,
 NAT, redirects, and route-to annotations with OCaml tests and valid/invalid
 fixtures. The parser is tokenized and carries column-level spans for
-actionable diagnostics. The typed IR, backend plan generation, and networking
-backend behavior are intentionally not implemented yet.
+actionable diagnostics.
+
+The first typed IR slice is implemented for the Phase 1 policy surface. `lpf
+check` now lowers valid policies into IR and reports shadowed-rule warnings.
+Stable `lpf plan` JSON, backend plan generation, and networking backend
+behavior are intentionally not implemented yet.
 
 ## Planned CLI
 

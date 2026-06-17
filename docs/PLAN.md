@@ -78,6 +78,13 @@ Tasks:
 - Model state behavior through conntrack.
 - Add validation for contradictions and shadowed rules.
 
+Initial implementation status:
+
+- Typed IR now covers the Phase 1 policy surface: interfaces, tables, queues,
+  NAT, redirects, anchors, logging, route-to, and pass/block rules.
+- `lpf check` lowers valid policies into IR and reports shadowed-rule warnings.
+- Stable JSON `lpf plan` output and backend-neutral plan checksums remain open.
+
 Exit criteria:
 
 - `lpf plan` emits a stable JSON plan.

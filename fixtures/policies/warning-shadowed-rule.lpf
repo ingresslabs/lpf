@@ -1,0 +1,5 @@
+set default deny
+
+pass in from any to any
+pass in from 10.0.0.0/8 to any
+block in from any to any port 80
