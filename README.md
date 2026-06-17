@@ -61,8 +61,7 @@ lpf explain from 10.0.0.5 to 1.1.1.1 proto tcp port 443
 lpf test policy-tests.yaml
   lpf table threats add 203.0.113.10
   lpf man generate
-lpf history
-lpf support-bundle
+  lpf history
 ```
 
 See [docs/COMMANDS.md](docs/COMMANDS.md) for the command contract and

@@ -221,43 +221,6 @@ Exit criteria:
 - `lpf table threats replace threats.txt`
 - table changes are atomic and reversible.
 
-## Phase 9: Importers
-
-Goal: lower adoption friction.
-
-Tasks:
-
-- Import `nft list ruleset` output.
-- Import `iptables-save` output.
-- Import UFW-managed rules where recognizable.
-- Import firewalld zones and services where recognizable.
-- Mark untranslatable constructs explicitly instead of silently dropping them.
-
-Exit criteria:
-
-- `lpf import nftables`
-- `lpf import iptables-save < rules.v4`
-- generated policy is readable and includes TODO annotations for unresolved
-  backend constructs.
-
-## Phase 10: Observability And Support Bundles
-
-Goal: make production debugging sane.
-
-Tasks:
-
-- Add structured history store.
-- Add NFLOG/ulogd integration plan.
-- Add counters and top-talkers view.
-- Add redacted support bundle.
-- Add policy ID and checksum to all generated backend objects.
-
-Exit criteria:
-
-- `lpf history`
-- `lpf support-bundle`
-- redaction tests prevent secrets and full private inventories from leaking.
-
 ## Phase 11: Packaging And Release
 
 Goal: make `lpf` easy to install and safe to operate.
