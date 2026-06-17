@@ -226,6 +226,10 @@ let read_observed_ruleset = function
       | Ok ruleset -> Ok ruleset
       | Error error -> Error (Lpf.Nft.string_of_run_error error))
 
+let source_name = function
+  | Observed_path _ -> "observed"
+  | Live -> "live"
+
 let handle_rules = function
   | "show" :: args -> (
       match parse_rules_args args with
@@ -283,6 +287,97 @@ let handle_rules = function
       prerr_endline "usage: lpf rules show [--backend nftables] <policy>";
       exit 64
 
+type diff_args = {
+  json : bool;
+  source : rules_diff_source option;
+  policies : string list;
+}
+
+let parse_diff_args args =
+  let set_source parsed source =
+    match parsed.source with
+    | None -> Ok { parsed with source = Some source }
+    | Some _ -> Error "duplicate observed ruleset source"
+  in
+  let rec loop parsed = function
+    | [] -> Ok { parsed with policies = List.rev parsed.policies }
+    | "--json" :: rest -> loop { parsed with json = true } rest
+    | "--backend" :: "nftables" :: rest -> loop parsed rest
+    | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
+    | "--observed" :: observed :: rest -> (
+        match set_source parsed (Observed_path observed) with
+        | Ok parsed -> loop parsed rest
+        | Error message -> Error message)
+    | "--observed" :: [] -> Error "missing value for --observed"
+    | "--live" :: rest -> (
+        match set_source parsed Live with
+        | Ok parsed -> loop parsed rest
+        | Error message -> Error message)
+    | option :: _ when String.length option > 0 && option.[0] = '-' ->
+        Error ("unknown option: " ^ option)
+    | policy :: rest -> loop { parsed with policies = policy :: parsed.policies } rest
+  in
+  loop { json = false; source = None; policies = [] } args
+
+let json_escape text =
+  let buffer = Buffer.create (String.length text + 16) in
+  String.iter
+    (function
+      | '"' -> Buffer.add_string buffer "\\\""
+      | '\\' -> Buffer.add_string buffer "\\\\"
+      | '\b' -> Buffer.add_string buffer "\\b"
+      | '\012' -> Buffer.add_string buffer "\\f"
+      | '\n' -> Buffer.add_string buffer "\\n"
+      | '\r' -> Buffer.add_string buffer "\\r"
+      | '\t' -> Buffer.add_string buffer "\\t"
+      | c when Char.code c < 0x20 -> Buffer.add_string buffer (Printf.sprintf "\\u%04x" (Char.code c))
+      | c -> Buffer.add_char buffer c)
+    text;
+  Buffer.contents buffer
+
+let json_string text = "\"" ^ json_escape text ^ "\""
+let json_bool value = if value then "true" else "false"
+
+let diff_json ~source (diff : Lpf.Nftables.diff_result) =
+  String.concat "\n"
+    [
+      "{";
+      "  \"version\": 1,";
+      "  \"backend\": \"nftables\",";
+      "  \"source\": " ^ json_string (source_name source) ^ ",";
+      "  \"changes_required\": " ^ json_bool diff.changes_required ^ ",";
+      "  \"diff\": " ^ json_string diff.text;
+      "}";
+      "";
+    ]
+
+let handle_diff args =
+  match parse_diff_args args with
+  | Error message ->
+      prerr_endline message;
+      prerr_endline
+        "usage: lpf diff [--backend nftables] [--observed <ruleset|->|--live] [--json] <policy>";
+      exit 64
+  | Ok { source; policies = [ path ]; json } ->
+      let source = Option.value source ~default:Live in
+      (match read_observed_ruleset source with
+      | Error message ->
+          prerr_endline message;
+          exit 1
+      | Ok observed -> (
+          let input = read_file path in
+          match Lpf.diff_nftables_policy ~file:path ~observed input with
+          | Ok (diff, diagnostics) ->
+              print_diagnostics diagnostics;
+              if json then print_string (diff_json ~source diff) else print_string diff.text
+          | Error diagnostics ->
+              print_diagnostics diagnostics;
+              exit 1))
+  | Ok _ ->
+      prerr_endline
+        "usage: lpf diff [--backend nftables] [--observed <ruleset|->|--live] [--json] <policy>";
+      exit 64
+
 let planned command =
   print_end (Lpf.command_help command);
   exit 2
@@ -302,6 +397,7 @@ let () =
   | _ :: "check" :: args -> handle_check args
   | _ :: "fmt" :: args -> handle_fmt args
   | _ :: "plan" :: args -> handle_plan args
+  | _ :: "diff" :: args -> handle_diff args
   | _ :: "rules" :: args -> handle_rules args
   | _ :: "man" :: args -> handle_man args
   | _ :: name :: _ -> (

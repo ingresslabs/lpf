@@ -233,6 +233,28 @@ let assert_nftables_diff_fixtures () =
   assert_nftables_diff "basic.lpf" (nft_observed_fixture "changed-rule.nft")
     "changed-rule.diff"
 
+let assert_nftables_structured_diff_fixtures () =
+  let path = fixture "basic.lpf" in
+  let policy = read_file path in
+  (match Lpf.diff_nftables_policy ~file:path ~observed:(read_file (nft_fixture "basic.nft")) policy with
+   | Ok (diff, diagnostics) ->
+       assert (diagnostics = []);
+       assert (not diff.Lpf.Nftables.changes_required);
+       assert (String.equal diff.text (read_file (nft_diff_fixture "unchanged.diff")))
+   | Error diagnostics ->
+       failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics)));
+  match
+    Lpf.diff_nftables_policy ~file:path
+      ~observed:(read_file (nft_observed_fixture "changed-rule.nft"))
+      policy
+  with
+  | Ok (diff, diagnostics) ->
+      assert (diagnostics = []);
+      assert diff.Lpf.Nftables.changes_required;
+      assert (String.equal diff.text (read_file (nft_diff_fixture "changed-rule.diff")))
+  | Error diagnostics ->
+      failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics))
+
 let assert_live_nftables_readback_wrapper () =
   let seen = ref None in
   let observed = read_file (nft_fixture "basic.nft") in
@@ -397,6 +419,7 @@ let () =
   assert_plan_json ();
   assert_nftables_golden_fixtures ();
   assert_nftables_diff_fixtures ();
+  assert_nftables_structured_diff_fixtures ();
   assert_live_nftables_readback_wrapper ();
   let basic = read_file (fixture "basic.lpf") in
   (match Lpf.format_policy_text ~file:(fixture "basic.lpf") basic with

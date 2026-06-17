@@ -2,15 +2,28 @@
 .SH NAME
 lpf\-diff \- show the delta between current host state and a plan
 .SH SYNOPSIS
-lpf diff <policy>
+lpf diff [\-\-backend nftables] [\-\-observed <ruleset>|\-\-live] [\-\-json] <policy>
 .SH DESCRIPTION
 Compare a generated plan with current lpf\-owned host state.
+The current implementation reads live nftables state by default, extracts lpf\-owned table blocks, and compares them with rendered intent.
+Supplying \-\-observed reads nftables ruleset text from a file or stdin for deterministic tests.
 .SH OPTIONS
 .TP
+\-\-backend nftables
+select nftables diffing; currently the only backend
+.TP
+\-\-observed <ruleset>
+read observed nftables ruleset text from a file or \- for stdin
+.TP
+\-\-live
+read observed nftables ruleset text with `nft list ruleset`; this is the default
+.TP
 \-\-json
-emit semantic diff as machine\-readable output
+emit machine\-readable nftables diff status and text
 .SH EXAMPLES
 lpf diff /etc/lpf.conf
+lpf diff \-\-observed current.nft fixtures/policies/basic.lpf
+lpf diff \-\-json /etc/lpf.conf
 .SH FILES
 /etc/lpf.conf
 /var/lib/lpf/history

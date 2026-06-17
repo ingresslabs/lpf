@@ -58,10 +58,18 @@ backend phases must add:
 - sysctl requirements
 - rollback preimage
 
-### `lpf diff <policy>`
+### `lpf diff [--backend nftables] [--observed <ruleset>|--live] [--json] <policy>`
 
-Compare the generated plan with current host state. Output must show semantic
-changes, not only raw backend text.
+Compare the generated plan with current host state. The current implementation
+reads live nftables state by default through typed OCaml argv construction,
+extracts only `lpf`-owned nftables tables, and compares them with rendered
+intent. `--observed <ruleset>` accepts supplied nftables ruleset text from a
+file or `-` for stdin, which keeps fixture tests deterministic. `--json` emits a
+machine-readable nftables diff status and text.
+
+Later backend phases must extend this into a semantic diff that also covers
+policy routing, route tables, tc, conntrack cleanup, sysctl requirements, and
+rollback availability.
 
 ### `lpf apply <policy> [--confirm <duration>]`
 

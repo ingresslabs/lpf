@@ -41,3 +41,5 @@
   for supplied lpf-owned nftables table readback text.
 - Added read-only live nftables readback through `lpf rules diff --live
   <policy>`, using an OCaml `nft list ruleset` execution wrapper.
+- Implemented the top-level read-only `lpf diff` command for live or supplied
+  lpf-owned nftables state, including machine-readable JSON status output.

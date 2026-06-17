@@ -124,10 +124,13 @@ Initial implementation status:
 - `lpf rules diff --live <policy>` reads live state with `nft list ruleset`
   through a typed OCaml argv wrapper and feeds it into the same read-only diff
   path.
+- `lpf diff <policy>` now provides the top-level read-only diff entry point for
+  live lpf-owned nftables state, with `--observed` fixture input and `--json`
+  machine-readable status.
 - Golden fixtures cover basic filtering, NAT/RDR, queues, route-to, logging,
   and anchors.
-- Top-level semantic `lpf diff`, atomic update operations, and apply remain
-  open.
+- Semantic route/tc/conntrack diffing, atomic update operations, and apply
+  remain open.
 
 ## Phase 4: Linux Routing, tc, And Conntrack Integration
 

@@ -168,10 +168,26 @@ let command_docs =
     {
       command = Diff;
       section = 8;
-      synopsis = "lpf diff <policy>";
-      description = [ "Compare a generated plan with current lpf-owned host state." ];
-      options = [ ("--json", "emit semantic diff as machine-readable output") ];
-      examples = [ "lpf diff /etc/lpf.conf" ];
+      synopsis = "lpf diff [--backend nftables] [--observed <ruleset>|--live] [--json] <policy>";
+      description =
+        [
+          "Compare a generated plan with current lpf-owned host state.";
+          "The current implementation reads live nftables state by default, extracts lpf-owned table blocks, and compares them with rendered intent.";
+          "Supplying --observed reads nftables ruleset text from a file or stdin for deterministic tests.";
+        ];
+      options =
+        [
+          ("--backend nftables", "select nftables diffing; currently the only backend");
+          ("--observed <ruleset>", "read observed nftables ruleset text from a file or - for stdin");
+          ("--live", "read observed nftables ruleset text with `nft list ruleset`; this is the default");
+          ("--json", "emit machine-readable nftables diff status and text");
+        ];
+      examples =
+        [
+          "lpf diff /etc/lpf.conf";
+          "lpf diff --observed current.nft fixtures/policies/basic.lpf";
+          "lpf diff --json /etc/lpf.conf";
+        ];
       files = shared_files;
       safety_notes = [ "This command is read-only." ];
       see_also = [ "lpf-plan(8)"; "lpf-rules(8)" ];
@@ -551,6 +567,11 @@ let diff_nftables_policy_text ?file ~observed text =
   | Ok (intended, diagnostics) -> Ok (Nftables.diff_text ~intended ~observed, diagnostics)
   | Error diagnostics -> Error diagnostics
 
+let diff_nftables_policy ?file ~observed text =
+  match render_nftables_policy_text ?file text with
+  | Ok (intended, diagnostics) -> Ok (Nftables.diff ~intended ~observed, diagnostics)
+  | Error diagnostics -> Error diagnostics
+
 let usage_lines () =
   let render (name, _, summary) = Printf.sprintf "  %-15s %s" name summary in
   List.map render all_commands
@@ -568,11 +589,11 @@ let help () =
     @ usage_lines ()
     @ [
         "";
-        "This scaffold exposes the command contract. Backend behavior is not implemented yet.";
+        "Read-only policy, plan, nftables render, diff, and man-page flows are implemented. Host mutation remains planned.";
       ])
 
 let command_status = function
-  | Check | Fmt | Plan | Rules | Man -> "implemented"
+  | Check | Fmt | Plan | Diff | Rules | Man -> "implemented"
   | Version | Help -> "implemented"
   | _ -> "planned; implementation must be OCaml"
 

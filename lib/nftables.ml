@@ -515,16 +515,27 @@ let render_diff_line = function
   | Remove line -> "-" ^ line
   | Add line -> "+" ^ line
 
-let diff_text ~intended ~observed =
+type diff_result = {
+  changes_required : bool;
+  text : string;
+}
+
+let diff ~intended ~observed =
   let intended = owned_ruleset_text intended in
   let observed = owned_ruleset_text observed in
-  if String.equal intended observed then "nftables diff: no changes\n"
+  if String.equal intended observed then { changes_required = false; text = "nftables diff: no changes\n" }
   else
-    "nftables diff: changes required\n\
-     --- observed lpf-owned nftables\n\
-     +++ intended lpf-owned nftables\n"
-    ^ String.concat "\n" (List.map render_diff_line (diff_lines ~observed ~intended))
-    ^ "\n"
+    {
+      changes_required = true;
+      text =
+        "nftables diff: changes required\n\
+         --- observed lpf-owned nftables\n\
+         +++ intended lpf-owned nftables\n"
+        ^ String.concat "\n" (List.map render_diff_line (diff_lines ~observed ~intended))
+        ^ "\n";
+    }
+
+let diff_text ~intended ~observed = (diff ~intended ~observed).text
 
 let render_ir ir = ir |> of_ir |> to_string
 let render_plan plan = plan |> of_plan |> to_string

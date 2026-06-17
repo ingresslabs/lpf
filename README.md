@@ -46,6 +46,8 @@ inspect installed host state or apply changes. `lpf rules diff --observed
 <ruleset> <policy>` compares rendered intent with supplied observed ruleset
 text and reports only `lpf`-owned nftables table differences. `lpf rules diff
 --live <policy>` uses the same diff path with live `nft list ruleset` output.
+The top-level `lpf diff <policy>` command is also implemented as a read-only
+live nftables diff, with `--observed` fixture input and `--json` status output.
 
 ## Planned CLI
 

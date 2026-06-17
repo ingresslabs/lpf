@@ -74,3 +74,8 @@ val diff_nftables_policy_text :
   observed:string ->
   string ->
   (string * Policy.diagnostic list, Policy.diagnostic list) result
+val diff_nftables_policy :
+  ?file:string ->
+  observed:string ->
+  string ->
+  (Nftables.diff_result * Policy.diagnostic list, Policy.diagnostic list) result
