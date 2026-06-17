@@ -123,7 +123,19 @@ let interface_expression chain_name (interface : Ir.interface_ref) =
   let key = if String.equal chain_name "output" then "oifname" else "iifname" in
   Meta (key, nft_string interface.device)
 
+let address_family_heuristic = function
+  | Ir.Any -> None
+  | Ir.Literal value -> if String.contains value ':' then Some "ip6" else Some "ip"
+  | Ir.Table _ -> None
+
+let rule_family source destination =
+  match (address_family_heuristic source, address_family_heuristic destination) with
+  | Some "ip6", _ | _, Some "ip6" -> "ip6"
+  | Some "ip", _ | _, Some "ip" -> "ip"
+  | _ -> "ip"
+
 let base_expressions ?chain_name rule_protocol source destination port interface =
+  let family = rule_family source destination in
   let expressions = [] in
   let expressions =
     match interface with
@@ -139,12 +151,12 @@ let base_expressions ?chain_name rule_protocol source destination port interface
   let expressions =
     match address_to_nft source with
     | None -> expressions
-    | Some address -> Payload ("ip", "saddr", address) :: expressions
+    | Some address -> Payload (family, "saddr", address) :: expressions
   in
   let expressions =
     match address_to_nft destination with
     | None -> expressions
-    | Some address -> Payload ("ip", "daddr", address) :: expressions
+    | Some address -> Payload (family, "daddr", address) :: expressions
   in
   let expressions =
     match port_to_nft port with

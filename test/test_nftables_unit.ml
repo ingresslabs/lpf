@@ -50,4 +50,16 @@ table inet lpf_filter {
   assert diff.Lpf.Nftables.changes_required;
 
   let diff_text = Lpf.Nftables.diff_text ~intended ~observed:observed_changed in
-  assert (String.length diff_text > 0)
+  assert (String.length diff_text > 0);
+
+  let ipv6_policy =
+    "set default deny\n\n\
+     pass out proto tcp from 2001:db8::1 to 2001:db8::2 port 443 keep state\n"
+  in
+  match Lpf.render_nftables_policy_text ipv6_policy with
+  | Ok (rendered, _) ->
+      assert (contains_substring rendered "ip6 saddr 2001:db8::1");
+      assert (contains_substring rendered "ip6 daddr 2001:db8::2")
+  | Error diagnostics ->
+      failwith
+        (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics))
