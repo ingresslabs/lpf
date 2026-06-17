@@ -164,7 +164,12 @@ pipeline {
                   stage("Publish ${kernelId}") {
                     junit "evidence/${safeKernel}/junit.xml"
                     catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                      allure includeProperties: false, reportBuildPolicy: 'ALWAYS', results: [[path: "allure-results/${safeKernel}"]]
+                      step([
+                        $class: 'AllureReportPublisher',
+                        includeProperties: false,
+                        reportBuildPolicy: 'ALWAYS',
+                        results: [[path: "allure-results/${safeKernel}"]]
+                      ])
                     }
                     archiveArtifacts artifacts: "kernel-${safeKernel}.txt,evidence/${safeKernel}/**,allure-results/${safeKernel}/**", fingerprint: true
                     sh "test \"\$(cat evidence/${safeKernel}/e2e.exit)\" = 0"
