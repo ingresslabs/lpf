@@ -358,10 +358,11 @@ let run_routing ctx scenario =
 
 let run_tc ctx scenario =
   let rate = Printf.sprintf "%dmbit" ((scenario.index mod 40) + 1) in
+  ignore_result (netns_exec ctx.ns_a "tc" [ "qdisc"; "del"; "dev"; ctx.veth_a; "root" ]);
   match
     expect_success
       (netns_exec ctx.ns_a "tc"
-         [ "qdisc"; "replace"; "dev"; ctx.veth_a; "root"; "handle"; "1:"; "htb"; "default"; "10" ])
+         [ "qdisc"; "add"; "dev"; ctx.veth_a; "root"; "handle"; "1:"; "htb"; "default"; "10" ])
   with
   | Error message -> Error message
   | Ok _ -> (
@@ -370,7 +371,7 @@ let run_tc ctx scenario =
           (netns_exec ctx.ns_a "tc"
              [
                "class";
-               "replace";
+               "add";
                "dev";
                ctx.veth_a;
                "parent";
