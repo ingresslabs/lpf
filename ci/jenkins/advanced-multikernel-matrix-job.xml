@@ -46,6 +46,12 @@
           <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>CONTROLLER_SOURCE_ARCHIVE_BASE_URL</name>
+          <description>Optional controller-only archive base URL for the inventory stage. Empty falls back to SOURCE_ARCHIVE_BASE_URL and then controller-local defaults.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
     <jenkins.model.BuildDiscarderProperty>
@@ -124,9 +130,10 @@ pipeline {
               test -n "${EXPECTED_COMMIT:-}"
               rm -rf matrix source lpf.tar.gz lpf.commit
               mkdir -p matrix
-              if [ -n "${SOURCE_ARCHIVE_BASE_URL:-}" ]; then
-                curl -fsSL "${SOURCE_ARCHIVE_BASE_URL}/lpf-${EXPECTED_COMMIT}.tar.gz" -o lpf.tar.gz
-                curl -fsSL "${SOURCE_ARCHIVE_BASE_URL}/lpf-${EXPECTED_COMMIT}.commit" -o lpf.commit
+              controller_base="${CONTROLLER_SOURCE_ARCHIVE_BASE_URL:-${SOURCE_ARCHIVE_BASE_URL:-}}"
+              if [ -n "$controller_base" ]; then
+                curl -fsSL "${controller_base}/lpf-${EXPECTED_COMMIT}.tar.gz" -o lpf.tar.gz
+                curl -fsSL "${controller_base}/lpf-${EXPECTED_COMMIT}.commit" -o lpf.commit
               elif [ -f "/srv/lpf-ci/lpf-${EXPECTED_COMMIT}.tar.gz" ]; then
                 cp "/srv/lpf-ci/lpf-${EXPECTED_COMMIT}.tar.gz" lpf.tar.gz
                 if [ -f "/srv/lpf-ci/lpf-${EXPECTED_COMMIT}.commit" ]; then
