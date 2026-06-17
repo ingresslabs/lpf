@@ -20,3 +20,7 @@
 - Refactored policy parsing around tokenized statements with column-level
   spans for parser and validation diagnostics.
 - Added formatter round-trip coverage for non-normalized policy input.
+- Added policy-language parsing, formatting, validation, and fixtures for queue
+  declarations and rule-level queue assignment.
+- Added rule-level `route-to` parsing, formatting, validation, and malformed
+  syntax diagnostics.

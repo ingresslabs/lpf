@@ -1,0 +1,5 @@
+set default deny
+
+interface wan = "eth0"
+
+pass out on wan from any to any route-to 1.1.1.1 (wan keep state

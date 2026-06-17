@@ -61,6 +61,12 @@ type rule = {
   port : port;
   port_span : span option;
   keep_state : bool;
+  queue : string option;
+  queue_span : span option;
+  route_to : (reference * reference option) option;
+  route_to_span : span option;
+  route_to_gateway_span : span option;
+  route_to_interface_span : span option;
   span : span;
 }
 
@@ -96,6 +102,18 @@ type rdr = {
   span : span;
 }
 
+type queue = {
+  name : string;
+  name_span : span;
+  interface : reference;
+  interface_span : span;
+  bandwidth : string;
+  bandwidth_span : span option;
+  parent : string option;
+  parent_span : span option;
+  span : span;
+}
+
 type policy = {
   default_action : default_action option;
   interfaces : interface_decl list;
@@ -103,6 +121,7 @@ type policy = {
   tables : table list;
   nats : nat list;
   rdrs : rdr list;
+  queues : queue list;
   rules : rule list;
 }
 
@@ -119,6 +138,7 @@ let empty_policy =
     tables = [];
     nats = [];
     rdrs = [];
+    queues = [];
     rules = [];
   }
 
@@ -195,7 +215,7 @@ type token = {
 let token ?file line start finish text =
   { text; span = span ?file line (start + 1) (finish + 1) }
 
-let is_punctuation = function '{' | '}' | ',' | '=' -> true | _ -> false
+let is_punctuation = function '{' | '}' | ',' | '=' | '(' | ')' -> true | _ -> false
 
 let is_token_boundary text index =
   index >= String.length text || is_space text.[index] || text.[index] = '#'
@@ -416,10 +436,16 @@ let parse_rule original tokens policy diagnostics =
               port = Port_any;
               port_span = None;
               keep_state = false;
+              queue = None;
+              queue_span = None;
+              route_to = None;
+              route_to_span = None;
+              route_to_gateway_span = None;
+              route_to_interface_span = None;
               span = rule_span;
             }
           in
-          let rec loop state source_seen destination_seen port_seen = function
+          let rec loop (state : rule) source_seen destination_seen port_seen = function
             | [] -> Ok state
             | token :: rest when text_is "in" token -> (
                 match state.direction with
@@ -435,7 +461,7 @@ let parse_rule original tokens policy diagnostics =
                       port_seen rest)
             | token :: [] when text_is "on" token -> Error (missing_after "on" token)
             | token :: value :: rest when text_is "on" token -> (
-                match state.interface with
+                match state.interface_span with
                 | Some _ -> Error (token.span, "duplicate interface matcher")
                 | None ->
                     loop
@@ -488,6 +514,50 @@ let parse_rule original tokens policy diagnostics =
                       loop { state with port; port_span = Some port_span } source_seen
                         destination_seen true rest
                   | Error error -> Error error)
+            | token :: [] when text_is "queue" token -> Error (missing_after "queue" token)
+            | token :: value :: rest when text_is "queue" token -> (
+                match state.queue_span with
+                | Some _ -> Error (token.span, "duplicate queue assignment")
+                | None ->
+                    loop { state with queue = Some value.text; queue_span = Some value.span }
+                      source_seen destination_seen port_seen rest)
+            | token :: [] when text_is "route-to" token -> Error (missing_after "route-to" token)
+            | token :: value :: rest when text_is "route-to" token -> (
+                match state.route_to_span with
+                | Some _ -> Error (token.span, "duplicate route-to assignment")
+                | None ->
+                    let gateway = parse_reference_token value in
+                    let parse_interface rest =
+                      match rest with
+                      | [] -> Ok (None, None, [])
+                      | close :: _ when text_is ")" close ->
+                          Error (close.span, "unexpected `)` after route-to gateway")
+                      | open_token :: rest when text_is "(" open_token -> (
+                          match rest with
+                          | [] -> Error (open_token.span, "missing interface after `(`")
+                          | iface :: [] ->
+                              Error
+                                (iface.span, "expected closing `)` after route-to interface")
+                          | iface :: closing :: rest when text_is ")" closing ->
+                              Ok (Some (parse_reference_token iface), Some iface.span, rest)
+                          | _iface :: unexpected :: _ ->
+                              Error
+                                ( unexpected.span,
+                                  "expected closing `)` after route-to interface" ))
+                      | _ -> Ok (None, None, rest)
+                    in
+                    match parse_interface rest with
+                    | Error error -> Error error
+                    | Ok (interface, interface_span, rest) ->
+                        loop
+                          {
+                            state with
+                            route_to = Some (gateway, interface);
+                            route_to_span = Some token.span;
+                            route_to_gateway_span = Some value.span;
+                            route_to_interface_span = interface_span;
+                          }
+                          source_seen destination_seen port_seen rest)
             | token :: [] when text_is "keep" token ->
                 Error (token.span, "missing `state` after `keep`")
             | token :: value :: rest when text_is "keep" token ->
@@ -682,6 +752,55 @@ let parse_rdr original tokens policy diagnostics =
           (policy, add_diagnostic diagnostics (syntax_error span ("invalid rdr: " ^ message))))
   | _ -> (policy, diagnostics)
 
+let parse_queue original tokens policy diagnostics =
+  let statement_span = span_of_tokens (line_span 1 original) tokens in
+  match tokens with
+  | keyword :: name :: on_keyword :: interface :: rest
+    when text_is "queue" keyword && text_is "on" on_keyword -> (
+      let initial =
+        {
+          name = name.text;
+          name_span = name.span;
+          interface = parse_reference_token interface;
+          interface_span = interface.span;
+          bandwidth = "";
+          bandwidth_span = None;
+          parent = None;
+          parent_span = None;
+          span = statement_span;
+        }
+      in
+      if not (valid_name name.text) then
+        ( policy,
+          add_diagnostic diagnostics
+            (syntax_error name.span ("invalid queue name `" ^ name.text ^ "`")) )
+      else
+      let rec loop state = function
+        | [] ->
+            if state.bandwidth = "" then Error (statement_span, "missing bandwidth") else Ok state
+        | token :: [] when text_is "bandwidth" token -> Error (missing_after "bandwidth" token)
+        | token :: value :: rest when text_is "bandwidth" token ->
+            if Option.is_some state.bandwidth_span then
+              Error (token.span, "duplicate bandwidth")
+            else loop { state with bandwidth = value.text; bandwidth_span = Some value.span } rest
+        | token :: [] when text_is "parent" token -> Error (missing_after "parent" token)
+        | token :: value :: rest when text_is "parent" token ->
+            if Option.is_some state.parent_span then Error (token.span, "duplicate parent")
+            else if not (valid_name value.text) then
+              Error (value.span, "invalid parent queue name `" ^ value.text ^ "`")
+            else loop { state with parent = Some value.text; parent_span = Some value.span } rest
+        | token :: _ -> Error (token.span, "unexpected token `" ^ token.text ^ "`")
+      in
+      match loop initial rest with
+      | Ok queue -> ({ policy with queues = queue :: policy.queues }, diagnostics)
+      | Error (span, message) ->
+          (policy, add_diagnostic diagnostics (syntax_error span ("invalid queue: " ^ message))))
+  | _ ->
+      ( policy,
+        add_diagnostic diagnostics
+          (syntax_error statement_span
+             "expected `queue <name> on <interface> bandwidth <value> [parent <name>]`") )
+
 let parse_line ?file line policy diagnostics original =
   let tokens, lexical_diagnostics = lex_line ?file line original in
   let diagnostics = add_diagnostics diagnostics lexical_diagnostics in
@@ -692,6 +811,7 @@ let parse_line ?file line policy diagnostics original =
   | first :: _ when text_is "table" first -> parse_table original tokens policy diagnostics
   | first :: _ when text_is "nat" first -> parse_nat original tokens policy diagnostics
   | first :: _ when text_is "rdr" first -> parse_rdr original tokens policy diagnostics
+  | first :: _ when text_is "queue" first -> parse_queue original tokens policy diagnostics
   | first :: _ when text_is "pass" first || text_is "block" first ->
       parse_rule original tokens policy diagnostics
   | _ when has_token "=" tokens -> parse_macro original tokens policy diagnostics
@@ -699,7 +819,7 @@ let parse_line ?file line policy diagnostics original =
       ( policy,
         add_diagnostic diagnostics
           (syntax_error first.span
-             "unrecognized statement; expected set, interface, table, macro, nat, rdr, pass, or block") )
+             "unrecognized statement; expected set, interface, table, macro, nat, rdr, queue, pass, or block") )
 
 let parse ?file text =
   let lines = String.split_on_char '\n' text in
@@ -718,6 +838,7 @@ let parse ?file text =
       tables = List.rev policy.tables;
       nats = List.rev policy.nats;
       rdrs = List.rev policy.rdrs;
+      queues = List.rev policy.queues;
       rules = List.rev policy.rules;
     }
   in
@@ -742,11 +863,16 @@ let names_of_macros (policy : policy) =
 let names_of_interfaces (policy : policy) =
   List.map (fun (interface : interface_decl) -> (interface.name, interface.span)) policy.interfaces
 
+let names_of_queues (policy : policy) =
+  List.map (fun (queue : queue) -> (queue.name, queue.name_span)) policy.queues
+
 let table_names (policy : policy) = List.map (fun (table : table) -> table.name) policy.tables
 let macro_names (policy : policy) = List.map (fun (macro : macro) -> macro.name) policy.macros
 
 let interface_names (policy : policy) =
   List.map (fun (interface : interface_decl) -> interface.name) policy.interfaces
+
+let queue_names (policy : policy) = List.map (fun (queue : queue) -> queue.name) policy.queues
 
 let validate_reference ~tables ~macros span context = function
   | Any | Literal _ -> []
@@ -757,23 +883,35 @@ let validate_reference ~tables ~macros span context = function
       if List.mem name macros then []
       else [ diagnostic Diag_error span (context ^ " references unknown macro `$" ^ name ^ "`") ]
 
-let validate_interface_reference ~interfaces ~macros span = function
+let validate_interface_reference ?(context = "rule") ~interfaces ~macros span = function
   | None -> []
-  | Some Any -> [ diagnostic Diag_error span "`on any` is not a valid interface matcher" ]
+  | Some Any ->
+      [ diagnostic Diag_error span (context ^ " cannot use `any` as an interface matcher") ]
   | Some (Literal name) ->
       if List.mem name interfaces then []
-      else [ diagnostic Diag_error span ("rule references unknown interface `" ^ name ^ "`") ]
+      else
+        [ diagnostic Diag_error span (context ^ " references unknown interface `" ^ name ^ "`") ]
   | Some (Macro_ref name) ->
       if List.mem name macros then []
-      else [ diagnostic Diag_error span ("rule references unknown interface macro `$" ^ name ^ "`") ]
+      else
+        [
+          diagnostic Diag_error span
+            (context ^ " references unknown interface macro `$" ^ name ^ "`");
+        ]
   | Some (Table_ref name) ->
-      [ diagnostic Diag_error span ("interface matcher cannot use table `<" ^ name ^ ">`") ]
+      [ diagnostic Diag_error span (context ^ " interface matcher cannot use table `<" ^ name ^ ">`") ]
 
 let validate_port ~macros span = function
   | Port_any | Port_number _ -> []
   | Port_macro name ->
       if List.mem name macros then []
       else [ diagnostic Diag_error span ("port references unknown macro `$" ^ name ^ "`") ]
+
+let validate_queue_reference ~queues span = function
+  | None -> []
+  | Some name ->
+      if List.mem name queues then []
+      else [ diagnostic Diag_error span ("rule references unknown queue `" ^ name ^ "`") ]
 
 let validate policy =
   let diagnostics = [] in
@@ -806,9 +944,17 @@ let validate policy =
            diagnostic Diag_error span ("duplicate interface `" ^ name ^ "`") :: diagnostics)
          diagnostics
   in
+  let diagnostics =
+    has_duplicate (names_of_queues policy)
+    |> List.fold_left
+         (fun diagnostics (name, span) ->
+           diagnostic Diag_error span ("duplicate queue `" ^ name ^ "`") :: diagnostics)
+         diagnostics
+  in
   let tables = table_names policy in
   let macros = macro_names policy in
   let interfaces = interface_names policy in
+  let queues = queue_names policy in
   let rule_diagnostics =
     (policy.rules
     |> List.concat_map (fun (rule : rule) ->
@@ -818,15 +964,25 @@ let validate policy =
            @ validate_interface_reference ~interfaces ~macros
                (Option.value rule.interface_span ~default:rule.span)
                rule.interface
-           @ validate_port ~macros
-               (Option.value rule.port_span ~default:rule.span)
-               rule.port))
+           @ validate_port ~macros (Option.value rule.port_span ~default:rule.span) rule.port
+           @ validate_queue_reference ~queues
+               (Option.value rule.queue_span ~default:rule.span)
+               rule.queue
+           @ (match rule.route_to with
+             | None -> []
+             | Some (gateway, interface) ->
+                 validate_reference ~tables ~macros
+                   (Option.value rule.route_to_gateway_span ~default:rule.span)
+                   "route-to gateway" gateway
+                 @ validate_interface_reference ~context:"route-to" ~interfaces ~macros
+                     (Option.value rule.route_to_interface_span ~default:rule.span)
+                     interface)))
     @ (policy.nats
       |> List.concat_map (fun (nat : nat) ->
              validate_reference ~tables ~macros nat.source_span "nat source" nat.source
              @ validate_reference ~tables ~macros nat.destination_span "nat destination"
                  nat.destination
-             @ validate_interface_reference ~interfaces ~macros nat.interface_span
+             @ validate_interface_reference ~context:"nat" ~interfaces ~macros nat.interface_span
                  (Some nat.interface)
              @ validate_reference ~tables ~macros nat.translation_span "nat translation"
                  nat.translation))
@@ -835,16 +991,37 @@ let validate policy =
              validate_reference ~tables ~macros rdr.source_span "rdr source" rdr.source
              @ validate_reference ~tables ~macros rdr.destination_span "rdr destination"
                  rdr.destination
-             @ validate_interface_reference ~interfaces ~macros rdr.interface_span
+             @ validate_interface_reference ~context:"rdr" ~interfaces ~macros rdr.interface_span
                  (Some rdr.interface)
              @ validate_reference ~tables ~macros rdr.translation_span "rdr translation"
                  rdr.translation
-             @ validate_port ~macros
-                 (Option.value rdr.port_span ~default:rdr.span)
-                 rdr.port
+             @ validate_port ~macros (Option.value rdr.port_span ~default:rdr.span) rdr.port
              @ validate_port ~macros
                  (Option.value rdr.translation_port_span ~default:rdr.span)
                  rdr.translation_port))
+    @ (policy.queues
+      |> List.concat_map (fun (queue : queue) ->
+             let parent_diagnostics =
+               match queue.parent with
+               | None -> []
+               | Some parent when String.equal parent queue.name ->
+                   [
+                     diagnostic Diag_error
+                       (Option.value queue.parent_span ~default:queue.span)
+                       "queue parent cannot reference itself";
+                   ]
+               | Some parent ->
+                   if List.mem parent queues then []
+                   else
+                     [
+                       diagnostic Diag_error
+                         (Option.value queue.parent_span ~default:queue.span)
+                         ("queue references unknown parent `" ^ parent ^ "`");
+                     ]
+             in
+             validate_interface_reference ~context:"queue" ~interfaces ~macros
+               queue.interface_span (Some queue.interface)
+             @ parent_diagnostics))
   in
   List.rev (rule_diagnostics @ diagnostics)
 
@@ -933,6 +1110,17 @@ let format_policy (policy : policy) =
            in
            String.concat " " parts)
   in
+  let queue_lines =
+    policy.queues
+    |> List.map (fun (queue : queue) ->
+           let parts = [ "queue"; queue.name; "on"; string_of_reference queue.interface; "bandwidth"; queue.bandwidth ] in
+           let parts =
+             match queue.parent with
+             | None -> parts
+             | Some parent -> parts @ [ "parent"; parent ]
+           in
+           String.concat " " parts)
+  in
   let format_rule (rule : rule) =
     let parts = [ string_of_action rule.action ] in
     let parts =
@@ -950,11 +1138,27 @@ let format_policy (policy : policy) =
     in
     let parts = parts @ [ "from"; string_of_reference rule.source; "to"; string_of_reference rule.destination ] in
     let parts = match rule.port with Port_any -> parts | port -> parts @ [ "port"; string_of_port port ] in
+    let parts =
+      match rule.queue with
+      | None -> parts
+      | Some name -> parts @ [ "queue"; name ]
+    in
+    let parts =
+      match rule.route_to with
+      | None -> parts
+      | Some (gateway, interface) ->
+          let target =
+            match interface with
+            | None -> string_of_reference gateway
+            | Some iface -> string_of_reference gateway ^ " (" ^ string_of_reference iface ^ ")"
+          in
+          parts @ [ "route-to"; target ]
+    in
     let parts = if rule.keep_state then parts @ [ "keep"; "state" ] else parts in
     String.concat " " parts
   in
   let rule_lines = List.map format_rule policy.rules in
-  [ default_lines; macro_lines; interface_lines; table_lines; nat_lines @ rdr_lines; rule_lines ]
+  [ default_lines; macro_lines; interface_lines; table_lines; queue_lines; nat_lines @ rdr_lines; rule_lines ]
   |> List.filter (fun group -> group <> [])
   |> List.map (String.concat "\n")
   |> String.concat "\n\n"
@@ -979,8 +1183,10 @@ let format_check_result result =
   | None -> String.concat "\n" diagnostics
   | Some policy ->
       let summary =
-        Printf.sprintf "ok: %d interface(s), %d macro(s), %d table(s), %d rule(s)"
+        Printf.sprintf
+          "ok: %d interface(s), %d macro(s), %d table(s), %d queue(s), %d nat(s), %d rdr(s), %d rule(s)"
           (List.length policy.interfaces) (List.length policy.macros)
-          (List.length policy.tables) (List.length policy.rules)
+          (List.length policy.tables) (List.length policy.queues)
+          (List.length policy.nats) (List.length policy.rdrs) (List.length policy.rules)
       in
       String.concat "\n" (summary :: diagnostics)

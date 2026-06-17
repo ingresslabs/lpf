@@ -428,13 +428,16 @@ let config_page () =
   add_section buffer "DESCRIPTION"
     [
       "The lpf policy format is a PF-inspired language for Linux networking.";
-      "It is planned to model interfaces, tables, rules, NAT, redirects, queues, route-to behavior, logging, and anchors.";
+      "The current parser covers default actions, interfaces, macros, tables, queues, pass/block rules, NAT, redirects, and rule-level route-to annotations.";
+      "Later phases will add logging, anchors, typed plans, and backend compilation.";
     ];
   add_section buffer "EXAMPLES"
     [
       "set default deny";
+      "interface wan = \"eth0\"";
       "table <trusted> { 10.0.0.0/8, 192.168.0.0/16 }";
-      "pass out keep state";
+      "queue std on wan bandwidth 10M";
+      "pass out on wan proto tcp from any to any port 443 queue std route-to 1.1.1.1 (wan) keep state";
     ];
   add_section buffer "SEE ALSO" [ "lpf-check(8), lpf-plan(8), lpf-apply(8)" ];
   { filename = "lpf.conf.5"; section = 5; title = "LPF.CONF"; content = Buffer.contents buffer }

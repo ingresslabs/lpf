@@ -61,6 +61,12 @@ type rule = {
   port : port;
   port_span : span option;
   keep_state : bool;
+  queue : string option;
+  queue_span : span option;
+  route_to : (reference * reference option) option;
+  route_to_span : span option;
+  route_to_gateway_span : span option;
+  route_to_interface_span : span option;
   span : span;
 }
 
@@ -96,6 +102,18 @@ type rdr = {
   span : span;
 }
 
+type queue = {
+  name : string;
+  name_span : span;
+  interface : reference;
+  interface_span : span;
+  bandwidth : string;
+  bandwidth_span : span option;
+  parent : string option;
+  parent_span : span option;
+  span : span;
+}
+
 type policy = {
   default_action : default_action option;
   interfaces : interface_decl list;
@@ -103,6 +121,7 @@ type policy = {
   tables : table list;
   nats : nat list;
   rdrs : rdr list;
+  queues : queue list;
   rules : rule list;
 }
 

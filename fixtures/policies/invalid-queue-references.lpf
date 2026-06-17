@@ -1,0 +1,6 @@
+set default deny
+
+interface wan = "eth0"
+
+queue child on wan bandwidth 1M parent missing
+pass out on wan from any to any queue missing-queue

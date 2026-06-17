@@ -1,0 +1,6 @@
+set default deny
+
+interface wan = "eth0"
+
+queue std on wan bandwidth 10M bandwidth 20M
+queue child on wan bandwidth 1M parent std parent other
