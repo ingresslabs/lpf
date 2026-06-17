@@ -27,6 +27,8 @@ when available. The lab must be treated as private infrastructure:
 
 Each kernel must run the same OCaml-driven validation suite:
 
+- `lpf e2e run --scenario-count 480` inside a Firecracker VM, producing JUnit,
+  Allure result JSON, and a redacted evidence manifest
 - `lpf check` parser and type-check fixtures
 - `lpf plan` backend generation fixtures
 - `lpf diff` semantic diff fixtures
@@ -53,14 +55,20 @@ Each run must produce a redacted JSON evidence document containing:
   "nft_version": "x.y.z",
   "iproute2_version": "x.y.z",
   "conntrack_tools_version": "x.y.z",
+  "e2e_scenarios": 480,
+  "e2e_failed": 0,
   "fixture": "fixtures/policies/basic.lpf",
   "plan_checksum": "sha256",
   "result": "pass"
 }
 ```
 
+As of 2026-06-17, Lab 141 has one usable Firecracker kernel image registered
+for this repository. The Jenkins job is matrix-shaped and records `kernel_id`,
+but a full five-kernel claim requires registering bootable Firecracker kernel
+artifacts for all five pinned release lines.
+
 ## Refresh Rule
 
 Before release, refresh the matrix from kernel.org and update this file in the
 same commit as the release candidate.
-

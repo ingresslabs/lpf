@@ -52,3 +52,5 @@
   rollback watchdog.
 - Implemented `lpf rollback --now` for immediate restoration of the captured
   preimage.
+- Added `lpf e2e run` with a 480-scenario Firecracker guest networking catalog
+  plus JUnit, Allure, and sanitized evidence outputs.

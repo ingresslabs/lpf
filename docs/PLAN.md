@@ -314,6 +314,8 @@ Goal: prove backend behavior on current kernels.
 
 Tasks:
 
+- Implement `lpf e2e run` for real Firecracker guest networking scenarios with
+  JUnit, Allure, and redacted evidence outputs.
 - Implement `lpf kernel-matrix plan`.
 - Implement `lpf kernel-matrix run` for lab orchestration.
 - Refresh kernel.org matrix before release.
@@ -323,6 +325,8 @@ Tasks:
 Exit criteria:
 
 - evidence exists for the five latest kernel.org release lines
+- the 400-600 scenario E2E catalog passes on every registered Firecracker
+  kernel image
 - each command's backend behavior is exercised per kernel
 - evidence references Lab 141 when used
 

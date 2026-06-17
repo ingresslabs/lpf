@@ -188,6 +188,32 @@ Initial importers:
 Create a redacted diagnostic bundle. It must never include raw secrets,
 private keys, full packet payloads, or unredacted host inventory.
 
+### `lpf e2e <run|list>`
+
+Run real end-to-end Linux networking validation inside a disposable lab
+environment, normally a Firecracker VM provisioned by Lab 141.
+
+The default catalog contains 480 deterministic scenarios split across:
+
+- nftables accept decisions with real ICMP traffic over veth namespaces
+- nftables drop decisions with observed traffic failure
+- nftables logging-rule installation and readback
+- policy-routing table and rule installation
+- tc HTB qdisc/class traffic-shaping installation
+- conntrack statistics readback after traffic
+
+Supported report outputs:
+
+- `--junit <path>` for Jenkins trend reporting
+- `--allure-dir <dir>` for Allure result JSON files
+- `--evidence-dir <dir>` for a sanitized run manifest
+- `--kernel-id <id>` to attach the matrix kernel label
+- `--dry-run` to render the catalog and reports without changing networking
+  state
+
+This command requires root/CAP_NET_ADMIN and must not be run in a production
+network namespace.
+
 ### `lpf ui <operation>`
 
 Operate the Bonsai/Bonsai_web UI.
