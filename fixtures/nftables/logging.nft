@@ -1,0 +1,18 @@
+flush ruleset
+
+table inet lpf_filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    meta iifname "eth0" meta l4proto icmp log prefix "lpf all " drop comment "lpf rule 8:1"
+    log prefix "lpf user " accept comment "lpf rule 9:1"
+  }
+
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+  }
+
+  chain output {
+    type filter hook output priority 0; policy drop;
+    meta oifname "eth0" meta l4proto tcp tcp dport 443 ct state { new, established, related } log accept comment "lpf rule 7:1 queue=std"
+  }
+}

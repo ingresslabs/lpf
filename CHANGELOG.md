@@ -35,3 +35,5 @@
   shadowed-rule warnings during `lpf check`.
 - Implemented `lpf plan [--json]` for versioned backend-neutral semantic plan
   JSON with stable checksums.
+- Added a read-only nftables renderer exposed through `lpf rules show <policy>`
+  with golden fixture coverage.

@@ -163,6 +163,49 @@ let handle_plan args =
       prerr_endline "usage: lpf plan [--json] <policy>";
       exit 64
 
+let parse_rules_args args =
+  let rec loop backend paths = function
+    | [] -> Ok (backend, List.rev paths)
+    | "--backend" :: "nftables" :: rest -> loop "nftables" paths rest
+    | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
+    | option :: _ when String.length option > 0 && option.[0] = '-' ->
+        Error ("unknown option: " ^ option)
+    | path :: rest -> loop backend (path :: paths) rest
+  in
+  loop "nftables" [] args
+
+let handle_rules = function
+  | "show" :: args -> (
+      match parse_rules_args args with
+      | Error message ->
+          prerr_endline message;
+          prerr_endline "usage: lpf rules show [--backend nftables] <policy>";
+          exit 64
+      | Ok (_, [ path ]) -> (
+          let input = read_file path in
+          match Lpf.render_nftables_policy_text ~file:path input with
+          | Ok (rendered, diagnostics) ->
+              print_diagnostics diagnostics;
+              print_string rendered
+          | Error diagnostics ->
+              print_diagnostics diagnostics;
+              exit 1)
+      | Ok _ ->
+          prerr_endline "usage: lpf rules show [--backend nftables] <policy>";
+          exit 64)
+  | [ path ] -> (
+      let input = read_file path in
+      match Lpf.render_nftables_policy_text ~file:path input with
+      | Ok (rendered, diagnostics) ->
+          print_diagnostics diagnostics;
+          print_string rendered
+      | Error diagnostics ->
+          print_diagnostics diagnostics;
+          exit 1)
+  | _ ->
+      prerr_endline "usage: lpf rules show [--backend nftables] <policy>";
+      exit 64
+
 let planned command =
   print_end (Lpf.command_help command);
   exit 2
@@ -182,6 +225,7 @@ let () =
   | _ :: "check" :: args -> handle_check args
   | _ :: "fmt" :: args -> handle_fmt args
   | _ :: "plan" :: args -> handle_plan args
+  | _ :: "rules" :: args -> handle_rules args
   | _ :: "man" :: args -> handle_man args
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with

@@ -114,6 +114,15 @@ Exit criteria:
 - Generated rules avoid unnecessary IPv4/IPv6 duplication.
 - Snapshot tests cover set, map, filter, NAT, and redirect generation.
 
+Initial implementation status:
+
+- `lpf rules show <policy>` renders deterministic nftables text from the
+  semantic plan without applying host changes.
+- Golden fixtures cover basic filtering, NAT/RDR, queues, route-to, logging,
+  and anchors.
+- Installed-state readback, diffing, atomic update operations, and apply
+  remain open.
+
 ## Phase 4: Linux Routing, tc, And Conntrack Integration
 
 Goal: unify the non-nftables Linux networking pieces.

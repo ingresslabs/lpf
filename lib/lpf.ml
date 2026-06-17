@@ -65,7 +65,7 @@ let all_commands =
     ("test", Test, "run policy assertion fixtures");
     ("table", Table, "manage dynamic policy tables");
     ("state", State, "inspect or modify conntrack state");
-    ("rules", Rules, "show generated or installed backend rules");
+    ("rules", Rules, "show generated backend rules");
     ("history", History, "show policy apply history and rollback points");
     ("import", Import, "import existing nftables or iptables-save policy");
     ("ui", Ui, "serve, build, or test the Bonsai browser UI");
@@ -264,10 +264,14 @@ let command_docs =
     {
       command = Rules;
       section = 8;
-      synopsis = "lpf rules show";
-      description = [ "Show generated or installed backend rules with source-policy annotations." ];
-      options = [ ("--installed", "show installed backend state"); ("--planned", "show generated planned state") ];
-      examples = [ "lpf rules show --installed" ];
+      synopsis = "lpf rules show <policy>";
+      description =
+        [
+          "Render deterministic read-only nftables rules from a checked lpf policy.";
+          "This command does not inspect installed state and does not apply host changes.";
+        ];
+      options = [ ("--backend nftables", "select nftables rendering; currently the only backend") ];
+      examples = [ "lpf rules show fixtures/policies/basic.lpf" ];
       files = shared_files;
       safety_notes = [ "This command is read-only." ];
       see_also = [ "lpf-diff(8)"; "lpf-plan(8)" ];
@@ -508,6 +512,11 @@ let plan_policy_text ?file text =
       | Ok plan -> Ok (plan, result.diagnostics)
       | Error diagnostics -> Error (result.diagnostics @ diagnostics))
 
+let render_nftables_policy_text ?file text =
+  match plan_policy_text ?file text with
+  | Ok (plan, diagnostics) -> Ok (Nftables.render_plan plan, diagnostics)
+  | Error diagnostics -> Error diagnostics
+
 let usage_lines () =
   let render (name, _, summary) = Printf.sprintf "  %-15s %s" name summary in
   List.map render all_commands
@@ -529,7 +538,7 @@ let help () =
       ])
 
 let command_status = function
-  | Check | Fmt | Plan | Man -> "implemented"
+  | Check | Fmt | Plan | Rules | Man -> "implemented"
   | Version | Help -> "implemented"
   | _ -> "planned; implementation must be OCaml"
 

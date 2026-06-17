@@ -138,9 +138,11 @@ Operations:
 - `kill`
 - `flush-policy`
 
-### `lpf rules show`
+### `lpf rules show [--backend nftables] <policy>`
 
-Show generated or installed backend rules with source-policy annotations.
+Render deterministic read-only nftables rules from a checked policy with
+source-policy annotations. This command must not inspect installed state or
+change host networking state.
 
 ### `lpf history`
 

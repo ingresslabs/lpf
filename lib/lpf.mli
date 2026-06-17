@@ -59,3 +59,5 @@ val ir_of_policy : Policy.policy -> (Ir.t, Policy.diagnostic list) result
 val plan_of_policy : Policy.policy -> (Plan.t, Policy.diagnostic list) result
 val plan_policy_text :
   ?file:string -> string -> (Plan.t * Policy.diagnostic list, Policy.diagnostic list) result
+val render_nftables_policy_text :
+  ?file:string -> string -> (string * Policy.diagnostic list, Policy.diagnostic list) result

@@ -7,6 +7,7 @@ let read_file path =
       really_input_string channel length)
 
 let fixture path = Filename.concat "../fixtures/policies" path
+let nft_fixture path = Filename.concat "../fixtures/nftables" path
 
 let contains_substring text needle =
   let text_length = String.length text in
@@ -191,6 +192,24 @@ let assert_plan_json () =
       (checksum_of_text ~file:messy_path messy)
       (checksum_of_text ~file:"messy-full-formatted.lpf" formatted))
 
+let assert_nftables_golden policy_name expected_name =
+  let path = fixture policy_name in
+  match Lpf.render_nftables_policy_text ~file:path (read_file path) with
+  | Ok (rendered, diagnostics) ->
+      assert (diagnostics = []);
+      let expected = read_file (nft_fixture expected_name) in
+      if not (String.equal rendered expected) then
+        failwith ("nftables output mismatch for " ^ policy_name)
+  | Error diagnostics ->
+      failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics))
+
+let assert_nftables_golden_fixtures () =
+  assert_nftables_golden "basic.lpf" "basic.nft";
+  assert_nftables_golden "nat-rdr.lpf" "nat-rdr.nft";
+  assert_nftables_golden "queue-route.lpf" "queue-route.nft";
+  assert_nftables_golden "logging.lpf" "logging.nft";
+  assert_nftables_golden "anchor-log.lpf" "anchor-log.nft"
+
 let assert_inline_check_has_diagnostic ~file ~text ~line ~column ~message =
   match Lpf.check_policy_text ~file text with
   | { Lpf.Policy.policy = None; diagnostics } ->
@@ -328,6 +347,7 @@ let () =
     ~line:2 ~column:41 ~message:"invalid rule: invalid port `70000`";
   assert_phase1_fixture_ir ();
   assert_plan_json ();
+  assert_nftables_golden_fixtures ();
   let basic = read_file (fixture "basic.lpf") in
   (match Lpf.format_policy_text ~file:(fixture "basic.lpf") basic with
    | Ok formatted -> assert (String.equal formatted basic)

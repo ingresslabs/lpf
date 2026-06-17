@@ -1,0 +1,29 @@
+flush ruleset
+
+table inet lpf_filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    meta iifname "eth1" ip saddr 10.0.0.0/24 accept comment "lpf rule 12:1 queue=std"
+  }
+
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+  }
+
+  chain output {
+    type filter hook output priority 0; policy drop;
+    meta oifname "eth0" meta l4proto tcp tcp dport 443 ct state { new, established, related } accept comment "lpf rule 13:1 route-to=1.1.1.1(eth0)"
+  }
+}
+
+table inet lpf_nat {
+  chain prerouting {
+    type nat hook prerouting priority -100; policy accept;
+    meta iifname "eth0" meta l4proto tcp tcp dport 80 dnat to 10.0.0.5:8080 comment "lpf rdr 10:1"
+  }
+
+  chain postrouting {
+    type nat hook postrouting priority 100; policy accept;
+    meta oifname "eth0" ip saddr 10.0.0.0/24 masquerade comment "lpf nat 9:1"
+  }
+}

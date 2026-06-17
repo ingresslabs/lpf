@@ -1,2 +1,3 @@
 (library
- (name lpf))
+ (name lpf)
+ (modules policy ir plan nftables lpf))

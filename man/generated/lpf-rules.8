@@ -1,19 +1,17 @@
 .TH LPF-RULES 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
 .SH NAME
-lpf\-rules \- show generated or installed backend rules
+lpf\-rules \- show generated backend rules
 .SH SYNOPSIS
-lpf rules show
+lpf rules show <policy>
 .SH DESCRIPTION
-Show generated or installed backend rules with source\-policy annotations.
+Render deterministic read\-only nftables rules from a checked lpf policy.
+This command does not inspect installed state and does not apply host changes.
 .SH OPTIONS
 .TP
-\-\-installed
-show installed backend state
-.TP
-\-\-planned
-show generated planned state
+\-\-backend nftables
+select nftables rendering; currently the only backend
 .SH EXAMPLES
-lpf rules show \-\-installed
+lpf rules show fixtures/policies/basic.lpf
 .SH FILES
 /etc/lpf.conf
 /var/lib/lpf/history
