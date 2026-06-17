@@ -21,7 +21,8 @@ All product command and feature code is implemented in OCaml.
 
 ## Current Status
 
-18 CLI commands with OCaml handlers, all with `--json` output for automation:
+18 CLI commands with OCaml handlers. Automation-oriented commands expose
+`--json` where structured output is useful:
 
 - `lpf check` / `lpf fmt` — parse, validate, and format policy files (`--json`)
 - `lpf plan` — compile policy to typed JSON plan with stable checksums
@@ -128,7 +129,9 @@ See [docs/COMMANDS.md](docs/COMMANDS.md) for the command contract and
 
 ## Automation & AI Agent Usage
 
-lpf is designed for machine consumption. Every read path supports `--json`. Every write path is idempotent with rollback.
+lpf is designed for machine consumption. Planning, validation, diffing, explain,
+history, table, and conntrack paths expose structured output where useful.
+Host mutation goes through guarded apply and rollback preimages where supported.
 
 **Ansible**: Use `check --json` to validate, `diff --json` to detect drift, `apply --dry-run` to preview, `apply --confirm 60s` plus `confirm` for safe apply, `rollback` for recovery.
 

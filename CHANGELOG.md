@@ -41,12 +41,12 @@
 - Replaced duplicated `nft_string` JSON escaping with `Json_util.string`.
 - Consolidated `ensure_dir`/`write_file`/`read_file` into `File_util` with `~strict` parameter.
 - Replaced `Option.get` crash risks in `tc.ml` with `List.filter_map`.
-- Removed dead code: `route_to_mark` (replaced by `mark_for_target`), `route_show` (ip.ml).
+- Removed dead code: `route_to_mark` (replaced by `mark_for_target`).
 
 ### Fixed
 
 - `explain.ml` `find_shadow` now searches anchor rules in addition to top-level rules.
-- Fixed `assert false` crash in `routing.ml` replaced with descriptive error.
+- Fixed an impossible routing backend state to fail with a descriptive error.
 - Fixed broken `Command.usage_examples` reference in manpage generation.
 - Fixed non-literal gateway validation in `ir.ml` (route-to gateway must be Literal).
 - Removed unused values in `e2e.ml` (`run_ping`, `apply_ruleset`, `max_scenario_count`).
