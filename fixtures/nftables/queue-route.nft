@@ -3,7 +3,7 @@ flush ruleset
 table inet lpf_filter {
   chain input {
     type filter hook input priority 0; policy drop;
-    meta iifname "eth1" ip saddr 10.0.0.0/24 accept comment "lpf rule 12:1 queue=std"
+    meta iifname "eth1" ip saddr 10.0.0.0/24 meta priority set 1:10 accept comment "lpf rule 12:1 queue=std"
   }
 
   chain forward {
@@ -12,7 +12,7 @@ table inet lpf_filter {
 
   chain output {
     type filter hook output priority 0; policy drop;
-    meta oifname "eth0" meta l4proto tcp tcp dport 443 ct state { new, established, related } accept comment "lpf rule 13:1 route-to=1.1.1.1(eth0)"
+    meta oifname "eth0" meta l4proto tcp tcp dport 443 ct state new,established,related meta mark set 100 accept comment "lpf rule 13:1 route-to=1.1.1.1(eth0)"
   }
 }
 

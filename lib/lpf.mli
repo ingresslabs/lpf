@@ -42,6 +42,9 @@ type man_page = {
 module Policy : module type of Policy
 module Ir : module type of Ir
 module Plan : module type of Plan
+module Nftables : module type of Nftables
+module Tc : module type of Tc
+module Routing : module type of Routing
 module Nft : module type of Nft
 
 val version : string
@@ -61,6 +64,10 @@ val plan_of_policy : Policy.policy -> (Plan.t, Policy.diagnostic list) result
 val plan_policy_text :
   ?file:string -> string -> (Plan.t * Policy.diagnostic list, Policy.diagnostic list) result
 val render_nftables_policy_text :
+  ?file:string -> string -> (string * Policy.diagnostic list, Policy.diagnostic list) result
+val render_tc_policy_text :
+  ?file:string -> string -> (string * Policy.diagnostic list, Policy.diagnostic list) result
+val render_routing_policy_text :
   ?file:string -> string -> (string * Policy.diagnostic list, Policy.diagnostic list) result
 val diff_nftables_policy_text :
   ?file:string ->

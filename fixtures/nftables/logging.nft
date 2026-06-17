@@ -13,6 +13,6 @@ table inet lpf_filter {
 
   chain output {
     type filter hook output priority 0; policy drop;
-    meta oifname "eth0" meta l4proto tcp tcp dport 443 ct state { new, established, related } log accept comment "lpf rule 7:1 queue=std"
+    meta oifname "eth0" meta l4proto tcp tcp dport 443 ct state new,established,related meta priority set 1:10 log accept comment "lpf rule 7:1 queue=std"
   }
 }

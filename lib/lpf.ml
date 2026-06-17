@@ -42,6 +42,9 @@ type man_page = {
 module Policy = Policy
 module Ir = Ir
 module Plan = Plan
+module Nftables = Nftables
+module Tc = Tc
+module Routing = Routing
 module Nft = Nft
 
 let ir_of_policy = Ir.of_policy
@@ -531,6 +534,16 @@ let plan_policy_text ?file text =
 let render_nftables_policy_text ?file text =
   match plan_policy_text ?file text with
   | Ok (plan, diagnostics) -> Ok (Nftables.render_plan plan, diagnostics)
+  | Error diagnostics -> Error diagnostics
+
+let render_tc_policy_text ?file text =
+  match plan_policy_text ?file text with
+  | Ok (plan, diagnostics) -> Ok (Tc.to_string (Tc.compile plan.policy), diagnostics)
+  | Error diagnostics -> Error diagnostics
+
+let render_routing_policy_text ?file text =
+  match plan_policy_text ?file text with
+  | Ok (plan, diagnostics) -> Ok (Routing.to_string (Routing.compile plan.policy), diagnostics)
   | Error diagnostics -> Error diagnostics
 
 let diff_nftables_policy_text ?file ~observed text =

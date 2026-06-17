@@ -33,10 +33,13 @@ type expression =
 type statement =
   | Accept
   | Drop
+  | Reject
   | Log of string option
   | Snat of string
   | Dnat of string
   | Masquerade
+  | Meta_priority_set of string
+  | Meta_mark_set of int
 
 type rule = {
   table : string;
@@ -183,7 +186,7 @@ let rule_comment ?anchor (rule : Ir.rule) =
   in
   String.concat " " (location :: extras)
 
-let compile_rule ?anchor (rule : Ir.rule) =
+let compile_rule ?anchor (ir : Ir.t) (rule : Ir.rule) =
   let chain = match anchor with None -> rule_chain rule.direction | Some name -> "anchor_" ^ sanitize_identifier name in
   let expressions =
     base_expressions ~chain_name:chain rule.protocol rule.source rule.destination rule.port
@@ -193,11 +196,28 @@ let compile_rule ?anchor (rule : Ir.rule) =
     if rule.keep_state then expressions @ [ Ct_state [ "new"; "established"; "related" ] ]
     else expressions
   in
+  let statements = log_statement rule.log @ [ verdict_statement rule.action ] in
+  let statements =
+    match rule.queue with
+    | None -> statements
+    | Some qname -> (
+        match Tc.queue_classid ir.queues qname with
+        | Some id -> Meta_priority_set id :: statements
+        | None -> statements)
+  in
+  let statements =
+    match rule.route_to with
+    | None -> statements
+    | Some target -> (
+        match Routing.route_to_mark ir.rules ir.anchors target with
+        | Some mark -> Meta_mark_set mark :: statements
+        | None -> statements)
+  in
   {
     table = filter_table_name;
     chain;
     expressions;
-    statements = log_statement rule.log @ [ verdict_statement rule.action ];
+    statements;
     comment = Some (rule_comment ?anchor rule);
   }
 
@@ -291,14 +311,15 @@ let of_ir (ir : Ir.t) =
   let anchor_rules =
     ir.anchors
     |> List.concat_map (fun (anchor : Ir.anchor) ->
-           List.map (compile_rule ~anchor:anchor.name) anchor.rules)
+           List.map (compile_rule ~anchor:anchor.name ir) anchor.rules)
   in
+
   {
     tables;
     chains;
     sets = List.map table_of_policy_table ir.tables;
     rules =
-      List.map compile_rule ir.rules @ anchor_rules @ List.map compile_nat ir.nats
+      List.map (compile_rule ir) ir.rules @ anchor_rules @ List.map compile_nat ir.nats
       @ List.map compile_rdr ir.rdrs;
   }
 
@@ -319,16 +340,19 @@ let string_of_policy = function Policy_accept -> "accept" | Policy_drop -> "drop
 let string_of_expression = function
   | Meta (key, value) -> "meta " ^ key ^ " " ^ value
   | Payload (protocol, field, value) -> protocol ^ " " ^ field ^ " " ^ value
-  | Ct_state states -> "ct state { " ^ String.concat ", " states ^ " }"
+  | Ct_state states -> "ct state " ^ String.concat "," states
 
 let string_of_statement = function
   | Accept -> "accept"
   | Drop -> "drop"
+  | Reject -> "reject"
   | Log None -> "log"
   | Log (Some prefix) -> "log prefix " ^ nft_string prefix
   | Snat address -> "snat to " ^ address
   | Dnat target -> "dnat to " ^ target
   | Masquerade -> "masquerade"
+  | Meta_priority_set p -> "meta priority set " ^ p
+  | Meta_mark_set m -> Printf.sprintf "meta mark set %d" m
 
 let render_rule (rule : rule) =
   let parts =

@@ -29,14 +29,16 @@ type expression =
   | Meta of string * string
   | Payload of string * string * string
   | Ct_state of string list
-
 type statement =
   | Accept
   | Drop
+  | Reject
   | Log of string option
   | Snat of string
   | Dnat of string
   | Masquerade
+  | Meta_priority_set of string
+  | Meta_mark_set of int
 
 type rule = {
   table : string;
