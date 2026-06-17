@@ -1,0 +1,45 @@
+.TH LPF-E2E 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-e2e \- run Firecracker guest end\-to\-end networking scenarios
+.SH SYNOPSIS
+lpf e2e run [\-\-scenario\-count <n>] [\-\-junit <path>] [\-\-allure\-dir <dir>] [\-\-evidence\-dir <dir>] [\-\-kernel\-id <id>]
+.SH DESCRIPTION
+Run real end\-to\-end Linux networking scenarios intended for Firecracker guest validation.
+The runner creates isolated network namespaces, veth links, nftables rules, policy routing entries, tc HTB shaping state, and conntrack evidence.
+The default catalog contains 480 deterministic scenarios across nftables accept/drop/logging, policy routing, traffic shaping, and conntrack families.
+.SH OPTIONS
+.TP
+\-\-scenario\-count <n>
+number of scenarios to run; must be between 1 and 600, default 480
+.TP
+\-\-junit <path>
+write JUnit XML for Jenkins trend reporting
+.TP
+\-\-allure\-dir <dir>
+write Allure result JSON files
+.TP
+\-\-evidence\-dir <dir>
+write a sanitized evidence manifest
+.TP
+\-\-kernel\-id <id>
+attach a CI kernel label to reports
+.TP
+\-\-dry\-run
+generate catalog reports without changing networking state
+.SH EXAMPLES
+lpf e2e run \-\-scenario\-count 480 \-\-junit evidence/junit.xml \-\-allure\-dir allure\-results
+lpf e2e list \-\-scenario\-count 12
+.SH FILES
+/run/netns
+/var/lib/lpf/e2e
+allure\-results
+evidence/junit.xml
+.SH SAFETY NOTES
+Run inside an isolated Firecracker VM or disposable lab host.
+The runner requires root and CAP_NET_ADMIN.
+Do not run against a production network namespace.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-test(8), lpf\-diff(8)

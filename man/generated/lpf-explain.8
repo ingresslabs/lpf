@@ -2,22 +2,41 @@
 .SH NAME
 lpf\-explain \- explain why a hypothetical packet passes or drops
 .SH SYNOPSIS
-lpf explain from <addr> to <addr> proto <proto> port <port>
+lpf explain [\-\-json] [in|on <iface>] [from <addr>] [to <addr>] [proto <proto>] [port <port>] <policy>
 .SH DESCRIPTION
-Explain how a hypothetical packet would be handled by policy.
-Results include decision, policy rule, NAT, route, queue, log, and state behavior.
+Explain how a hypothetical packet would be handled by the policy.
+The static evaluator simulates matching across rules, NAT, and redirect sections.
 .SH OPTIONS
 .TP
 \-\-json
-emit machine\-readable explanation
+emit machine\-readable explanation JSON
+.TP
+in|on <iface>
+hypothetical ingress interface (default: eth0)
+.TP
+from <addr>
+hypothetical source address (default: 0.0.0.0)
+.TP
+to <addr>
+hypothetical destination address (default: 0.0.0.0)
+.TP
+proto <proto>
+hypothetical protocol (default: any)
+.TP
+port <port>
+hypothetical destination port
 .SH EXAMPLES
-lpf explain from 10.0.0.5 to 1.1.1.1 proto tcp port 443
+lpf explain from 10.0.0.5 to 1.1.1.1 proto tcp port 443 /etc/lpf.conf
+lpf explain in wan from 203.0.113.10 to firewall port 22 /etc/lpf.conf
+lpf explain \-\-json from 10.0.0.5 to 1.1.1.1 proto tcp port 443 /etc/lpf.conf
 .SH FILES
 /etc/lpf.conf
+/var/lib/lpf/history
+/var/lib/lpf/rollback
 .SH SAFETY NOTES
-Explain is advisory until compared with installed backend state.
+This command is read\-only and does not inspect host state.
 .SH EXIT STATUS
 0 on success.
 Non\-zero when validation, planning, or host operations fail.
 .SH SEE ALSO
-lpf\-test(8), lpf\-rules(8)
+lpf\-check(8), lpf.conf(5)

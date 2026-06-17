@@ -21,4 +21,5 @@ val run : invocation -> (string, run_error) result
 val list_ruleset_with_runner : (invocation -> (string, run_error) result) -> (string, run_error) result
 val list_ruleset : unit -> (string, run_error) result
 val apply : string -> (unit, run_error) result
+val apply_with_runner : (invocation -> (string, run_error) result) -> string -> (unit, run_error) result
 val string_of_run_error : run_error -> string

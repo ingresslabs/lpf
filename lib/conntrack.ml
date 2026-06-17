@@ -15,9 +15,25 @@ type run_error = {
   stderr : string;
 }
 
-let list_ruleset_invocation () = { program = "nft"; argv = [ "nft"; "list"; "ruleset" ] }
+type conntrack_entry = {
+  protocol : string;
+  src : string;
+  dst : string;
+  sport : string;
+  dport : string;
+  state : string;
+  raw : string;
+}
 
-let apply_invocation path = { program = "nft"; argv = [ "nft"; "-f"; path ] }
+let list_invocation () = { program = "conntrack"; argv = [ "conntrack"; "-L"; "-o"; "extended" ] }
+let delete_invocation ~src ~dst = { program = "conntrack"; argv = [ "conntrack"; "-D"; "-s"; src; "-d"; dst ] }
+let flush_invocation () = { program = "conntrack"; argv = [ "conntrack"; "-F" ] }
+
+let close_noerr fd = try Unix.close fd with Unix.Unix_error _ -> ()
+
+let with_temp_file prefix f =
+  let path = Filename.temp_file prefix ".txt" in
+  Fun.protect ~finally:(fun () -> if Sys.file_exists path then Sys.remove path) (fun () -> f path)
 
 let read_file path =
   let channel = open_in path in
@@ -27,20 +43,14 @@ let read_file path =
       let length = in_channel_length channel in
       really_input_string channel length)
 
-let close_noerr fd = try Unix.close fd with Unix.Unix_error _ -> ()
-
-let with_temp_file prefix f =
-  let path = Filename.temp_file prefix ".txt" in
-  Fun.protect ~finally:(fun () -> if Sys.file_exists path then Sys.remove path) (fun () -> f path)
-
 let status_of_unix_status = function
   | Unix.WEXITED code -> Exited code
   | Unix.WSIGNALED signal -> Signaled signal
   | Unix.WSTOPPED signal -> Stopped signal
 
 let run invocation =
-  with_temp_file "lpf-nft-stdout" (fun stdout_path ->
-      with_temp_file "lpf-nft-stderr" (fun stderr_path ->
+  with_temp_file "lpf-conntrack-stdout" (fun stdout_path ->
+      with_temp_file "lpf-conntrack-stderr" (fun stderr_path ->
           let stdout_fd = Unix.openfile stdout_path [ Unix.O_WRONLY; Unix.O_TRUNC ] 0o600 in
           let stderr_fd = Unix.openfile stderr_path [ Unix.O_WRONLY; Unix.O_TRUNC ] 0o600 in
           match
@@ -66,19 +76,14 @@ let run invocation =
           | Error message ->
               Error { invocation; status = Failed_to_start message; stderr = message }))
 
-let list_ruleset_with_runner runner = runner (list_ruleset_invocation ())
-let list_ruleset () = list_ruleset_with_runner run
+let list_with_runner runner = runner (list_invocation ())
+let list () = list_with_runner run
 
-let apply_with_runner runner ruleset =
-  with_temp_file "lpf-apply" (fun path ->
-      let out = open_out path in
-      Fun.protect ~finally:(fun () -> close_out out) (fun () -> output_string out ruleset);
-      match runner (apply_invocation path) with
-      | Ok _ -> Ok ()
-      | Error error -> Error error)
+let delete_with_runner runner ~src ~dst = runner (delete_invocation ~src ~dst) |> Result.map ignore
+let delete ~src ~dst = delete_with_runner run ~src ~dst
 
-let apply ruleset =
-  apply_with_runner run ruleset
+let flush_with_runner runner = runner (flush_invocation ()) |> Result.map ignore
+let flush () = flush_with_runner run
 
 let string_of_run_status = function
   | Exited code -> "exit " ^ string_of_int code
@@ -86,10 +91,22 @@ let string_of_run_status = function
   | Stopped signal -> "stopped by signal " ^ string_of_int signal
   | Failed_to_start message -> "failed to start: " ^ message
 
-let string_of_invocation invocation = String.concat " " invocation.argv
-
 let string_of_run_error error =
   let stderr = String.trim error.stderr in
   let detail = if String.equal stderr "" then "" else ": " ^ stderr in
-  "nft command failed (" ^ string_of_run_status error.status ^ "): "
-  ^ string_of_invocation error.invocation ^ detail
+  "conntrack command failed (" ^ string_of_run_status error.status ^ "): "
+  ^ String.concat " " error.invocation.argv ^ detail
+
+let parse_line line =
+  let fields = String.split_on_char ' ' line |> List.filter (fun s -> String.length s > 0) in
+  match fields with
+  | proto :: src :: dst :: rest ->
+      let sport = try List.nth rest 0 with _ -> "" in
+      let dport = try List.nth rest 2 with _ -> "" in
+      let state = try List.nth rest 3 with _ -> "" in
+      Some { protocol = proto; src; dst; sport; dport; state; raw = line }
+  | _ -> None
+
+let parse_list output =
+  String.split_on_char '\n' output
+  |> List.filter_map parse_line

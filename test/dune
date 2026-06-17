@@ -1,5 +1,5 @@
-(test
- (name test_lpf)
+(tests
+ (names test_policy test_ir test_nftables test_plan test_policy_unit test_ir_unit test_explain_unit test_nftables_unit test_apply_guard_unit test_history_unit test_e2e_unit)
  (deps
   (source_tree ../fixtures)
   (source_tree ../man/generated))

@@ -146,37 +146,61 @@ let handle_fmt args =
 
 let parse_plan_args args =
   let is_option arg = String.length arg > 0 && arg.[0] = '-' in
-  let rec loop paths = function
-    | [] -> Ok (List.rev paths)
-    | "--json" :: rest -> loop paths rest
+  let rec loop backend paths = function
+    | [] -> Ok (backend, List.rev paths)
+    | "--json" :: rest -> loop backend paths rest
+    | "--backend" :: "nftables" :: rest -> loop "nftables" paths rest
+    | "--backend" :: "tc" :: rest -> loop "tc" paths rest
+    | "--backend" :: "routing" :: rest -> loop "routing" paths rest
+    | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
     | arg :: _ when is_option arg -> Error arg
-    | path :: rest -> loop (path :: paths) rest
+    | path :: rest -> loop backend (path :: paths) rest
   in
-  loop [] args
+  loop "plan" [] args
 
 let handle_plan args =
   match parse_plan_args args with
   | Error option ->
       prerr_endline ("unknown lpf plan option: " ^ option);
-      prerr_endline "usage: lpf plan [--json] <policy>";
+      prerr_endline "usage: lpf plan [--json] [--backend nftables|tc|routing] <policy>";
       exit 64
-  | Ok [ path ] -> (
+  | Ok (backend, [ path ]) -> (
       let input = read_file path in
-      match Lpf.plan_policy_text ~file:path input with
-      | Ok (plan, diagnostics) ->
-          print_diagnostics diagnostics;
-          print_string (Lpf.Plan.to_json plan)
-      | Error diagnostics ->
-          print_diagnostics diagnostics;
-          exit 1)
+      match backend with
+      | "tc" -> (
+          match Lpf.render_tc_policy_text ~file:path input with
+          | Ok (rendered, diagnostics) ->
+              print_diagnostics diagnostics;
+              print_string rendered
+          | Error diagnostics ->
+              print_diagnostics diagnostics;
+              exit 1)
+      | "routing" -> (
+          match Lpf.render_routing_policy_text ~file:path input with
+          | Ok (rendered, diagnostics) ->
+              print_diagnostics diagnostics;
+              print_string rendered
+          | Error diagnostics ->
+              print_diagnostics diagnostics;
+              exit 1)
+      | _ -> (
+          match Lpf.plan_policy_text ~file:path input with
+          | Ok (plan, diagnostics) ->
+              print_diagnostics diagnostics;
+              print_string (Lpf.Plan.to_json plan)
+          | Error diagnostics ->
+              print_diagnostics diagnostics;
+              exit 1))
   | Ok _ ->
-      prerr_endline "usage: lpf plan [--json] <policy>";
+      prerr_endline "usage: lpf plan [--json] [--backend nftables|tc|routing] <policy>";
       exit 64
 
 let parse_rules_args args =
   let rec loop backend paths = function
     | [] -> Ok (backend, List.rev paths)
     | "--backend" :: "nftables" :: rest -> loop "nftables" paths rest
+    | "--backend" :: "tc" :: rest -> loop "tc" paths rest
+    | "--backend" :: "routing" :: rest -> loop "routing" paths rest
     | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
     | option :: _ when String.length option > 0 && option.[0] = '-' ->
         Error ("unknown option: " ^ option)
@@ -202,6 +226,8 @@ let parse_rules_diff_args args =
   let rec loop parsed = function
     | [] -> Ok { parsed with policies = List.rev parsed.policies }
     | "--backend" :: "nftables" :: rest -> loop parsed rest
+    | "--backend" :: "tc" :: rest -> loop parsed rest
+    | "--backend" :: "routing" :: rest -> loop parsed rest
     | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
     | "--observed" :: observed :: rest -> (
         match set_source parsed (Observed_path observed) with
@@ -235,11 +261,16 @@ let handle_rules = function
       match parse_rules_args args with
       | Error message ->
           prerr_endline message;
-          prerr_endline "usage: lpf rules show [--backend nftables] <policy>";
+          prerr_endline "usage: lpf rules show [--backend nftables|tc|routing] <policy>";
           exit 64
-      | Ok (_, [ path ]) -> (
+      | Ok (backend, [ path ]) -> (
           let input = read_file path in
-          match Lpf.render_nftables_policy_text ~file:path input with
+          let result = match backend with
+            | "tc" -> Lpf.render_tc_policy_text ~file:path input
+            | "routing" -> Lpf.render_routing_policy_text ~file:path input
+            | _ -> Lpf.render_nftables_policy_text ~file:path input
+          in
+          match result with
           | Ok (rendered, diagnostics) ->
               print_diagnostics diagnostics;
               print_string rendered
@@ -247,7 +278,7 @@ let handle_rules = function
               print_diagnostics diagnostics;
               exit 1)
       | Ok _ ->
-          prerr_endline "usage: lpf rules show [--backend nftables] <policy>";
+          prerr_endline "usage: lpf rules show [--backend nftables|tc|routing] <policy>";
           exit 64)
   | "diff" :: args -> (
       match parse_rules_diff_args args with
@@ -303,6 +334,8 @@ let parse_diff_args args =
     | [] -> Ok { parsed with policies = List.rev parsed.policies }
     | "--json" :: rest -> loop { parsed with json = true } rest
     | "--backend" :: "nftables" :: rest -> loop parsed rest
+    | "--backend" :: "tc" :: rest -> loop parsed rest
+    | "--backend" :: "routing" :: rest -> loop parsed rest
     | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
     | "--observed" :: observed :: rest -> (
         match set_source parsed (Observed_path observed) with
@@ -356,7 +389,7 @@ let handle_diff args =
   | Error message ->
       prerr_endline message;
       prerr_endline
-        "usage: lpf diff [--backend nftables] [--observed <ruleset|->|--live] [--json] <policy>";
+        "usage: lpf diff [--backend nftables|tc|routing] [--observed <ruleset|->|--live] [--json] <policy>";
       exit 64
   | Ok { source; policies = [ path ]; json } ->
       let source = Option.value source ~default:Live in
@@ -375,7 +408,7 @@ let handle_diff args =
               exit 1))
   | Ok _ ->
       prerr_endline
-        "usage: lpf diff [--backend nftables] [--observed <ruleset|->|--live] [--json] <policy>";
+        "usage: lpf diff [--backend nftables|tc|routing] [--observed <ruleset|->|--live] [--json] <policy>";
       exit 64
 
 let handle_apply args =
@@ -555,6 +588,128 @@ let handle_history args =
       print_diagnostics diagnostics;
       exit 1
 
+let handle_state args =
+  match args with
+  | "list" :: _ -> (
+      match Lpf.Conntrack.list () with
+      | Ok output ->
+          let entries = Lpf.Conntrack.parse_list output in
+          List.iter (fun (e : Lpf.Conntrack.conntrack_entry) -> Printf.printf "%s %s %s %s %s [%s]\n" e.protocol e.src e.dst e.sport e.dport e.state) entries;
+          exit 0
+      | Error error ->
+          prerr_endline (Lpf.Conntrack.string_of_run_error error);
+          exit 1)
+  | "flush" :: _ -> (
+      match Lpf.Conntrack.flush () with
+      | Ok () ->
+          Printf.printf "conntrack table flushed\n";
+          exit 0
+      | Error error ->
+          prerr_endline (Lpf.Conntrack.string_of_run_error error);
+          exit 1)
+  | _ ->
+      prerr_endline "usage: lpf state <list|flush>";
+      exit 64
+
+let handle_import args =
+  match args with
+  | "nftables" :: _ -> (
+      match Lpf.Nft.list_ruleset () with
+      | Ok ruleset ->
+          let imported = Lpf.Import_nft.of_ruleset ruleset in
+          print_endline imported;
+          exit 0
+      | Error error ->
+          prerr_endline (Lpf.Nft.string_of_run_error error);
+          exit 1)
+  | _ ->
+      prerr_endline "usage: lpf import <nftables>";
+      exit 64
+
+let handle_table args =
+  match args with
+  | name :: "add" :: element :: _ -> (
+      match Lpf.Table.add name element with
+      | Ok () ->
+          Printf.printf "added %s to table %s\n" element name;
+          exit 0
+      | Error error ->
+          prerr_endline (Lpf.Nft.string_of_run_error error);
+          exit 1)
+  | name :: "delete" :: element :: _ -> (
+      match Lpf.Table.delete name element with
+      | Ok () ->
+          Printf.printf "deleted %s from table %s\n" element name;
+          exit 0
+      | Error error ->
+          prerr_endline (Lpf.Nft.string_of_run_error error);
+          exit 1)
+  | name :: "replace" :: rest ->
+      let elements = List.filter (fun s -> String.length s > 0 && not (String.starts_with ~prefix:"-" s)) rest in
+      (match Lpf.Table.replace name elements with
+       | Ok () ->
+           Printf.printf "replaced table %s with %d elements\n" name (List.length elements);
+           exit 0
+       | Error error ->
+           prerr_endline (Lpf.Nft.string_of_run_error error);
+           exit 1)
+  | _ ->
+      prerr_endline "usage: lpf table <name> <add|delete|replace> [...]";
+      exit 64
+
+let parse_e2e_args args =
+  let rec loop mode scenario_count junit_path allure_dir evidence_dir kernel_id dry_run = function
+    | [] -> Ok (mode, scenario_count, junit_path, allure_dir, evidence_dir, kernel_id, dry_run)
+    | "run" :: rest -> loop "run" scenario_count junit_path allure_dir evidence_dir kernel_id dry_run rest
+    | "list" :: rest -> loop "list" scenario_count junit_path allure_dir evidence_dir kernel_id dry_run rest
+    | "--scenario-count" :: value :: rest -> (
+        match int_of_string_opt value with
+        | Some count -> loop mode count junit_path allure_dir evidence_dir kernel_id dry_run rest
+        | None -> Error ("invalid --scenario-count: " ^ value))
+    | "--scenario-count" :: [] -> Error "missing value for --scenario-count"
+    | "--junit" :: path :: rest -> loop mode scenario_count (Some path) allure_dir evidence_dir kernel_id dry_run rest
+    | "--junit" :: [] -> Error "missing value for --junit"
+    | "--allure-dir" :: path :: rest ->
+        loop mode scenario_count junit_path (Some path) evidence_dir kernel_id dry_run rest
+    | "--allure-dir" :: [] -> Error "missing value for --allure-dir"
+    | "--evidence-dir" :: path :: rest ->
+        loop mode scenario_count junit_path allure_dir (Some path) kernel_id dry_run rest
+    | "--evidence-dir" :: [] -> Error "missing value for --evidence-dir"
+    | "--kernel-id" :: value :: rest ->
+        loop mode scenario_count junit_path allure_dir evidence_dir (Some value) dry_run rest
+    | "--kernel-id" :: [] -> Error "missing value for --kernel-id"
+    | "--dry-run" :: rest -> loop mode scenario_count junit_path allure_dir evidence_dir kernel_id true rest
+    | option :: _ when String.length option > 0 && option.[0] = '-' -> Error ("unknown option: " ^ option)
+    | value :: _ -> Error ("unknown lpf e2e argument: " ^ value)
+  in
+  loop "run" Lpf.E2e.default_scenario_count None None None None false args
+
+let handle_e2e args =
+  match parse_e2e_args args with
+  | Error message ->
+      prerr_endline message;
+      prerr_endline
+        "usage: lpf e2e <run|list> [--scenario-count N] [--junit PATH] [--allure-dir DIR] [--evidence-dir DIR] [--kernel-id ID] [--dry-run]";
+      exit 64
+  | Ok ("list", scenario_count, _, _, _, _, _) ->
+      Lpf.E2e.scenario_catalog scenario_count
+      |> List.iter (fun scenario ->
+             Printf.printf "%s\t%s\t%s\n" scenario.Lpf.E2e.id
+               (Lpf.E2e.family_name scenario.family)
+               scenario.description);
+      exit 0
+  | Ok (_, scenario_count, junit_path, allure_dir, evidence_dir, kernel_id, dry_run) -> (
+      try
+        let result =
+          Lpf.E2e.run { scenario_count; junit_path; allure_dir; evidence_dir; kernel_id; dry_run }
+        in
+        Printf.printf "lpf e2e: %d passed, %d failed, %d total on %s (%s)\n" result.passed
+          result.failed result.scenario_count result.kernel_id result.kernel_release;
+        if result.failed = 0 then exit 0 else exit 1
+      with Failure message | Invalid_argument message ->
+        prerr_endline message;
+        exit 1)
+
 let planned command =
   print_end (Lpf.command_help command);
   exit 2
@@ -582,6 +737,10 @@ let () =
   | _ :: "test" :: args -> handle_test args
   | _ :: "history" :: args -> handle_history args
   | _ :: "rules" :: args -> handle_rules args
+  | _ :: "state" :: args -> handle_state args
+  | _ :: "import" :: args -> handle_import args
+  | _ :: "table" :: args -> handle_table args
+  | _ :: "e2e" :: args -> handle_e2e args
   | _ :: "man" :: args -> handle_man args
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with

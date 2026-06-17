@@ -1,5 +1,0 @@
-lpf diff
-
-show the delta between current host state and a plan
-
-Status: planned; implementation must be OCaml.

@@ -1,0 +1,11 @@
+policy: ../policies/basic.lpf
+
+test: SSH Access
+expect pass in on eth0 proto tcp from any to any port 22
+
+test: Web Access
+expect pass out on eth0 proto tcp from any to any port 443
+expect block in on eth0 proto tcp from any to any port 443
+
+test: Default Deny
+expect block in on eth0 proto tcp from 8.8.8.8 to any port 80
