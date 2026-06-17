@@ -1,0 +1,28 @@
+Source: lpf
+Section: net
+Priority: optional
+Maintainer: avkcode
+Build-Depends:
+ debhelper-compat (= 13),
+ ocaml (>= 5.1.0),
+ ocaml-dune (>= 3.11),
+ opam,
+Standards-Version: 4.7.0
+Homepage: https://github.com/avkcode/lpf
+Vcs-Browser: https://github.com/avkcode/lpf
+Vcs-Git: https://github.com/avkcode/lpf.git
+
+Package: lpf
+Architecture: any
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends},
+ nftables,
+ iproute2,
+ conntrack,
+Description: PF-style control plane for Linux networking
+ OCaml-first firewall policy control plane targeting nftables,
+ policy routing, tc, conntrack, and NFLOG. Provides readable
+ policy files, safe atomic apply with rollback, packet decision
+ explainability, policy tests, dynamic tables, and multi-backend
+ diff/live readback.

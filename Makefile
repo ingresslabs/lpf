@@ -17,6 +17,7 @@ REMOTE_DIR ?= /tmp/lpf-remote-check
 .PHONY: release-checksums release-sign release-verify
 .PHONY: e2e-dry-run e2e-list
 .PHONY: static
+.PHONY: deb rpm
 
 all: build
 
@@ -139,3 +140,10 @@ e2e-dry-run:
 
 e2e-list:
 	$(LPF) e2e list --scenario-count 12
+
+# Packaging
+deb:
+	dpkg-buildpackage -b -us -uc -d
+
+rpm:
+	rpmbuild -bb packaging/rpm/lpf.spec --define "_topdir $$(pwd)/_rpmbuild"

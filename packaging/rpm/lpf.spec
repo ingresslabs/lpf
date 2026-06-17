@@ -1,0 +1,41 @@
+%global debug_package %{nil}
+
+Name:           lpf
+Version:        0.1.0
+Release:        1%{?dist}
+Summary:        PF-style control plane for Linux networking
+License:        Apache-2.0
+URL:            https://github.com/avkcode/lpf
+Source0:        https://github.com/avkcode/lpf/archive/refs/tags/v%{version}.tar.gz
+
+BuildRequires:  ocaml >= 5.1.0
+BuildRequires:  ocaml-dune >= 3.11
+BuildRequires:  opam
+Requires:       nftables
+Requires:       iproute
+Requires:       conntrack-tools
+
+%description
+OCaml-first firewall policy control plane targeting nftables, policy routing,
+tc, conntrack, and NFLOG. Provides readable policy files, safe atomic apply
+with rollback, packet decision explainability, policy tests, dynamic tables,
+and multi-backend diff/live readback.
+
+%prep
+%setup -q
+
+%build
+opam exec -- dune build --profile=release @install
+
+%install
+opam exec -- dune install --prefix=%{buildroot}/usr
+
+%files
+%{_bindir}/lpf
+%{_mandir}/man8/lpf*.8*
+%{_mandir}/man5/lpf*.5*
+%doc README.md CHANGELOG.md
+
+%changelog
+* Sun Jun 22 2026 avkcode - 0.1.0-1
+- Initial release
