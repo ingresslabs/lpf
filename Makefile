@@ -16,6 +16,7 @@ REMOTE_DIR ?= /tmp/lpf-remote-check
 .PHONY: plan rules-show rules-diff remote-check
 .PHONY: release-checksums release-sign release-verify
 .PHONY: e2e-dry-run e2e-list
+.PHONY: static
 
 all: build
 
@@ -43,6 +44,9 @@ deps:
 
 build:
 	$(DUNE) build
+
+static:
+	$(DUNE) build --profile=static
 
 test:
 	$(DUNE) runtest

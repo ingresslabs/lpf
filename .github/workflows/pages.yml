@@ -1,0 +1,36 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'man/generated/**'
+      - 'lib/command.ml'
+      - 'lib/manpage.ml'
+      - '.github/workflows/pages.yml'
+
+jobs:
+  deploy:
+    name: Deploy man pages to GitHub Pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mandoc
+        run: sudo apt-get install -y mandoc
+
+      - name: Build man pages
+        run: |
+          mkdir -p _site
+          for page in man/generated/*.{8,5}; do
+            name=$(basename "$page")
+            mandoc -Thtml "$page" > "_site/${name}.html"
+          done
+          cp man/generated/lpf.8 _site/index.8
+          mandoc -Thtml man/generated/lpf.8 > _site/index.html
+
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site

@@ -17,7 +17,7 @@ jobs:
           ocaml-compiler: 5.2.1
 
       - run: opam install . --deps-only --with-test
-      - run: opam exec -- dune build
+      - run: opam exec -- dune build --profile=static
 
       - name: Build release binary
         run: |
