@@ -58,3 +58,34 @@
 - Added an advanced Jenkins Firecracker matrix contract that records requested,
   available, covered, and missing kernel labels separately so unavailable
   kernels are never reported as covered.
+
+### Refactored
+- Split `lpf.ml` (780 lines) into 6 modules: `command.ml`, `manpage.ml`,
+  `pipeline.ml`, `apply_guard.ml`, `history.ml`, `nft.ml`.
+- Split monolithic test suite into 17 focused test files (4 integration + 13 unit).
+- Removed ui, kernel-matrix, import, and support-bundle stubs with no handlers.
+- Removed Bonsai UI Rule, Kernel Matrix Rule, and Lab 141 Rule from AGENTS.md.
+- Cleaned up PLAN.md of completed and abandoned phases.
+- Rewrote history JSON parser with robust field extraction.
+- Replaced duplicated JSON escaping in main.ml with `Json_util.string`.
+
+### Added
+- Unit tests for `Tc.ml`, `Routing.ml`, `Nft.ml`, `Conntrack.ml`, `Table.ml`.
+- `--backend tc` and `--backend routing` options for `lpf plan`, `rules`, `diff`.
+- `lpf diff --backend tc --live` and `lpf diff --backend routing --live` support.
+- `ip.ml` typed wrapper for `ip rule` and `ip route` commands.
+- TC live readback via `Tc.qdisc_show` and `Tc.class_show`.
+- Multi-backend rollback preimages (nftables + tc + routing snapshots).
+- `lpf rollback <policy-id>` for manual rollback by history ID.
+- `lpf table show` and `lpf table counters` handlers.
+- `lpf state kill` and `lpf state flush` handlers.
+- `lpf e2e run --dry-run` for plan-only validation without Firecracker.
+- E2E scenario catalog extends to 600 deterministic scenarios.
+- `E2e.dry_run` support for config-only planning.
+- `E2e.evidence_manifest` for redacted evidence summaries.
+
+### Fixed
+- `explain.ml` `shadowed_by` now populated with actual shadowing rule.
+- Fixed `assert false` crash in `apply_guard.ml` replaced with proper error.
+- Fixed broken `Command.usage_examples` reference in manpage generation.
+- Removed unused values in `e2e.ml` (`run_ping`, `apply_ruleset`, `max_scenario_count`).

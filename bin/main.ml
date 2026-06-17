@@ -319,6 +319,7 @@ let handle_rules = function
       exit 64
 
 type diff_args = {
+  backend : string;
   json : bool;
   source : rules_diff_source option;
   policies : string list;
@@ -333,9 +334,9 @@ let parse_diff_args args =
   let rec loop parsed = function
     | [] -> Ok { parsed with policies = List.rev parsed.policies }
     | "--json" :: rest -> loop { parsed with json = true } rest
-    | "--backend" :: "nftables" :: rest -> loop parsed rest
-    | "--backend" :: "tc" :: rest -> loop parsed rest
-    | "--backend" :: "routing" :: rest -> loop parsed rest
+    | "--backend" :: "nftables" :: rest -> loop { parsed with backend = "nftables" } rest
+    | "--backend" :: "tc" :: rest -> loop { parsed with backend = "tc" } rest
+    | "--backend" :: "routing" :: rest -> loop { parsed with backend = "routing" } rest
     | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
     | "--observed" :: observed :: rest -> (
         match set_source parsed (Observed_path observed) with
@@ -350,7 +351,7 @@ let parse_diff_args args =
         Error ("unknown option: " ^ option)
     | policy :: rest -> loop { parsed with policies = policy :: parsed.policies } rest
   in
-  loop { json = false; source = None; policies = [] } args
+  loop { backend = "nftables"; json = false; source = None; policies = [] } args
 
 let json_string text = Lpf.Json_util.string text
 let json_bool value = if value then "true" else "false"
@@ -373,26 +374,58 @@ let handle_diff args =
   | Error message ->
       prerr_endline message;
       prerr_endline
-        "usage: lpf diff [--backend nftables|tc|routing] [--observed <ruleset|->|--live] [--json] <policy>";
+        "usage: lpf diff [--backend nftables|tc|routing] [--observed <text|->|--live] [--json] <policy>";
       exit 64
-  | Ok { source; policies = [ path ]; json } ->
+  | Ok { backend; source; policies = [ path ]; json } ->
       let source = Option.value source ~default:Live in
-      (match read_observed_ruleset source with
-      | Error message ->
-          prerr_endline message;
-          exit 1
-      | Ok observed -> (
-          let input = read_file path in
-          match Lpf.diff_nftables_policy ~file:path ~observed input with
-          | Ok (diff, diagnostics) ->
-              print_diagnostics diagnostics;
-              if json then print_string (diff_json ~source diff) else print_string diff.text
-          | Error diagnostics ->
-              print_diagnostics diagnostics;
-              exit 1))
+      let input = read_file path in
+      (match backend with
+       | "tc" ->
+           let live = match source with
+             | Observed_path p -> read_file p
+             | Live -> (match Lpf.Tc.qdisc_show "eth0" with Ok s -> s | _ -> "")
+           in
+           (match Lpf.render_tc_policy_text ~file:path input with
+            | Ok (rendered, diagnostics) ->
+                print_diagnostics diagnostics;
+                let changes = not (String.equal rendered live) in
+                let diff_out = if changes then Printf.sprintf "--- expected\n+++ observed\n-%s+%s" rendered live else "no changes" in
+                if json then Printf.printf "{\"backend\":\"tc\",\"changes_required\":%B}\n" changes
+                else print_endline diff_out
+            | Error diagnostics ->
+                print_diagnostics diagnostics;
+                exit 1)
+       | "routing" ->
+           let live = match source with
+             | Observed_path p -> read_file p
+             | Live -> (match Lpf.Ip.rule_list () with Ok s -> s | _ -> "")
+           in
+           (match Lpf.render_routing_policy_text ~file:path input with
+            | Ok (rendered, diagnostics) ->
+                print_diagnostics diagnostics;
+                let changes = not (String.equal rendered live) in
+                let diff_out = if changes then Printf.sprintf "--- expected\n+++ observed\n-%s+%s" rendered live else "no changes" in
+                if json then Printf.printf "{\"backend\":\"routing\",\"changes_required\":%B}\n" changes
+                else print_endline diff_out
+            | Error diagnostics ->
+                print_diagnostics diagnostics;
+                exit 1)
+       | _ ->
+           (match read_observed_ruleset source with
+            | Error message ->
+                prerr_endline message;
+                exit 1
+            | Ok observed ->
+                (match Lpf.diff_nftables_policy ~file:path ~observed input with
+                 | Ok (diff, diagnostics) ->
+                     print_diagnostics diagnostics;
+                     if json then print_string (diff_json ~source diff) else print_string diff.text
+                 | Error diagnostics ->
+                     print_diagnostics diagnostics;
+                     exit 1)))
   | Ok _ ->
       prerr_endline
-        "usage: lpf diff [--backend nftables|tc|routing] [--observed <ruleset|->|--live] [--json] <policy>";
+        "usage: lpf diff [--backend nftables|tc|routing] [--observed <text|->|--live] [--json] <policy>";
       exit 64
 
 let handle_apply args =

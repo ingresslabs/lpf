@@ -107,21 +107,23 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
   match Pipeline.render_nftables_policy_text ?file text with
   | Error diagnostics -> Error diagnostics
   | Ok (rendered, diagnostics) ->
-      let (plan, _) = match Pipeline.plan_policy_text ?file text with Ok (p, d) -> (p, d) | _ -> assert false in
-      let preimage =
-        match confirm with
-        | None -> None
-        | Some _ -> begin
-            match runners.list_ruleset () with
-            | Ok ruleset -> Some (Nftables.owned_ruleset_text ruleset)
-            | Error _ -> Some ""
-          end
-      in
-      match runners.apply rendered with
-      | Error error ->
-          Error (diagnostics @ [ error_diagnostic ?file (Nft.string_of_run_error error) ])
-      | Ok () ->
-          let history_entry = {
+      (match Pipeline.plan_policy_text ?file text with
+       | Error e -> Error (diagnostics @ e)
+       | Ok (plan, _) ->
+          let preimage =
+            match confirm with
+            | None -> None
+          | Some _ -> begin
+              match runners.list_ruleset () with
+              | Ok ruleset -> Some (Nftables.owned_ruleset_text ruleset)
+              | Error _ -> Some ""
+            end
+          in
+          match runners.apply rendered with
+          | Error error ->
+              Error (diagnostics @ [ error_diagnostic ?file (Nft.string_of_run_error error) ])
+          | Ok () ->
+              let history_entry = {
             History.id = Digest.to_hex (Digest.string (string_of_float (Unix.gettimeofday ())));
             timestamp = (let tm = Unix.gmtime (Unix.gettimeofday ()) in
                          Printf.sprintf "%04d-%02d-%02dT%02d:%02d:%02dZ"
@@ -164,6 +166,6 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
                   in
                   write_file watchdog_pid_path (string_of_int pid);
                   Ok ((), diagnostics)
-          end
+          end)
 
 let apply_policy_text = apply_policy_text_with_runners default_runners
