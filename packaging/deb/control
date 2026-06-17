@@ -1,7 +1,7 @@
 Source: lpf
 Section: net
 Priority: optional
-Maintainer: avkcode
+Maintainer: lpf maintainers <lpf@example.com>
 Build-Depends:
  debhelper-compat (= 13),
  ocaml (>= 5.1.0),
