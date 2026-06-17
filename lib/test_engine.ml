@@ -17,14 +17,14 @@ type test_suite = {
 
 type test_result =
   | Pass
-  | Fail of { actual : Policy.action; explanation : explanation }
+  | Fail of { expected : Policy.action; actual : Policy.action; explanation : explanation }
 
 let run_suite (ir : Ir.t) (suite : test_suite) =
   List.map (fun (case : test_case) ->
     let results = List.map (fun (expect : expectation) ->
       let explanation = explain ir expect.packet in
       if explanation.decision = expect.expect_decision then Pass
-      else Fail { actual = explanation.decision; explanation }
+      else Fail { expected = expect.expect_decision; actual = explanation.decision; explanation }
     ) case.expectations in
     (case, results)
   ) suite.cases
@@ -40,9 +40,9 @@ let to_junit results =
       Buffer.add_string buffer (Printf.sprintf "    <testcase name=\"expectation_%d\">\n" i);
       (match result with
        | Pass -> ()
-       | Fail { actual; explanation } ->
+       | Fail { expected; actual; explanation } ->
            Buffer.add_string buffer (Printf.sprintf "      <failure message=\"Expected %s but got %s\">\n"
-             (if actual = Pass then "block" else "pass") (if actual = Pass then "pass" else "block"));
+             (Policy.string_of_action expected) (Policy.string_of_action actual));
            Buffer.add_string buffer (Explain.to_string explanation);
            Buffer.add_string buffer "\n      </failure>\n");
       Buffer.add_string buffer "    </testcase>\n"

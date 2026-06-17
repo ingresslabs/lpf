@@ -27,7 +27,8 @@ let assert_nftables_golden_fixtures () =
   assert_nftables_golden "nat-rdr.lpf" "nat-rdr.nft";
   assert_nftables_golden "queue-route.lpf" "queue-route.nft";
   assert_nftables_golden "logging.lpf" "logging.nft";
-  assert_nftables_golden "anchor-log.lpf" "anchor-log.nft"
+  assert_nftables_golden "anchor-log.lpf" "anchor-log.nft";
+  assert_nftables_golden "reject.lpf" "reject.nft"
 
 let assert_nftables_diff policy_name observed_path expected_name =
   let path = fixture policy_name in

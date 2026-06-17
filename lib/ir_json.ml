@@ -16,6 +16,7 @@ let default_action_json = function
 let action_json = function
   | Policy.Pass -> Json_util.string "pass"
   | Policy.Block -> Json_util.string "block"
+  | Policy.Reject -> Json_util.string "reject"
 
 let direction_json = function
   | Policy.In -> Json_util.string "in"

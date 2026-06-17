@@ -15,7 +15,7 @@ type test_suite = {
 
 type test_result =
   | Pass
-  | Fail of { actual : Policy.action; explanation : Explain.explanation }
+  | Fail of { expected : Policy.action; actual : Policy.action; explanation : Explain.explanation }
 
 val run_suite : Ir.t -> test_suite -> (test_case * test_result list) list
 val to_junit : (test_case * test_result list) list -> string

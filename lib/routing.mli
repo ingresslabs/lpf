@@ -4,6 +4,6 @@ type command =
 
 type t = command list
 
-val route_to_mark : Ir.rule list -> Ir.anchor list -> (Ir.address * Ir.interface_ref option) -> int option
+val mark_for_target : Ir.t -> (Ir.address * Ir.interface_ref option) -> int option
 val compile : Ir.t -> t
 val to_string : t -> string

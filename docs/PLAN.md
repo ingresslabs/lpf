@@ -244,13 +244,19 @@ Initial implementation status:
 - `lpf e2e run` supports up to 1000 deterministic scenarios per guest.
 - Scenario evidence records command argv, exit status, stdout/stderr, applied
   state readback, cleanup, and post-remove readback where applicable.
+- The catalog now includes IPv6 accept/drop, cleanup idempotency,
+  intended-vs-observed readback, and invalid-update rejection families.
+- Evidence includes `summary.jsonl` for compact per-scenario status and
+  checksums in addition to the full `scenario-log.jsonl` command log.
 - The advanced Jenkins matrix archives requested, available, covered, and
   missing kernel artifacts separately.
+- The tracked kernel matrix contains requested kernel metadata only; real
+  Firecracker image inventory is supplied outside the repository.
 
 Exit criteria:
 
-- Lab 141 or another approved Firecracker cloud profile can run the latest
-  kernel.org matrix without relabeling missing images as covered.
+- An approved Firecracker cloud profile can run the latest kernel.org matrix
+  without relabeling missing images as covered.
 - Each matrix entry records commit, OCaml version, Dune version, kernel,
   nftables, iproute2, conntrack-tools, command, fixture family, plan/evidence
   checksum, apply, confirm, rollback, and cleanup result.

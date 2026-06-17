@@ -7,7 +7,7 @@ MAN_DIR ?= man/generated
 PREFIX ?= /usr/local
 POLICY ?= fixtures/policies/basic.lpf
 OBSERVED ?= fixtures/nftables/basic.nft
-REMOTE ?= hawking
+REMOTE ?= remote-linux
 REMOTE_DIR ?= /tmp/lpf-remote-check
 
 .PHONY: all help deps build test check ci clean install uninstall
@@ -38,7 +38,7 @@ help:
 	@printf '%s\n' '  make plan              print JSON plan for POLICY'
 	@printf '%s\n' '  make rules-show        render nftables rules for POLICY'
 	@printf '%s\n' '  make rules-diff        diff OBSERVED ruleset against POLICY'
-	@printf '%s\n' '  make remote-check      run build/test/man-check on REMOTE=hawking'
+	@printf '%s\n' '  make remote-check      run build/test/man-check on REMOTE=<ssh-host>'
 
 deps:
 	$(OPAM) install . --deps-only --with-test

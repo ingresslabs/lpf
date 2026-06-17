@@ -144,7 +144,7 @@ Operations:
 - `list`
 - `show`
 - `kill`
-- `flush-policy`
+- `flush`
 
 ### `lpf rules show [--backend nftables] <policy>`
 
@@ -178,22 +178,27 @@ Run real end-to-end Linux networking validation inside a disposable lab
 environment. The runner is intended for Firecracker VMs or equivalent throwaway
 Linux guests with root/CAP_NET_ADMIN.
 
-The default catalog contains 480 deterministic scenarios and accepts 1 to 1000
+The default catalog contains 550 deterministic scenarios and accepts 1 to 1000
 scenarios per run. Advanced CI jobs normally use 500 to 1000 scenarios per
-available kernel. The catalog is split across:
+available kernel; the generic advanced matrix uses 990 scenarios for balanced
+family coverage. The catalog is split across:
 
 - nftables accept decisions with real ICMP traffic over veth namespaces
 - nftables drop decisions with observed traffic failure
 - nftables logging-rule installation and readback
+- IPv6 nftables accept/drop decisions with real ICMPv6 traffic
 - policy-routing table and rule installation
 - tc HTB qdisc/class traffic-shaping installation
 - conntrack statistics readback after traffic
+- cleanup idempotency and post-remove readback
+- intended-vs-observed readback diff evidence
+- negative invalid-update rejection
 
 Supported report outputs:
 
 - `--junit <path>` for Jenkins trend reporting
 - `--allure-dir <dir>` for Allure result JSON files
-- `--evidence-dir <dir>` for a sanitized run manifest plus
+- `--evidence-dir <dir>` for a sanitized run manifest, `summary.jsonl`, and
   `scenario-log.jsonl`
 - `--kernel-id <id>` to attach the matrix kernel label
 - `--dry-run` to render the catalog and reports without changing networking

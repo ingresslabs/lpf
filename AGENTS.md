@@ -32,8 +32,8 @@ NFLOG.
 
 - Before marking a code change complete, compile and test it on the local host
   and on a remote Linux machine when one is reachable.
-- The preferred remote target is the configured `hawking` SSH host or a
-  project-approved replacement.
+- The preferred remote target is a project-approved SSH host supplied through
+  local configuration or the `REMOTE` environment variable.
 - Remote validation must run from a clean transferred checkout or fresh clone,
   not from an untracked local build directory.
 - Do not commit remote logs, host inventories, SSH keys, tokens, or raw

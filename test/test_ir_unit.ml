@@ -61,6 +61,10 @@ let () =
   (match ir.rules with
    | [ rule ] -> assert rule.keep_state
    | _ -> assert false);
+  let ir = ir_of_text "set default deny\nreject in proto tcp from any to any port 22" in
+  (match ir.rules with
+   | [ rule ] -> assert (rule.action = Lpf.Policy.Reject)
+   | _ -> assert false);
   let ir = ir_of_text "set default deny\npass out log (all) proto tcp from any to any port 443" in
   (match ir.rules with
    | [ rule ] -> assert (rule.log = Some Lpf.Policy.Log_all)

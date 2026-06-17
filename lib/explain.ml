@@ -126,7 +126,7 @@ let explain (ir : Ir.t) (pkt : packet) =
   }
 
 let string_of_direction = function In -> "in" | Out -> "out"
-let string_of_action = function Pass -> "pass" | Block -> "block"
+let string_of_action = function Pass -> "pass" | Block -> "block" | Reject -> "reject"
 let string_of_protocol = function Proto_any -> "any" | Proto_named n -> n
 
 let address_to_string = function
@@ -192,7 +192,7 @@ let to_json e =
   Json_util.field_object
     [
       ("packet", packet_json e.packet);
-      ("decision", (match e.decision with Pass -> Json_util.string "pass" | Block -> Json_util.string "block"));
+      ("decision", (match e.decision with Pass -> Json_util.string "pass" | Block -> Json_util.string "block" | Reject -> Json_util.string "reject"));
       ("matching_rule", Json_util.option (Ir_json.rule_json ~include_spans:true) e.matching_rule);
       ("nat", Json_util.option (Ir_json.nat_json ~include_spans:true) e.nat);
       ("rdr", Json_util.option (Ir_json.rdr_json ~include_spans:true) e.rdr);

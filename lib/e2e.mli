@@ -2,9 +2,14 @@ type scenario_family =
   | Nft_accept
   | Nft_drop
   | Nft_log
+  | Ipv6_accept
+  | Ipv6_drop
   | Routing
   | Traffic_shaping
   | Conntrack
+  | Cleanup_idempotency
+  | Readback_diff
+  | Negative_invalid
 
 type scenario = {
   id : string;
@@ -45,6 +50,7 @@ type suite_result = {
 
 val default_scenario_count : int
 val family_name : scenario_family -> string
+val all_families : scenario_family list
 val scenario_catalog : int -> scenario list
 val run : config -> suite_result
 val to_junit : suite_result -> string

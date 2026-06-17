@@ -32,7 +32,11 @@ let parse ?file text =
               let rec parse_expect expect = function
                 | [] -> expect
                 | "expect" :: action :: rest ->
-                    let expect_decision = if action = "pass" then Policy.Pass else Policy.Block in
+                    let expect_decision =
+                      match Policy.parse_action action with
+                      | Some a -> a
+                      | None -> Policy.Block
+                    in
                     parse_expect { expect with expect_decision } rest
                 | "in" :: rest -> parse_expect { expect with packet = { expect.packet with direction = Policy.In } } rest
                 | "out" :: rest -> parse_expect { expect with packet = { expect.packet with direction = Policy.Out } } rest

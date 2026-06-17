@@ -1,4 +1,4 @@
 (library
  (name lpf)
- (modules policy ir plan tc routing nftables nft explain json_util ir_json test_engine test_parser history command manpage pipeline apply_guard conntrack table e2e ip lpf)
+ (modules policy ir plan tc routing nftables nft explain json_util ir_json test_engine test_parser history command manpage pipeline apply_guard conntrack table e2e ip lpf process file_util)
  (libraries unix))

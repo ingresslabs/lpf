@@ -30,7 +30,7 @@ All 15 CLI commands are implemented with OCaml handlers:
 - `lpf rules` — render and diff backend rules (nftables, tc, routing)
 - `lpf table` / `lpf state` — dynamic table and conntrack management
 - `lpf history` — apply history with rollback points
-- `lpf e2e` — Firecracker guest networking validation (600 scenarios)
+- `lpf e2e` — Firecracker guest networking validation (550 default scenarios, up to 1000)
 - `lpf man` / `lpf version` / `lpf help`
 
 Backends: nftables (rendering, diff, live readback), tc (compilation, live readback), policy routing (compilation, live readback).

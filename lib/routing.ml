@@ -19,26 +19,14 @@ let extract_route_targets (ir : Ir.t) =
   in
   List.sort_uniq compare targets
 
-let route_to_mark rules anchors target =
-  let rec extract_rules acc = function
-    | [] -> acc
-    | (r : Ir.rule) :: rest ->
-        let acc = match r.route_to with Some target -> target :: acc | None -> acc in
-        extract_rules acc rest
-  in
-  let targets = extract_rules [] rules in
-  let targets =
-    List.fold_left
-      (fun acc (a : Ir.anchor) -> extract_rules acc a.rules)
-      targets anchors
-  in
-  let unique_targets = List.sort_uniq compare targets in
+let mark_for_target ir target =
+  let targets = extract_route_targets ir in
   let rec find_index idx = function
     | [] -> None
     | t :: _ when t = target -> Some (100 + idx)
     | _ :: rest -> find_index (idx + 1) rest
   in
-  find_index 0 unique_targets
+  find_index 0 targets
 
 let compile (ir : Ir.t) : t =
   let targets = extract_route_targets ir in
@@ -47,7 +35,7 @@ let compile (ir : Ir.t) : t =
       let mark = 100 + idx in
       let table = 100 + idx in
       let gateway, iface_opt = target in
-      let gateway_str = match gateway with Ir.Literal s -> s | _ -> "" (* Handle appropriately *) in
+      let gateway_str = match gateway with Ir.Literal s -> s | _ -> failwith ("routing: gateway is not a literal address; this is a bug in IR validation") in
       let device_str = match iface_opt with Some (i : Ir.interface_ref) -> Some i.device | None -> None in
       [
         Ip_rule_add { mark; table };

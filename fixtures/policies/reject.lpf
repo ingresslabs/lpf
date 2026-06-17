@@ -1,0 +1,8 @@
+set default deny
+
+interface wan = "eth0"
+interface lan = "eth1"
+
+reject in on wan proto tcp from any to any port 22 log
+block in on wan from any to any
+pass out on lan proto tcp from any to any port 443 keep state

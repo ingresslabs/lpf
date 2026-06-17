@@ -15,7 +15,7 @@ type diagnostic = {
 
 type default_action = Default_pass | Default_deny
 type direction = In | Out
-type action = Pass | Block
+type action = Pass | Block | Reject
 type protocol = Proto_any | Proto_named of string
 
 type reference =
@@ -220,7 +220,7 @@ let parse_port token =
           | Some value when value >= 1 && value <= 65535 -> Ok (Port_number value)
           | _ -> Error ("invalid port `" ^ token ^ "`")))
 
-let parse_action = function "pass" -> Some Pass | "block" -> Some Block | _ -> None
+let parse_action = function "pass" -> Some Pass | "block" -> Some Block | "reject" -> Some Reject | _ -> None
 
 let parse_log_option = function
   | "all" -> Some Log_all
@@ -451,7 +451,7 @@ let parse_rule original tokens policy diagnostics =
       | None ->
           ( policy,
             add_diagnostic diagnostics
-              (syntax_error action_token.span "expected rule to start with `pass` or `block`") )
+              (syntax_error action_token.span "expected rule to start with `pass`, `block`, or `reject`") )
       | Some action ->
           let initial : rule =
             {
@@ -943,14 +943,14 @@ let parse_line ?file line policy diagnostics original =
   | first :: _ when text_is "rdr" first -> parse_rdr original tokens policy diagnostics
   | first :: _ when text_is "queue" first -> parse_queue original tokens policy diagnostics
   | first :: _ when text_is "anchor" first -> parse_anchor original tokens policy diagnostics
-  | first :: _ when text_is "pass" first || text_is "block" first ->
+  | first :: _ when text_is "pass" first || text_is "block" first || text_is "reject" first ->
       parse_rule original tokens policy diagnostics
   | _ when has_token "=" tokens -> parse_macro original tokens policy diagnostics
   | first :: _ ->
       ( policy,
         add_diagnostic diagnostics
           (syntax_error first.span
-             "unrecognized statement; expected set, interface, table, macro, nat, rdr, queue, anchor, pass, or block") )
+             "unrecognized statement; expected set, interface, table, macro, nat, rdr, queue, anchor, pass, block, or reject") )
 
 let parse ?file text =
   let lines = String.split_on_char '\n' text in
@@ -1217,7 +1217,7 @@ let check ?file text =
       else { policy = Some policy; diagnostics }
 
 let string_of_default_action = function Default_pass -> "pass" | Default_deny -> "deny"
-let string_of_action = function Pass -> "pass" | Block -> "block"
+let string_of_action = function Pass -> "pass" | Block -> "block" | Reject -> "reject"
 let string_of_direction = function In -> "in" | Out -> "out"
 let string_of_log_option = function Log_all -> "all" | Log_matches -> "matches" | Log_user -> "user"
 

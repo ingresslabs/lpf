@@ -6,25 +6,12 @@ let preimage_tc_path = Filename.concat rollback_dir "preimage.tc"
 let preimage_routing_path = Filename.concat rollback_dir "preimage.routing"
 let watchdog_pid_path = Filename.concat rollback_dir "watchdog.pid"
 
-let rec ensure_dir dir =
-  if dir = "" || dir = "." || dir = "/" then ()
-  else if Sys.file_exists dir then
-    if not (Sys.is_directory dir) then
-      prerr_endline ("warning: " ^ dir ^ " exists and is not a directory")
-    else ()
-  else (
-    ensure_dir (Filename.dirname dir);
-    try Unix.mkdir dir 0o755
-    with Unix.Unix_error (error, _, _) ->
-      prerr_endline ("warning: could not create " ^ dir ^ ": " ^ Unix.error_message error))
+let ensure_dir = File_util.ensure_dir ~strict:false
+let write_file = File_util.write_file
 
 let ensure_rollback_dir () =
   ensure_dir var_dir;
   ensure_dir rollback_dir
-
-let write_file path content =
-  let out = open_out path in
-  Fun.protect ~finally:(fun () -> close_out out) (fun () -> output_string out content)
 
 let parse_duration text =
   if String.length text < 2 then None

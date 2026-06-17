@@ -256,10 +256,10 @@ let command_docs =
     {
       command = State;
       section = 8;
-      synopsis = "lpf state <list|show|kill|flush-policy>";
+      synopsis = "lpf state <list|show|flush|kill>";
       description = [ "Inspect and manage lpf-related conntrack state." ];
       options = [ ("--json", "emit machine-readable state output") ];
-      examples = [ "lpf state list"; "lpf state kill --policy-id abc123" ];
+      examples = [ "lpf state list"; "lpf state kill --src 10.0.0.1 --dst 10.0.0.2" ];
       files = [ "/proc/net/nf_conntrack"; "/var/lib/lpf/history" ];
       safety_notes = [ "Killing conntrack entries can interrupt active connections." ];
       see_also = [ "lpf-rules(8)"; "lpf-history(8)" ];
@@ -314,11 +314,11 @@ let command_docs =
         [
           "Run real end-to-end Linux networking scenarios intended for Firecracker guest validation.";
           "The runner creates isolated network namespaces, veth links, nftables rules, policy routing entries, tc HTB shaping state, and conntrack evidence.";
-          "The default catalog contains 480 deterministic scenarios and supports up to 1000 scenarios across nftables accept/drop/logging, policy routing, traffic shaping, and conntrack families.";
+          "The default catalog contains 550 deterministic scenarios and supports up to 1000 scenarios across nftables IPv4/IPv6 accept/drop/logging, policy routing, traffic shaping, conntrack, cleanup, readback, and negative-update families.";
         ];
       options =
         [
-          ("--scenario-count <n>", "number of scenarios to run; must be between 1 and 1000, default 480");
+          ("--scenario-count <n>", "number of scenarios to run; must be between 1 and 1000, default 550");
           ("--junit <path>", "write JUnit XML for Jenkins trend reporting");
           ("--allure-dir <dir>", "write Allure result JSON files");
           ("--evidence-dir <dir>", "write a sanitized evidence manifest and per-scenario JSONL command log");
@@ -327,8 +327,8 @@ let command_docs =
         ];
       examples =
         [
-          "lpf e2e run --scenario-count 480 --junit evidence/junit.xml --allure-dir allure-results";
-          "lpf e2e run --scenario-count 960 --junit evidence/junit.xml --allure-dir allure-results --evidence-dir evidence/lab --kernel-id lab-141-default";
+          "lpf e2e run --scenario-count 550 --junit evidence/junit.xml --allure-dir allure-results";
+          "lpf e2e run --scenario-count 990 --junit evidence/junit.xml --allure-dir allure-results --evidence-dir evidence/matrix --kernel-id kernel-7.1";
           "lpf e2e run --dry-run --scenario-count 1000 --evidence-dir evidence/dry-run";
           "lpf e2e list --scenario-count 12";
         ];
@@ -379,7 +379,8 @@ let help () =
       ])
 
 let command_status = function
-  | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules | History | E2e | Man ->
+  | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules
+  | History | E2e | Man ->
       "implemented"
   | Version | Help -> "implemented"
 

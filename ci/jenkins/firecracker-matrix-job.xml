@@ -8,19 +8,19 @@
         <hudson.model.StringParameterDefinition>
           <name>EXPECTED_COMMIT</name>
           <description>Short or full lpf commit expected in the source archive.</description>
-          <defaultValue>eea022bf8669</defaultValue>
+          <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>KERNEL_MATRIX</name>
-          <description>Comma-separated kernel labels. Lab 141 currently registers one usable Firecracker kernel image.</description>
-          <defaultValue>lab-141-default</defaultValue>
+          <description>Comma-separated kernel labels supplied by the Firecracker cloud profile.</description>
+          <defaultValue>baseline-default</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>SCENARIO_COUNT</name>
-          <description>Number of lpf e2e scenarios to run per kernel label. The normal range is 400-600.</description>
-          <defaultValue>480</defaultValue>
+          <description>Number of lpf e2e scenarios to run per kernel label. The normal range is 500-1000.</description>
+          <defaultValue>550</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -103,6 +103,7 @@ pipeline {
                   stage("Checkout ${kernelId}") {
                     sh '''
                       set -eux
+                      test -n "${EXPECTED_COMMIT:-}"
                       rm -rf lpf lpf.tar.gz lpf.commit evidence allure-results
                       host_gateway="$(ip route show default | awk 'NR==1 {print $3}')"
                       base_url="${SOURCE_ARCHIVE_BASE_URL:-http://${host_gateway}:18081}"

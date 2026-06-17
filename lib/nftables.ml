@@ -59,21 +59,6 @@ type t = {
 let filter_table_name = "lpf_filter"
 let nat_table_name = "lpf_nat"
 
-let nft_string text =
-  let buffer = Buffer.create (String.length text + 2) in
-  Buffer.add_char buffer '"';
-  String.iter
-    (function
-      | '"' -> Buffer.add_string buffer "\\\""
-      | '\\' -> Buffer.add_string buffer "\\\\"
-      | '\n' -> Buffer.add_string buffer "\\n"
-      | '\r' -> Buffer.add_string buffer "\\r"
-      | '\t' -> Buffer.add_string buffer "\\t"
-      | character -> Buffer.add_char buffer character)
-    text;
-  Buffer.add_char buffer '"';
-  Buffer.contents buffer
-
 let sanitize_identifier name =
   let buffer = Buffer.create (String.length name) in
   String.iter
@@ -121,7 +106,7 @@ let protocol_for_port = function
 
 let interface_expression chain_name (interface : Ir.interface_ref) =
   let key = if String.equal chain_name "output" then "oifname" else "iifname" in
-  Meta (key, nft_string interface.device)
+  Meta (key, Json_util.string interface.device)
 
 let address_family_heuristic = function
   | Ir.Any -> None
@@ -179,6 +164,7 @@ let log_statement = function
 let verdict_statement = function
   | Policy.Pass -> Accept
   | Policy.Block -> Drop
+  | Policy.Reject -> Reject
 
 let route_to_comment = function
   | None -> []
@@ -221,7 +207,7 @@ let compile_rule ?anchor (ir : Ir.t) (rule : Ir.rule) =
     match rule.route_to with
     | None -> statements
     | Some target -> (
-        match Routing.route_to_mark ir.rules ir.anchors target with
+        match Routing.mark_for_target ir target with
         | Some mark -> Meta_mark_set mark :: statements
         | None -> statements)
   in
@@ -359,7 +345,7 @@ let string_of_statement = function
   | Drop -> "drop"
   | Reject -> "reject"
   | Log None -> "log"
-  | Log (Some prefix) -> "log prefix " ^ nft_string prefix
+  | Log (Some prefix) -> "log prefix " ^ Json_util.string prefix
   | Snat address -> "snat to " ^ address
   | Dnat target -> "dnat to " ^ target
   | Masquerade -> "masquerade"
@@ -373,7 +359,7 @@ let render_rule (rule : rule) =
     @
     match rule.comment with
     | None -> []
-    | Some comment -> [ "comment " ^ nft_string comment ]
+    | Some comment -> [ "comment " ^ Json_util.string comment ]
   in
   "    " ^ String.concat " " parts
 

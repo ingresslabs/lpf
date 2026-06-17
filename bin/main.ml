@@ -3,38 +3,10 @@ let print_end text =
   print_newline ()
 
 let default_man_dir = "man/generated"
-
-let rec ensure_dir dir =
-  if dir = "" || dir = "." || dir = Filename.dirname dir then ()
-  else if Sys.file_exists dir then (
-    if not (Sys.is_directory dir) then failwith (dir ^ " exists and is not a directory"))
-  else (
-    ensure_dir (Filename.dirname dir);
-    Unix.mkdir dir 0o755)
-
-let write_file path content =
-  let channel = open_out path in
-  Fun.protect
-    ~finally:(fun () -> close_out channel)
-    (fun () -> output_string channel content)
-
-let read_file path =
-  let channel = open_in path in
-  Fun.protect
-    ~finally:(fun () -> close_in channel)
-    (fun () ->
-      let length = in_channel_length channel in
-      really_input_string channel length)
-
-let read_stdin () =
-  let buffer = Buffer.create 4096 in
-  (try
-     while true do
-       Buffer.add_string buffer (input_line stdin);
-       Buffer.add_char buffer '\n'
-     done
-   with End_of_file -> ());
-  Buffer.contents buffer
+let read_file = Lpf.File_util.read_file
+let write_file = Lpf.File_util.write_file
+let ensure_dir = Lpf.File_util.ensure_dir
+let read_stdin = Lpf.File_util.read_stdin
 
 let generated_path ~dir page = Filename.concat dir page.Lpf.filename
 
@@ -577,10 +549,10 @@ let handle_test args =
                 (fun i result ->
                   match result with
                   | Lpf.Test_engine.Pass -> Printf.printf "  expectation %d: ok\n" i
-                  | Lpf.Test_engine.Fail { actual; explanation } ->
-                      Printf.printf "  expectation %d: FAILED (expected %s but got %s)\n" i
-                        (if actual = Lpf.Policy.Pass then "block" else "pass")
-                        (if actual = Lpf.Policy.Pass then "pass" else "block");
+                   | Lpf.Test_engine.Fail { expected; actual; explanation } ->
+                       Printf.printf "  expectation %d: FAILED (expected %s but got %s)\n" i
+                         (Lpf.Policy.string_of_action expected)
+                         (Lpf.Policy.string_of_action actual);
                       let explanation_text = Lpf.Explain.to_string explanation in
                       let lines = String.split_on_char '\n' explanation_text in
                       List.iter (fun line -> Printf.printf "    %s\n" line) lines)
@@ -636,11 +608,40 @@ let handle_state args =
       | Error error ->
           prerr_endline (Lpf.Conntrack.string_of_run_error error);
           exit 1)
-  | "kill" :: _ ->
-      prerr_endline "state kill: specify --src and --dst addresses";
-      exit 64
+  | "kill" :: rest ->
+      let rec parse_src_dst src dst = function
+        | [] -> (src, dst)
+        | "--src" :: s :: more -> parse_src_dst (Some s) dst more
+        | "--dst" :: d :: more -> parse_src_dst src (Some d) more
+        | _ :: more -> parse_src_dst src dst more
+      in
+      let src, dst = parse_src_dst None None rest in
+      (match (src, dst) with
+       | Some s, Some d -> (
+           match Lpf.Conntrack.delete ~src:s ~dst:d with
+           | Ok () ->
+               Printf.printf "deleted conntrack entries for %s -> %s\n" s d;
+               exit 0
+           | Error error ->
+               prerr_endline (Lpf.Conntrack.string_of_run_error error);
+               exit 1)
+       | _ ->
+           prerr_endline "state kill: specify --src and --dst addresses";
+           exit 64)
+  | "show" :: _ -> (
+      match Lpf.Conntrack.list () with
+      | Ok output ->
+          let entries = Lpf.Conntrack.parse_list output in
+          List.iter (fun (e : Lpf.Conntrack.conntrack_entry) ->
+              Printf.printf "%s %s %s %s %s [%s]\n"
+                e.protocol e.src e.dst e.sport e.dport e.state)
+            entries;
+          exit 0
+      | Error error ->
+          prerr_endline (Lpf.Conntrack.string_of_run_error error);
+          exit 1)
   | _ ->
-      prerr_endline "usage: lpf state <list|flush|kill>";
+      prerr_endline "usage: lpf state <list|show|flush|kill>";
       exit 64
 
 let handle_table args =
@@ -673,11 +674,24 @@ let handle_table args =
   | name :: "show" :: _ ->
       Printf.printf "table %s: use lpf rules show for full ruleset\n" name;
       exit 0
-  | name :: "counters" :: _ ->
-      Printf.printf "table %s counters: not yet implemented\n" name;
-      exit 0
+  | name :: "counters" :: _ -> (
+      match Lpf.Table.counters name with
+      | Ok output ->
+          print_endline output;
+          exit 0
+      | Error error ->
+          prerr_endline (Lpf.Nft.string_of_run_error error);
+          exit 1)
+  | name :: "flush" :: _ -> (
+      match Lpf.Table.flush name with
+      | Ok () ->
+          Printf.printf "flushed table %s\n" name;
+          exit 0
+      | Error error ->
+          prerr_endline (Lpf.Nft.string_of_run_error error);
+          exit 1)
   | _ ->
-      prerr_endline "usage: lpf table <name> <add|delete|replace|show|counters> [...]";
+      prerr_endline "usage: lpf table <name> <add|delete|replace|show|flush|counters> [...]";
       exit 64
 
 let parse_e2e_args args =
@@ -772,4 +786,6 @@ let () =
       | None ->
           prerr_endline ("unknown lpf command: " ^ name);
           exit 64)
-  | [] -> assert false
+  | [] ->
+      prerr_endline "unexpected empty argument vector";
+      exit 1

@@ -59,7 +59,9 @@ let () =
   assert_ok "set default deny\ninterface wan = \"eth0\"\npass out log (user) on wan proto tcp from any to any port 443";
   assert_fails ~contains:"l" "set default deny\ninterface wan = \"eth0\"\npass out log (invalid) from any to any";
   assert_ok "set default deny\npass in proto tcp from any to any port 22 keep state";
+  assert_ok "set default deny\nreject in proto tcp from any to any port 22";
   assert_format_round_trip "set default deny\npass out proto tcp from any to any port 443";
+  assert_format_round_trip "set default deny\nreject in proto tcp from any to any port 22";
   assert_format_round_trip "set default deny\ntable <t> { 10.0.0.0/8 }\npass out from <t> to any";
   let policy = assert_parse "set default deny\ninterface wan = \"eth0\"\npass out on wan proto tcp from any to any port 443" in
   assert (Lpf.Policy.validate policy = []);

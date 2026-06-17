@@ -53,6 +53,8 @@ module Conntrack = Conntrack
 module Table = Table
 module Ip = Ip
 module E2e = E2e
+module Process = Process
+module File_util = File_util
 
 let version = Command.version
 let all_commands = Command.all_commands

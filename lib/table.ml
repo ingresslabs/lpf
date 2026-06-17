@@ -9,6 +9,15 @@ let delete_element_invocation table_name element =
 let flush_invocation table_name =
   { Nft.program = "nft"; argv = [ "nft"; "flush"; "set"; "inet"; "lpf_filter"; "tbl_" ^ table_name ] }
 
+let counters_invocation table_name =
+  { Nft.program = "nft"; argv = [ "nft"; "list"; "set"; "inet"; "lpf_filter"; "tbl_" ^ table_name ] }
+
+let counters_with_runner runner table_name = runner (counters_invocation table_name)
+let counters table_name = counters_with_runner Nft.run table_name
+
+let flush_with_runner runner table_name = runner (flush_invocation table_name) |> Result.map ignore
+let flush table_name = flush_with_runner Nft.run table_name
+
 let add_with_runner runner table_name element =
   match runner (add_element_invocation table_name element) with
   | Ok _ -> Ok ()

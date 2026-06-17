@@ -181,6 +181,12 @@ let of_rule (policy : Policy.policy) (rule : Policy.rule) =
             (Option.value rule.route_to_gateway_span ~default:rule.span)
             gateway
         in
+        let* () =
+          match gateway with
+          | Literal _ -> Ok ()
+          | Any -> Error [ diag rule.span "route-to gateway must be a literal IP address, not `any`" ]
+          | Table _ -> Error [ diag rule.span "route-to gateway cannot reference a table" ]
+        in
         let* interface =
           resolve_interface policy
             (Option.value rule.route_to_interface_span ~default:rule.span)

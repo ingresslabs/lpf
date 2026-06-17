@@ -58,13 +58,22 @@
 - Added an advanced Jenkins Firecracker matrix contract that records requested,
   available, covered, and missing kernel labels separately so unavailable
   kernels are never reported as covered.
+- Expanded `lpf e2e run` to a balanced 550-scenario default and 990-scenario
+  advanced matrix profile across nftables IPv4/IPv6, routing, traffic shaping,
+  conntrack, cleanup idempotency, readback diffing, and invalid-update
+  rejection.
+- Added compact `summary.jsonl` E2E evidence and family coverage accounting to
+  the E2E manifest.
+- Added a generic tracked kernel matrix that stores requested kernel metadata
+  without lab ids, real hostnames, IP addresses, or Firecracker image
+  inventory.
 
 ### Refactored
 - Split `lpf.ml` (780 lines) into 6 modules: `command.ml`, `manpage.ml`,
   `pipeline.ml`, `apply_guard.ml`, `history.ml`, `nft.ml`.
 - Split monolithic test suite into 17 focused test files (4 integration + 13 unit).
 - Removed ui, kernel-matrix, import, and support-bundle stubs with no handlers.
-- Removed Bonsai UI Rule, Kernel Matrix Rule, and Lab 141 Rule from AGENTS.md.
+- Removed abandoned UI and kernel-matrix placeholders from AGENTS.md.
 - Cleaned up PLAN.md of completed and abandoned phases.
 - Rewrote history JSON parser with robust field extraction.
 - Replaced duplicated JSON escaping in main.ml with `Json_util.string`.
@@ -80,7 +89,8 @@
 - `lpf table show` and `lpf table counters` handlers.
 - `lpf state kill` and `lpf state flush` handlers.
 - `lpf e2e run --dry-run` for plan-only validation without Firecracker.
-- E2E scenario catalog extends to 600 deterministic scenarios.
+- E2E scenario catalog extends to 550 default deterministic scenarios and 990
+  balanced advanced-matrix scenarios.
 - `E2e.dry_run` support for config-only planning.
 - `E2e.evidence_manifest` for redacted evidence summaries.
 

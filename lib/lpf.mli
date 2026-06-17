@@ -53,6 +53,8 @@ module Conntrack : module type of Conntrack
 module Table : module type of Table
 module Ip : module type of Ip
 module E2e : module type of E2e
+module Process : module type of Process
+module File_util : module type of File_util
 
 val version : string
 val all_commands : (string * command * string) list

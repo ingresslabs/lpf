@@ -32,10 +32,10 @@ let () =
   assert (String.length rendered > 0);
   assert (String.contains rendered 'i');
 
-  let mark = Lpf.Routing.route_to_mark ir.rules ir.anchors (Lpf.Ir.Literal "1.1.1.1", Some iface) in
+  let mark = Lpf.Routing.mark_for_target ir (Lpf.Ir.Literal "1.1.1.1", Some iface) in
   assert (mark = Some 100);
 
-  let mark = Lpf.Routing.route_to_mark ir.rules ir.anchors (Lpf.Ir.Literal "2.2.2.2", None) in
+  let mark = Lpf.Routing.mark_for_target ir (Lpf.Ir.Literal "2.2.2.2", None) in
   assert (mark = None);
 
   Printf.printf "routing tests passed\n"

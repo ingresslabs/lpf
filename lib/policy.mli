@@ -15,7 +15,7 @@ type diagnostic = {
 
 type default_action = Default_pass | Default_deny
 type direction = In | Out
-type action = Pass | Block
+type action = Pass | Block | Reject
 type protocol = Proto_any | Proto_named of string
 
 type reference =
@@ -148,3 +148,5 @@ val check : ?file:string -> string -> check_result
 val format : policy -> string
 val format_check_result : check_result -> string
 val diagnostic_to_string : diagnostic -> string
+val parse_action : string -> action option
+val string_of_action : action -> string

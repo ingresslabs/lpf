@@ -2,7 +2,7 @@
 .SH NAME
 lpf\-state \- inspect or modify conntrack state
 .SH SYNOPSIS
-lpf state <list|show|kill|flush\-policy>
+lpf state <list|show|flush|kill>
 .SH DESCRIPTION
 Inspect and manage lpf\-related conntrack state.
 .SH OPTIONS
@@ -11,7 +11,7 @@ Inspect and manage lpf\-related conntrack state.
 emit machine\-readable state output
 .SH EXAMPLES
 lpf state list
-lpf state kill \-\-policy\-id abc123
+lpf state kill \-\-src 10.0.0.1 \-\-dst 10.0.0.2
 .SH FILES
 /proc/net/nf_conntrack
 /var/lib/lpf/history
