@@ -229,7 +229,7 @@ claiming support.
 Tasks:
 
 - Run `lpf e2e` inside Firecracker VMs, not on the host.
-- Cover nftables accept/drop/logging, policy routing, route-table cleanup, tc
+- Cover nftables accept/drop/logging/reject, policy routing, route-table cleanup, tc
   HTB traffic shaping, conntrack readback, and cleanup/removal paths.
 - Emit JUnit, Allure, sanitized manifests, and `scenario-log.jsonl` command
   evidence for each scenario.
@@ -244,7 +244,7 @@ Initial implementation status:
 - `lpf e2e run` supports up to 1000 deterministic scenarios per guest.
 - Scenario evidence records command argv, exit status, stdout/stderr, applied
   state readback, cleanup, and post-remove readback where applicable.
-- The catalog now includes IPv6 accept/drop, cleanup idempotency,
+- The catalog now includes nftables reject, IPv6 accept/drop, cleanup idempotency,
   intended-vs-observed readback, and invalid-update rejection families.
 - Evidence includes `summary.jsonl` for compact per-scenario status and
   checksums in addition to the full `scenario-log.jsonl` command log.

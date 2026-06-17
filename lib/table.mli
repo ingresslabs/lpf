@@ -1,5 +1,11 @@
 type element = string
 
+type table_element = {
+  value : string;
+  packets : int option;
+  bytes : int option;
+}
+
 val add : string -> string -> (unit, Nft.run_error) result
 val add_with_runner : (Nft.invocation -> (string, Nft.run_error) result) -> string -> string -> (unit, Nft.run_error) result
 val delete : string -> string -> (unit, Nft.run_error) result
@@ -10,3 +16,5 @@ val flush : string -> (unit, Nft.run_error) result
 val flush_with_runner : (Nft.invocation -> (string, Nft.run_error) result) -> string -> (unit, Nft.run_error) result
 val counters : string -> (string, Nft.run_error) result
 val counters_with_runner : (Nft.invocation -> (string, Nft.run_error) result) -> string -> (string, Nft.run_error) result
+val parse_counters_output : string -> table_element list
+val elements_to_json : table_element list -> string

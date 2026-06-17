@@ -4,98 +4,50 @@
 
 ### Added
 
-- Created the initial `lpf` OCaml project skeleton.
-- Added the project plan, command contract, and agent rules.
-- Added man-page generation and remote Linux compile/test requirements.
-- Implemented `lpf man generate`, `lpf man check`, and `lpf man install`
-  using OCaml command metadata.
-- Added generated `lpf(8)`, command, policy config, and policy test man pages.
-- Implemented the first `lpf check` and `lpf fmt` policy-language slice in
-  OCaml.
-- Added valid and invalid policy fixtures for default actions, tables, rules,
-  NAT, redirects, syntax errors, and unknown table diagnostics.
-- Refactored policy parsing around tokenized statements with column-level
-  spans for parser and validation diagnostics.
-- Added formatter round-trip coverage for non-normalized policy input.
-- Added policy-language parsing, formatting, validation, and fixtures for queue
-  declarations and rule-level queue assignment.
-- Added rule-level `route-to` parsing, formatting, validation, and malformed
-  syntax diagnostics.
-- Added rule-level `log`, `log (all)`, `log (matches)`, and `log (user)`
-  parsing, formatting, validation, and malformed syntax diagnostics.
-- Added top-level anchor parsing, formatting, validation, and valid/invalid
-  fixtures for rule-only anchor blocks.
-- Added Phase 1 policy-language hardening fixtures for malformed interface,
-  quoted string, table, NAT, and redirect syntax plus broader formatter
-  round-trip coverage.
-- Added the first typed IR model for the Phase 1 policy surface and
-  shadowed-rule warnings during `lpf check`.
-- Implemented `lpf plan [--json]` for versioned backend-neutral semantic plan
-  JSON with stable checksums.
-- Added a read-only nftables renderer exposed through `lpf rules show <policy>`
-  with golden fixture coverage.
-- Added read-only `lpf rules diff --observed <ruleset> <policy>` comparison
-  for supplied lpf-owned nftables table readback text.
-- Added read-only live nftables readback through `lpf rules diff --live
-  <policy>`, using an OCaml `nft list ruleset` execution wrapper.
-- Implemented the first `lpf diff` top-level command for read-only comparison
-  of planned policy against live host nftables state, including
-  machine-readable JSON status output.
-- Implemented `lpf apply` with atomic nftables updates via `nft -f`.
-- Added guarded apply support with `lpf apply --confirm <duration>`, capturing
-  a rollback preimage of lpf-owned nftables tables and scheduling an automatic
-  watchdog rollback.
-- Implemented `lpf confirm` to promote a pending guarded apply and cancel the
-  rollback watchdog.
-- Implemented `lpf rollback --now` for immediate restoration of the captured
-  preimage.
-- Added `lpf e2e run` with a 480-scenario Firecracker guest networking catalog
-  plus JUnit, Allure, sanitized evidence outputs, and per-scenario apply,
-  readback, remove, and cleanup logs.
-- Extended `lpf e2e run` to support up to 1000 scenarios per disposable lab
-  guest for advanced routing, traffic-shaping, nftables, logging, and
-  conntrack coverage.
-- Added an advanced Jenkins Firecracker matrix contract that records requested,
-  available, covered, and missing kernel labels separately so unavailable
-  kernels are never reported as covered.
-- Expanded `lpf e2e run` to a balanced 550-scenario default and 990-scenario
-  advanced matrix profile across nftables IPv4/IPv6, routing, traffic shaping,
-  conntrack, cleanup idempotency, readback diffing, and invalid-update
-  rejection.
-- Added compact `summary.jsonl` E2E evidence and family coverage accounting to
-  the E2E manifest.
-- Added a generic tracked kernel matrix that stores requested kernel metadata
-  without lab ids, real hostnames, IP addresses, or Firecracker image
-  inventory.
+- Created the initial `lpf` OCaml project skeleton with project plan, command contract, and agent rules.
+- Implemented `lpf man generate`, `lpf man check`, and `lpf man install` using OCaml command metadata with generated man pages for all commands.
+- Implemented `lpf check` and `lpf fmt` with policy language parsing, formatting, validation, and fixtures for rules, NAT, redirects, queues, route-to, logging, and anchors.
+- Added `lpf plan [--json]` for versioned backend-neutral semantic plan JSON with stable checksums.
+- Added nftables backend: `lpf rules show`, `lpf rules diff`, `lpf diff` with live readback via typed `nft list ruleset` wrapper, JSON output, and golden fixture coverage.
+- Added tc backend: `lpf plan --backend tc`, `lpf diff --backend tc --live`, compilation to qdisc/class plans, and live readback via `Tc.qdisc_show` / `Tc.class_show`.
+- Added routing backend: `lpf plan --backend routing`, `lpf diff --backend routing --live`, compilation to `ip rule`/`ip route` plans, and live readback via `Ip.rule_list` / `Ip.route_show`.
+- Implemented `lpf apply` with atomic nftables updates, guarded apply (`--confirm <duration>`), watchdog rollback, `lpf confirm`, and `lpf rollback [--now] [<policy-id>]`.
+- Added multi-backend rollback preimages (nftables + tc + routing snapshots).
+- Implemented `lpf explain` with static packet evaluator, shadow analysis, and anchor rule shadow detection.
+- Implemented `lpf test` with policy assertion fixtures and JUnit XML output.
+- Implemented dynamic table management: `lpf table add|delete|replace|show|flush|counters [--json]`.
+- Implemented conntrack management: `lpf state list|show|flush|kill [--json]`.
+- Added `lpf history` for apply history with rollback points.
+- Added `lpf e2e run` with a 552-scenario Firecracker guest networking catalog across 12 families (nftables IPv4/IPv6, reject, routing, tc, conntrack, cleanup, readback, negative), plus JUnit, Allure, evidence outputs, and config-only `--dry-run`.
+- Added `lpf apply --dry-run` for plan-only validation without host changes.
+- Added `lpf check --json` and `lpf fmt --json` for structured automation output.
+- Added `lpf tools --format openai|jsonschema|system-prompt` for AI agent tool-calling schemas.
+- Added `Process` module extracting shared subprocess execution from nft/ip/conntrack.
+- Added `File_util` module consolidating file I/O across 5 files.
+- Added unit tests for `Process`, `Json_util`, `File_util`, `Command`, `Tc`, `Routing`, `Nft`, `Conntrack`, and `Table`.
+- Added `reject` action to the policy language, nftables backend, explain engine, and test engine.
+- Added IPv6 table set type auto-detection in nftables rendering.
+- Added TC and routing semantic live diffing with parsed observed state comparison.
+- Added `summary.jsonl` E2E evidence and compact per-scenario ledger.
 
 ### Refactored
-- Split `lpf.ml` (780 lines) into 6 modules: `command.ml`, `manpage.ml`,
-  `pipeline.ml`, `apply_guard.ml`, `history.ml`, `nft.ml`.
-- Split monolithic test suite into 17 focused test files (4 integration + 13 unit).
+
+- Split monolithic `lpf.ml` (780 lines) into 6 modules: `command.ml`, `manpage.ml`, `pipeline.ml`, `apply_guard.ml`, `history.ml`, `nft.ml`.
+- Split monolithic test suite into 21 focused test files.
 - Removed ui, kernel-matrix, import, and support-bundle stubs with no handlers.
 - Removed abandoned UI and kernel-matrix placeholders from AGENTS.md.
 - Cleaned up PLAN.md of completed and abandoned phases.
 - Rewrote history JSON parser with robust field extraction.
-- Replaced duplicated JSON escaping in main.ml with `Json_util.string`.
-
-### Added
-- Unit tests for `Tc.ml`, `Routing.ml`, `Nft.ml`, `Conntrack.ml`, `Table.ml`.
-- `--backend tc` and `--backend routing` options for `lpf plan`, `rules`, `diff`.
-- `lpf diff --backend tc --live` and `lpf diff --backend routing --live` support.
-- `ip.ml` typed wrapper for `ip rule` and `ip route` commands.
-- TC live readback via `Tc.qdisc_show` and `Tc.class_show`.
-- Multi-backend rollback preimages (nftables + tc + routing snapshots).
-- `lpf rollback <policy-id>` for manual rollback by history ID.
-- `lpf table show` and `lpf table counters` handlers.
-- `lpf state kill` and `lpf state flush` handlers.
-- `lpf e2e run --dry-run` for plan-only validation without Firecracker.
-- E2E scenario catalog extends to 550 default deterministic scenarios and 990
-  balanced advanced-matrix scenarios.
-- `E2e.dry_run` support for config-only planning.
-- `E2e.evidence_manifest` for redacted evidence summaries.
+- Replaced duplicated `nft_string` JSON escaping with `Json_util.string`.
+- Consolidated `ensure_dir`/`write_file`/`read_file` into `File_util` with `~strict` parameter.
+- Replaced `Option.get` crash risks in `tc.ml` with `List.filter_map`.
+- Removed dead code: `route_to_mark` (replaced by `mark_for_target`), `route_show` (ip.ml).
 
 ### Fixed
-- `explain.ml` `shadowed_by` now populated with actual shadowing rule.
-- Fixed `assert false` crash in `apply_guard.ml` replaced with proper error.
+
+- `explain.ml` `find_shadow` now searches anchor rules in addition to top-level rules.
+- Fixed `assert false` crash in `routing.ml` replaced with descriptive error.
 - Fixed broken `Command.usage_examples` reference in manpage generation.
+- Fixed non-literal gateway validation in `ir.ml` (route-to gateway must be Literal).
 - Removed unused values in `e2e.ml` (`run_ping`, `apply_ruleset`, `max_scenario_count`).
+- Fixed `summary.jsonl` cleanup in E2E unit test (leaked file caused `rmdir` failure).

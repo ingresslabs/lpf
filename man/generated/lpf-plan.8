@@ -2,17 +2,22 @@
 .SH NAME
 lpf\-plan \- compile policy to a typed backend change plan
 .SH SYNOPSIS
-lpf plan [\-\-json] <policy>
+lpf plan [\-\-json] [\-\-backend nftables|tc|routing] <policy>
 .SH DESCRIPTION
 Lower policy into a versioned, backend\-neutral semantic JSON plan.
-The current Phase 2 plan covers typed policy semantics and stable checksums; later backend phases add nftables, routing, tc, conntrack, logging, sysctl, and rollback preimages.
+Backend plans cover nftables table/chain/set/rule generation, policy routing with ip rule/route tables, tc qdisc/class/shaping compilation, and conntrack declarations.
 .SH OPTIONS
 .TP
 \-\-json
 emit machine\-readable plan output
+.TP
+\-\-backend nftables|tc|routing
+compile a backend\-specific plan
 .SH EXAMPLES
 lpf plan /etc/lpf.conf
 lpf plan \-\-json /etc/lpf.conf
+lpf plan \-\-backend tc /etc/lpf.conf
+lpf plan \-\-backend routing /etc/lpf.conf
 .SH FILES
 /etc/lpf.conf
 /var/lib/lpf/history

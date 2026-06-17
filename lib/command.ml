@@ -14,6 +14,7 @@ type command =
   | History
   | E2e
   | Man
+  | Tools
   | Version
   | Help
 
@@ -48,6 +49,7 @@ let all_commands =
     ("history", History, "show policy apply history and rollback points");
     ("e2e", E2e, "run Firecracker guest end-to-end networking scenarios");
     ("man", Man, "generate, check, or install man pages");
+    ("tools", Tools, "emit tool-calling schemas for AI agents");
     ("version", Version, "print lpf version");
     ("help", Help, "print general or command-specific help");
   ]
@@ -68,6 +70,7 @@ let command_name = function
   | History -> "history"
   | E2e -> "e2e"
   | Man -> "man"
+  | Tools -> "tools"
   | Version -> "version"
   | Help -> "help"
 
@@ -97,14 +100,18 @@ let command_docs =
     {
       command = Check;
       section = 8;
-      synopsis = "lpf check <policy>";
+      synopsis = "lpf check [--json] <policy>";
       description =
         [
           "Parse, type-check, validate, and lower an lpf policy into the typed intermediate representation without changing host state.";
           "Diagnostics must include source locations, shadowed-rule warnings, and actionable recovery guidance.";
         ];
-      options = [];
-      examples = [ "lpf check /etc/lpf.conf"; "lpf check fixtures/policies/basic.lpf" ];
+      options = [ ("--json", "emit machine-readable validation status and diagnostics") ];
+      examples =
+        [
+          "lpf check /etc/lpf.conf";
+          "lpf check --json fixtures/policies/basic.lpf";
+        ];
       files = [ "/etc/lpf.conf" ];
       safety_notes = [ "This command is read-only." ];
       see_also = [ "lpf-plan(8)"; "lpf-fmt(8)"; "lpf.conf(5)" ];
@@ -112,10 +119,19 @@ let command_docs =
     {
       command = Fmt;
       section = 8;
-      synopsis = "lpf fmt <policy>";
+      synopsis = "lpf fmt [--check] [--json] <policy>";
       description = [ "Format policy files deterministically for review and CI." ];
-      options = [ ("--check", "fail when formatting would change the policy") ];
-      examples = [ "lpf fmt /etc/lpf.conf"; "lpf fmt --check /etc/lpf.conf" ];
+      options =
+        [
+          ("--check", "fail when formatting would change the policy");
+          ("--json", "emit machine-readable formatted text or diagnostics");
+        ];
+      examples =
+        [
+          "lpf fmt /etc/lpf.conf";
+          "lpf fmt --check /etc/lpf.conf";
+          "lpf fmt --json fixtures/policies/basic.lpf";
+        ];
       files = [ "/etc/lpf.conf" ];
       safety_notes = [ "Formatting must not change policy semantics." ];
       see_also = [ "lpf-check(8)"; "lpf.conf(5)" ];
@@ -123,14 +139,24 @@ let command_docs =
     {
       command = Plan;
       section = 8;
-      synopsis = "lpf plan [--json] <policy>";
+      synopsis = "lpf plan [--json] [--backend nftables|tc|routing] <policy>";
       description =
         [
           "Lower policy into a versioned, backend-neutral semantic JSON plan.";
-          "The current Phase 2 plan covers typed policy semantics and stable checksums; later backend phases add nftables, routing, tc, conntrack, logging, sysctl, and rollback preimages.";
+          "Backend plans cover nftables table/chain/set/rule generation, policy routing with ip rule/route tables, tc qdisc/class/shaping compilation, and conntrack declarations.";
         ];
-      options = [ ("--json", "emit machine-readable plan output") ];
-      examples = [ "lpf plan /etc/lpf.conf"; "lpf plan --json /etc/lpf.conf" ];
+      options =
+        [
+          ("--json", "emit machine-readable plan output");
+          ("--backend nftables|tc|routing", "compile a backend-specific plan");
+        ];
+      examples =
+        [
+          "lpf plan /etc/lpf.conf";
+          "lpf plan --json /etc/lpf.conf";
+          "lpf plan --backend tc /etc/lpf.conf";
+          "lpf plan --backend routing /etc/lpf.conf";
+        ];
       files = shared_files;
       safety_notes = [ "Planning is read-only but may inspect current host capabilities." ];
       see_also = [ "lpf-diff(8)"; "lpf-apply(8)" ];
@@ -138,24 +164,30 @@ let command_docs =
     {
       command = Diff;
       section = 8;
-      synopsis = "lpf diff [--backend nftables] [--observed <ruleset>|--live] [--json] <policy>";
+      synopsis = "lpf diff [--backend nftables|tc|routing] [--observed <path>|--live] [--json] <policy>";
       description =
         [
-          "Compare a generated plan with current lpf-owned host state.";
-          "The current implementation reads live nftables state by default, extracts lpf-owned table blocks, and compares them with rendered intent.";
-          "Supplying --observed reads nftables ruleset text from a file or stdin for deterministic tests.";
+          "Compare a generated plan with current lpf-owned host state across backends.";
+          "nftables backend: reads live state by default, extracts lpf-owned table blocks, and diffs them against rendered intent.";
+          "tc backend: reads qdisc/class state per device and performs semantic comparison against compiled plans.";
+          "routing backend: reads ip rule and ip route state and performs semantic comparison.";
+          "Supplying --observed reads raw state text from a file or stdin for deterministic tests.";
         ];
       options =
         [
-          ("--backend nftables", "select nftables diffing; currently the only backend");
-          ("--observed <ruleset>", "read observed nftables ruleset text from a file or - for stdin");
-          ("--live", "read observed nftables ruleset text with `nft list ruleset`; this is the default");
-          ("--json", "emit machine-readable nftables diff status and text");
+          ("--backend nftables", "select nftables diffing; this is the default");
+          ("--backend tc", "select traffic-control qdisc/class diffing");
+          ("--backend routing", "select policy-routing rule and route-table diffing");
+          ("--observed <path>", "read observed backend text from a file or - for stdin");
+          ("--live", "read observed backend state from the host; this is the default");
+          ("--json", "emit machine-readable diff status");
         ];
       examples =
         [
           "lpf diff /etc/lpf.conf";
           "lpf diff --observed current.nft fixtures/policies/basic.lpf";
+          "lpf diff --backend tc --live fixtures/policies/queue.lpf";
+          "lpf diff --backend routing --live fixtures/policies/route-to.lpf";
           "lpf diff --json /etc/lpf.conf";
         ];
       files = shared_files;
@@ -245,10 +277,20 @@ let command_docs =
     {
       command = Table;
       section = 8;
-      synopsis = "lpf table <name> <add|delete|replace|show|flush|counters>";
+      synopsis = "lpf table [--json] <name> <add|delete|replace|show|flush|counters>";
       description = [ "Manage dynamic policy tables without a full policy reload." ];
-      options = [ ("--ttl <duration>", "attach a time-to-live where supported") ];
-      examples = [ "lpf table threats add 203.0.113.10"; "lpf table threats replace threats.txt" ];
+      options =
+        [
+          ("--json", "emit machine-readable table element and counter data");
+          ("--ttl <duration>", "attach a time-to-live where supported");
+        ];
+      examples =
+        [
+          "lpf table threats add 203.0.113.10";
+          "lpf table threats show --json";
+          "lpf table threats replace threats.txt";
+          "lpf table threats flush";
+        ];
       files = shared_files;
       safety_notes = [ "Replacement must be atomic and reversible." ];
       see_also = [ "lpf-plan(8)"; "lpf-rules(8)" ];
@@ -256,10 +298,21 @@ let command_docs =
     {
       command = State;
       section = 8;
-      synopsis = "lpf state <list|show|flush|kill>";
+      synopsis = "lpf state [--json] <list|show|flush|kill>";
       description = [ "Inspect and manage lpf-related conntrack state." ];
-      options = [ ("--json", "emit machine-readable state output") ];
-      examples = [ "lpf state list"; "lpf state kill --src 10.0.0.1 --dst 10.0.0.2" ];
+      options =
+        [
+          ("--json", "emit machine-readable state output");
+          ("--src <addr>", "source address for kill operation");
+          ("--dst <addr>", "destination address for kill operation");
+        ];
+      examples =
+        [
+          "lpf state list --json";
+          "lpf state show";
+          "lpf state kill --src 10.0.0.1 --dst 10.0.0.2";
+          "lpf state flush";
+        ];
       files = [ "/proc/net/nf_conntrack"; "/var/lib/lpf/history" ];
       safety_notes = [ "Killing conntrack entries can interrupt active connections." ];
       see_also = [ "lpf-rules(8)"; "lpf-history(8)" ];
@@ -314,11 +367,11 @@ let command_docs =
         [
           "Run real end-to-end Linux networking scenarios intended for Firecracker guest validation.";
           "The runner creates isolated network namespaces, veth links, nftables rules, policy routing entries, tc HTB shaping state, and conntrack evidence.";
-          "The default catalog contains 550 deterministic scenarios and supports up to 1000 scenarios across nftables IPv4/IPv6 accept/drop/logging, policy routing, traffic shaping, conntrack, cleanup, readback, and negative-update families.";
+          "The default catalog contains 552 deterministic scenarios and supports up to 1000 scenarios across nftables IPv4 accept/drop/logging/reject, IPv6 accept/drop, policy routing, traffic shaping, conntrack, cleanup, readback, and negative-update families.";
         ];
       options =
         [
-          ("--scenario-count <n>", "number of scenarios to run; must be between 1 and 1000, default 550");
+          ("--scenario-count <n>", "number of scenarios to run; must be between 1 and 1000, default 552");
           ("--junit <path>", "write JUnit XML for Jenkins trend reporting");
           ("--allure-dir <dir>", "write Allure result JSON files");
           ("--evidence-dir <dir>", "write a sanitized evidence manifest and per-scenario JSONL command log");
@@ -327,8 +380,8 @@ let command_docs =
         ];
       examples =
         [
-          "lpf e2e run --scenario-count 550 --junit evidence/junit.xml --allure-dir allure-results";
-          "lpf e2e run --scenario-count 990 --junit evidence/junit.xml --allure-dir allure-results --evidence-dir evidence/matrix --kernel-id kernel-7.1";
+          "lpf e2e run --scenario-count 552 --junit evidence/junit.xml --allure-dir allure-results";
+          "lpf e2e run --scenario-count 984 --junit evidence/junit.xml --allure-dir allure-results --evidence-dir evidence/matrix --kernel-id kernel-7.1";
           "lpf e2e run --dry-run --scenario-count 1000 --evidence-dir evidence/dry-run";
           "lpf e2e list --scenario-count 12";
         ];
@@ -356,6 +409,26 @@ let command_docs =
       safety_notes = [ "Generated man pages must be committed with command behavior changes." ];
       see_also = [ "lpf(8)"; "lpf.conf(5)" ];
     };
+    {
+      command = Tools;
+      section = 8;
+      synopsis = "lpf tools [--format openai|jsonschema|system-prompt]";
+      description =
+        [
+          "Emit JSON tool-calling schemas for automation agents that need to call lpf commands.";
+          "The output is generated from the same OCaml command metadata used for help text and man pages.";
+        ];
+      options =
+        [
+          ("--format openai", "emit OpenAI-style tool schema objects; this is the default");
+          ("--format jsonschema", "emit standalone JSON Schema objects");
+          ("--format system-prompt", "emit a JSON string containing a compact lpf automation prompt");
+        ];
+      examples = [ "lpf tools"; "lpf tools --format jsonschema"; "lpf tools --format system-prompt" ];
+      files = [];
+      safety_notes = [ "This command is read-only and must not include host inventory or credentials." ];
+      see_also = [ "lpf-man(8)"; "lpf-check(8)" ];
+    };
   ]
 
 let usage_lines () =
@@ -380,7 +453,7 @@ let help () =
 
 let command_status = function
   | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules
-  | History | E2e | Man ->
+  | History | E2e | Man | Tools ->
       "implemented"
   | Version | Help -> "implemented"
 

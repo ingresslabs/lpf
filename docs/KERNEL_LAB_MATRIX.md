@@ -38,7 +38,7 @@ build and `baseline-default` as an optional environment-local baseline label.
 The Ubuntu daily image is not linux-next coverage and must not be reported as
 `next-20260616`.
 
-Advanced matrix runs use 990 scenarios by default: 90 scenarios in each E2E
-family, covering nftables accept/drop/logging, IPv6 accept/drop, policy
+Advanced matrix runs use 984 scenarios by default: 82 scenarios in each E2E
+family, covering nftables accept/drop/logging/reject, IPv6 accept/drop, policy
 routing, tc HTB shaping, conntrack, cleanup idempotency, readback diffing, and
 negative invalid-update rejection.

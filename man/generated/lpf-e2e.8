@@ -6,11 +6,11 @@ lpf e2e run [\-\-scenario\-count <n>] [\-\-junit <path>] [\-\-allure\-dir <dir>]
 .SH DESCRIPTION
 Run real end\-to\-end Linux networking scenarios intended for Firecracker guest validation.
 The runner creates isolated network namespaces, veth links, nftables rules, policy routing entries, tc HTB shaping state, and conntrack evidence.
-The default catalog contains 550 deterministic scenarios and supports up to 1000 scenarios across nftables IPv4/IPv6 accept/drop/logging, policy routing, traffic shaping, conntrack, cleanup, readback, and negative\-update families.
+The default catalog contains 552 deterministic scenarios and supports up to 1000 scenarios across nftables IPv4 accept/drop/logging/reject, IPv6 accept/drop, policy routing, traffic shaping, conntrack, cleanup, readback, and negative\-update families.
 .SH OPTIONS
 .TP
 \-\-scenario\-count <n>
-number of scenarios to run; must be between 1 and 1000, default 550
+number of scenarios to run; must be between 1 and 1000, default 552
 .TP
 \-\-junit <path>
 write JUnit XML for Jenkins trend reporting
@@ -27,8 +27,8 @@ attach a CI kernel label to reports
 \-\-dry\-run
 generate catalog reports without changing networking state
 .SH EXAMPLES
-lpf e2e run \-\-scenario\-count 550 \-\-junit evidence/junit.xml \-\-allure\-dir allure\-results
-lpf e2e run \-\-scenario\-count 990 \-\-junit evidence/junit.xml \-\-allure\-dir allure\-results \-\-evidence\-dir evidence/matrix \-\-kernel\-id kernel\-7.1
+lpf e2e run \-\-scenario\-count 552 \-\-junit evidence/junit.xml \-\-allure\-dir allure\-results
+lpf e2e run \-\-scenario\-count 984 \-\-junit evidence/junit.xml \-\-allure\-dir allure\-results \-\-evidence\-dir evidence/matrix \-\-kernel\-id kernel\-7.1
 lpf e2e run \-\-dry\-run \-\-scenario\-count 1000 \-\-evidence\-dir evidence/dry\-run
 lpf e2e list \-\-scenario\-count 12
 .SH FILES

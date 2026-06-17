@@ -15,8 +15,22 @@ type run_error = {
   stderr : string;
 }
 
+type observed_rule = {
+  priority : int;
+  fwmark : int option;
+  table : int;
+}
+
+type observed_route = {
+  gateway : string;
+  device : string option;
+  table : int;
+}
+
 val rule_list : unit -> (string, run_error) result
 val rule_list_with_runner : (invocation -> (string, run_error) result) -> (string, run_error) result
-val route_show : unit -> (string, run_error) result
-val route_show_with_runner : (invocation -> (string, run_error) result) -> (string, run_error) result
+val route_show : int -> (string, run_error) result
+val route_show_with_runner : (invocation -> (string, run_error) result) -> int -> (string, run_error) result
 val string_of_run_error : run_error -> string
+val parse_rule_list : string -> observed_rule list
+val parse_route_show : string -> observed_route list

@@ -2,27 +2,37 @@
 .SH NAME
 lpf\-diff \- show the delta between current host state and a plan
 .SH SYNOPSIS
-lpf diff [\-\-backend nftables] [\-\-observed <ruleset>|\-\-live] [\-\-json] <policy>
+lpf diff [\-\-backend nftables|tc|routing] [\-\-observed <path>|\-\-live] [\-\-json] <policy>
 .SH DESCRIPTION
-Compare a generated plan with current lpf\-owned host state.
-The current implementation reads live nftables state by default, extracts lpf\-owned table blocks, and compares them with rendered intent.
-Supplying \-\-observed reads nftables ruleset text from a file or stdin for deterministic tests.
+Compare a generated plan with current lpf\-owned host state across backends.
+nftables backend: reads live state by default, extracts lpf\-owned table blocks, and diffs them against rendered intent.
+tc backend: reads qdisc/class state per device and performs semantic comparison against compiled plans.
+routing backend: reads ip rule and ip route state and performs semantic comparison.
+Supplying \-\-observed reads raw state text from a file or stdin for deterministic tests.
 .SH OPTIONS
 .TP
 \-\-backend nftables
-select nftables diffing; currently the only backend
+select nftables diffing; this is the default
 .TP
-\-\-observed <ruleset>
-read observed nftables ruleset text from a file or \- for stdin
+\-\-backend tc
+select traffic\-control qdisc/class diffing
+.TP
+\-\-backend routing
+select policy\-routing rule and route\-table diffing
+.TP
+\-\-observed <path>
+read observed backend text from a file or \- for stdin
 .TP
 \-\-live
-read observed nftables ruleset text with `nft list ruleset`; this is the default
+read observed backend state from the host; this is the default
 .TP
 \-\-json
-emit machine\-readable nftables diff status and text
+emit machine\-readable diff status
 .SH EXAMPLES
 lpf diff /etc/lpf.conf
 lpf diff \-\-observed current.nft fixtures/policies/basic.lpf
+lpf diff \-\-backend tc \-\-live fixtures/policies/queue.lpf
+lpf diff \-\-backend routing \-\-live fixtures/policies/route\-to.lpf
 lpf diff \-\-json /etc/lpf.conf
 .SH FILES
 /etc/lpf.conf

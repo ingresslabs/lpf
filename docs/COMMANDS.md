@@ -22,7 +22,7 @@ Every command must include:
 
 ## Commands
 
-### `lpf check <policy>`
+### `lpf check [--json] <policy>`
 
 Parse, type-check, validate, and lower a policy into the typed intermediate
 representation without touching host state.
@@ -37,10 +37,15 @@ Must detect:
 - impossible route or queue references
 - unsupported backend features on the current kernel
 
-### `lpf fmt <policy>`
+`--json` emits machine-readable validation status and diagnostics.
+
+### `lpf fmt [--check] [--json] <policy>`
 
 Format policy files deterministically. This enables code review and generated
 policy normalization.
+
+`--check` fails when formatting would change the file. `--json` emits the
+formatted policy text or machine-readable diagnostics.
 
 ### `lpf plan [--json] <policy>`
 
@@ -58,18 +63,20 @@ backend phases must add:
 - sysctl requirements
 - rollback preimage
 
-### `lpf diff [--backend nftables] [--observed <ruleset>|--live] [--json] <policy>`
+### `lpf diff [--backend nftables|tc|routing] [--observed <path>|--live] [--json] <policy>`
 
 Compare the generated plan with current host state. The current implementation
 reads live nftables state by default through typed OCaml argv construction,
 extracts only `lpf`-owned nftables tables, and compares them with rendered
-intent. `--observed <ruleset>` accepts supplied nftables ruleset text from a
-file or `-` for stdin, which keeps fixture tests deterministic. `--json` emits a
-machine-readable nftables diff status and text.
+intent. `--observed <path>` accepts supplied backend readback text from a file
+or `-` for stdin, which keeps fixture tests deterministic. `--json` emits a
+machine-readable diff status.
 
-Later backend phases must extend this into a semantic diff that also covers
-policy routing, route tables, tc, conntrack cleanup, sysctl requirements, and
-rollback availability.
+The tc backend compares intended HTB qdisc/class state with live `tc`
+readback. The routing backend compares intended fwmark rules and route-table
+defaults with live `ip rule` and `ip route` readback. Later backend phases must
+extend this into conntrack cleanup, sysctl requirements, and rollback
+availability.
 
 ### `lpf apply <policy> [--confirm <duration>]`
 
@@ -122,7 +129,7 @@ Output must include:
 Run firewall assertions as code. Fixtures must support pass/drop decisions,
 NAT expectations, route expectations, queue expectations, and table membership.
 
-### `lpf table <name> <operation>`
+### `lpf table [--json] <name> <operation>`
 
 Manage dynamic tables without full policy reload.
 
@@ -135,7 +142,9 @@ Operations:
 - `flush`
 - `counters`
 
-### `lpf state <operation>`
+`show` and `counters` can emit parsed JSON with `--json`.
+
+### `lpf state [--json] <operation>`
 
 Inspect and manage conntrack state.
 
@@ -145,6 +154,8 @@ Operations:
 - `show`
 - `kill`
 - `flush`
+
+`list`, `show`, and `flush` can emit machine-readable JSON with `--json`.
 
 ### `lpf rules show [--backend nftables] <policy>`
 
@@ -172,20 +183,29 @@ networking state.
 Show applied policy versions, operator, timestamp, checksum, test result, and
 rollback availability.
 
+### `lpf tools [--format openai|jsonschema|system-prompt]`
+
+Emit JSON tool-calling schemas or a compact automation prompt from the same
+OCaml command metadata used for generated man pages.
+
+This command is read-only and must not emit host inventory, credentials, or lab
+identifiers.
+
 ### `lpf e2e <run|list>`
 
 Run real end-to-end Linux networking validation inside a disposable lab
 environment. The runner is intended for Firecracker VMs or equivalent throwaway
 Linux guests with root/CAP_NET_ADMIN.
 
-The default catalog contains 550 deterministic scenarios and accepts 1 to 1000
+The default catalog contains 552 deterministic scenarios and accepts 1 to 1000
 scenarios per run. Advanced CI jobs normally use 500 to 1000 scenarios per
-available kernel; the generic advanced matrix uses 990 scenarios for balanced
+available kernel; the generic advanced matrix uses 984 scenarios for balanced
 family coverage. The catalog is split across:
 
 - nftables accept decisions with real ICMP traffic over veth namespaces
 - nftables drop decisions with observed traffic failure
 - nftables logging-rule installation and readback
+- nftables reject decisions with observed traffic failure and readback
 - IPv6 nftables accept/drop decisions with real ICMPv6 traffic
 - policy-routing table and rule installation
 - tc HTB qdisc/class traffic-shaping installation

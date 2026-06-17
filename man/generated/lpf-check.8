@@ -2,13 +2,17 @@
 .SH NAME
 lpf\-check \- parse and validate policy without touching the host
 .SH SYNOPSIS
-lpf check <policy>
+lpf check [\-\-json] <policy>
 .SH DESCRIPTION
 Parse, type\-check, validate, and lower an lpf policy into the typed intermediate representation without changing host state.
 Diagnostics must include source locations, shadowed\-rule warnings, and actionable recovery guidance.
+.SH OPTIONS
+.TP
+\-\-json
+emit machine\-readable validation status and diagnostics
 .SH EXAMPLES
 lpf check /etc/lpf.conf
-lpf check fixtures/policies/basic.lpf
+lpf check \-\-json fixtures/policies/basic.lpf
 .SH FILES
 /etc/lpf.conf
 .SH SAFETY NOTES

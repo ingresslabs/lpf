@@ -35,7 +35,11 @@ let compile (ir : Ir.t) : t =
       let mark = 100 + idx in
       let table = 100 + idx in
       let gateway, iface_opt = target in
-      let gateway_str = match gateway with Ir.Literal s -> s | _ -> failwith ("routing: gateway is not a literal address; this is a bug in IR validation") in
+      let gateway_str =
+        match gateway with
+        | Ir.Literal s -> s
+        | _ -> failwith "routing: gateway is not a literal address; this is a bug in IR validation"
+      in
       let device_str = match iface_opt with Some (i : Ir.interface_ref) -> Some i.device | None -> None in
       [
         Ip_rule_add { mark; table };
@@ -52,3 +56,36 @@ let string_of_command = function
 
 let to_string t =
   String.concat "\n" (List.map string_of_command t) ^ if t = [] then "" else "\n"
+
+type diff_result = {
+  changes_required : bool;
+  text : string;
+}
+
+let diff ~intended ~observed_rules ~observed_routes =
+  let buf = Buffer.create 256 in
+  let changes = ref false in
+  List.iter (function
+    | Ip_rule_add r ->
+        let found = List.find_opt (fun (o : Ip.observed_rule) ->
+          o.table = r.table && (match o.fwmark with Some m -> m = r.mark | None -> false)
+        ) observed_rules in
+        (match found with
+         | None ->
+             changes := true;
+             Buffer.add_string buf (Printf.sprintf "-rule fwmark %d table %d: missing\n" r.mark r.table);
+             Buffer.add_string buf (Printf.sprintf "+rule fwmark %d table %d\n" r.mark r.table)
+         | Some _ -> ())
+    | Ip_route_add_default r ->
+        let found = List.find_opt (fun (o : Ip.observed_route) ->
+          o.table = r.table && String.equal o.gateway r.gateway
+        ) observed_routes in
+        (match found with
+         | None ->
+             changes := true;
+             Buffer.add_string buf (Printf.sprintf "-route default via %s table %d: missing\n" r.gateway r.table);
+             Buffer.add_string buf (Printf.sprintf "+route default via %s table %d\n" r.gateway r.table)
+         | Some _ -> ()))
+    intended;
+  if not !changes then { changes_required = false; text = "routing diff: no changes\n" }
+  else { changes_required = true; text = "routing diff: changes required\n" ^ Buffer.contents buf }

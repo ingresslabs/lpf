@@ -25,4 +25,13 @@ let () =
   let result = Lpf.Table.add_with_runner fails_first "threats" "10.0.0.1" in
   (match result with Error _ -> () | _ -> assert false);
 
+  let elements =
+    Lpf.Table.parse_counters_output
+      "table ip lpf_filter {\n  set lpf_threats {\n    elements = { 10.0.0.1 counter packets 3 bytes 252,\n                 10.0.0.2 counter packets 0 bytes 0 }\n  }\n}\n"
+  in
+  assert (List.length elements = 2);
+  assert (List.exists (fun (element : Lpf.Table.table_element) ->
+    String.equal element.value "10.0.0.1" && element.packets = Some 3 && element.bytes = Some 252)
+    elements);
+
   Printf.printf "table tests passed\n"

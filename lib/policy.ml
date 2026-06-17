@@ -1379,6 +1379,24 @@ let diagnostic_to_string (diagnostic : diagnostic) =
   Printf.sprintf "%s: %s: %s" location (severity_to_string diagnostic.severity)
     diagnostic.message
 
+let diagnostic_to_json (diagnostic : diagnostic) =
+  Json_util.field_object
+    [
+      ("severity", Json_util.string (severity_to_string diagnostic.severity));
+      ("message", Json_util.string diagnostic.message);
+      ("line", Json_util.int diagnostic.span.line);
+      ("column", Json_util.int diagnostic.span.column);
+      ("file", Json_util.option Json_util.string diagnostic.span.file);
+    ]
+
+let check_result_to_json result =
+  Json_util.field_object
+    [
+      ("valid", (if Option.is_some result.policy then "true" else "false"));
+      ("diagnostics", Json_util.list diagnostic_to_json result.diagnostics);
+    ]
+  ^ "\n"
+
 let format_check_result result =
   let diagnostics = List.map diagnostic_to_string result.diagnostics in
   match result.policy with

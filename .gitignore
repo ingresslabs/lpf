@@ -11,10 +11,11 @@ actual.diff
 actual.nft
 expected.nft
 lpf.tar.gz
+lpf-*.tar.gz
 nft
 lpf-firecracker-*.xml
 lpf-firecracker-*.json
 cloud-config.xml
 full-e2e.groovy
 *-e2e.xml
-
+security.groovy

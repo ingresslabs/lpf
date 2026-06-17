@@ -1,0 +1,29 @@
+.TH LPF-TOOLS 8 "June 2026" "lpf 0.1.0-dev" "lpf Manual"
+.SH NAME
+lpf\-tools \- emit tool\-calling schemas for AI agents
+.SH SYNOPSIS
+lpf tools [\-\-format openai|jsonschema|system\-prompt]
+.SH DESCRIPTION
+Emit JSON tool\-calling schemas for automation agents that need to call lpf commands.
+The output is generated from the same OCaml command metadata used for help text and man pages.
+.SH OPTIONS
+.TP
+\-\-format openai
+emit OpenAI\-style tool schema objects; this is the default
+.TP
+\-\-format jsonschema
+emit standalone JSON Schema objects
+.TP
+\-\-format system\-prompt
+emit a JSON string containing a compact lpf automation prompt
+.SH EXAMPLES
+lpf tools
+lpf tools \-\-format jsonschema
+lpf tools \-\-format system\-prompt
+.SH SAFETY NOTES
+This command is read\-only and must not include host inventory or credentials.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-man(8), lpf\-check(8)

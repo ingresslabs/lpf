@@ -56,6 +56,20 @@ let diff_nftables_policy ?file ~observed text =
   | Ok (intended, diagnostics) -> Ok (Nftables.diff ~intended ~observed, diagnostics)
   | Error diagnostics -> Error diagnostics
 
+let diff_tc_policy ?file ~observed_qdisc ~observed_class text =
+  match plan_policy_text ?file text with
+  | Ok (plan, diagnostics) ->
+      let intended = Tc.compile plan.policy in
+      Ok (Tc.diff ~intended ~observed_qdisc ~observed_class, diagnostics)
+  | Error diagnostics -> Error diagnostics
+
+let diff_routing_policy ?file ~observed_rules ~observed_routes text =
+  match plan_policy_text ?file text with
+  | Ok (plan, diagnostics) ->
+      let intended = Routing.compile plan.policy in
+      Ok (Routing.diff ~intended ~observed_rules ~observed_routes, diagnostics)
+  | Error diagnostics -> Error diagnostics
+
 let explain_policy_text ?file ~packet text =
   let result = check_policy_text ?file text in
   match result.policy with

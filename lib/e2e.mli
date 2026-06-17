@@ -2,6 +2,7 @@ type scenario_family =
   | Nft_accept
   | Nft_drop
   | Nft_log
+  | Nft_reject
   | Ipv6_accept
   | Ipv6_drop
   | Routing

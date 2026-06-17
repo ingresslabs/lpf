@@ -38,4 +38,18 @@ let () =
   let mark = Lpf.Routing.mark_for_target ir (Lpf.Ir.Literal "2.2.2.2", None) in
   assert (mark = None);
 
+  let observed_rules =
+    Lpf.Ip.parse_rule_list
+      "0:\tfrom all lookup local\n100:\tfrom all fwmark 0x64/0xffffffff lookup 100\n"
+  in
+  assert (List.length observed_rules = 1);
+  assert (List.exists (fun (rule : Lpf.Ip.observed_rule) ->
+    rule.priority = 100 && rule.fwmark = Some 100 && rule.table = 100) observed_rules);
+
+  let observed_routes =
+    Lpf.Ip.parse_route_show "default via 1.1.1.1 dev eth0 proto static\n"
+  in
+  assert (List.exists (fun (route : Lpf.Ip.observed_route) ->
+    String.equal route.gateway "1.1.1.1" && route.device = Some "eth0") observed_routes);
+
   Printf.printf "routing tests passed\n"

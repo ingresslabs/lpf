@@ -82,26 +82,49 @@ let print_diagnostics diagnostics =
   |> List.iter (fun diagnostic -> prerr_endline (Lpf.Policy.diagnostic_to_string diagnostic))
 
 let handle_check args =
-  match args with
-  | [ path ] ->
-      read_file path |> Lpf.check_policy_text ~file:path |> exit_for_policy_check
-  | _ ->
-      prerr_endline "usage: lpf check <policy>";
+  let rec parse json path = function
+    | [] -> Ok (json, path)
+    | "--json" :: rest -> parse true path rest
+    | option :: _ when String.starts_with ~prefix:"-" option -> Error ("unknown option: " ^ option)
+    | arg :: rest -> (
+        match path with
+        | None -> parse json (Some arg) rest
+        | Some _ -> Error "expected exactly one policy path")
+  in
+  match parse false None args with
+  | Ok (json, Some path) ->
+      let result = read_file path |> Lpf.check_policy_text ~file:path in
+      if json then (
+        print_string (Lpf.Policy.check_result_to_json result);
+        exit (match result.Lpf.Policy.policy with Some _ -> 0 | None -> 1))
+      else exit_for_policy_check result
+  | Ok (_, None) ->
+      prerr_endline "usage: lpf check [--json] <policy>";
+      exit 64
+  | Error message ->
+      prerr_endline message;
+      prerr_endline "usage: lpf check [--json] <policy>";
       exit 64
 
 let handle_fmt args =
-  let check_only, paths =
-    List.fold_left
-      (fun (check_only, paths) arg ->
-        if String.equal arg "--check" then (true, paths) else (check_only, paths @ [ arg ]))
-      (false, []) args
+  let rec parse check_only json path = function
+    | [] -> Ok (check_only, json, path)
+    | "--check" :: rest -> parse true json path rest
+    | "--json" :: rest -> parse check_only true path rest
+    | option :: _ when String.starts_with ~prefix:"-" option -> Error ("unknown option: " ^ option)
+    | arg :: rest -> (
+        match path with
+        | None -> parse check_only json (Some arg) rest
+        | Some _ -> Error "expected exactly one policy path")
   in
-  match paths with
-  | [ path ] -> (
+  match parse false false None args with
+  | Ok (check_only, json, Some path) -> (
       let input = read_file path in
       match Lpf.format_policy_text ~file:path input with
       | Ok formatted ->
-          if check_only then (
+          if json then
+            Printf.printf "{\"formatted\":%s}\n" (Lpf.Json_util.string formatted)
+          else if check_only then (
             if String.equal input formatted then (
               Printf.printf "%s is formatted\n" path;
               exit 0)
@@ -110,10 +133,18 @@ let handle_fmt args =
               exit 1))
           else print_string formatted
       | Error diagnostics ->
-          print_diagnostics diagnostics;
+          if json then
+            Printf.printf "{\"error\":%s,\"diagnostics\":[%s]}\n"
+              (Lpf.Json_util.string "formatting failed")
+              (String.concat "," (List.map Lpf.Policy.diagnostic_to_json diagnostics))
+          else print_diagnostics diagnostics;
           exit 1)
-  | _ ->
-      prerr_endline "usage: lpf fmt [--check] <policy>";
+  | Ok (_, _, None) ->
+      prerr_endline "usage: lpf fmt [--check] [--json] <policy>";
+      exit 64
+  | Error message ->
+      prerr_endline message;
+      prerr_endline "usage: lpf fmt [--check] [--json] <policy>";
       exit 64
 
 let parse_plan_args args =
@@ -351,45 +382,86 @@ let handle_diff args =
   | Ok { backend; source; policies = [ path ]; json } ->
       let source = Option.value source ~default:Live in
       let input = read_file path in
-      (match backend with
+       (match backend with
        | "tc" ->
-           let live = match source with
-             | Observed_path p -> read_file p
+            (match source with
+             | Observed_path p ->
+                 let observed = read_file p in
+                 (match Lpf.render_tc_policy_text ~file:path input with
+                  | Ok (rendered, diagnostics) ->
+                      print_diagnostics diagnostics;
+                      let changes = not (String.equal rendered observed) in
+                      let diff_out = if changes then Printf.sprintf "--- expected\n+++ observed\n-%s+%s" rendered observed else "no changes" in
+                      if json then Printf.printf "{\"backend\":\"tc\",\"changes_required\":%B}\n" changes
+                      else print_endline diff_out
+                  | Error diagnostics ->
+                      print_diagnostics diagnostics;
+                      exit 1)
              | Live ->
-                 let device = match Lpf.plan_policy_text ~file:path input with
-                   | Ok (plan, _) ->
-                       (match plan.Lpf.Plan.policy.Lpf.Ir.interfaces with
-                        | iface :: _ -> iface.Lpf.Ir.device
-                        | [] -> "eth0")
-                   | _ -> "eth0"
+                 let plan = match Lpf.plan_policy_text ~file:path input with
+                   | Ok (plan, _) -> plan
+                   | Error _ -> Lpf.Plan.of_ir {
+                     Lpf.Ir.default_action = Lpf.Policy.Default_deny;
+                     interfaces = []; tables = []; queues = [];
+                     nats = []; rdrs = []; anchors = []; rules = [];
+                   }
                  in
-                 (match Lpf.Tc.qdisc_show device with Ok s -> s | _ -> "")
-           in
-           (match Lpf.render_tc_policy_text ~file:path input with
-            | Ok (rendered, diagnostics) ->
-                print_diagnostics diagnostics;
-                let changes = not (String.equal rendered live) in
-                let diff_out = if changes then Printf.sprintf "--- expected\n+++ observed\n-%s+%s" rendered live else "no changes" in
-                if json then Printf.printf "{\"backend\":\"tc\",\"changes_required\":%B}\n" changes
-                else print_endline diff_out
-            | Error diagnostics ->
-                print_diagnostics diagnostics;
-                exit 1)
+                 let devices = plan.Lpf.Plan.policy.Lpf.Ir.interfaces |> List.map (fun i -> i.Lpf.Ir.device) in
+                 let devices = if devices = [] then [ "eth0" ] else devices in
+                 let observed_qdiscs = List.concat_map (fun dev ->
+                   match Lpf.Tc.qdisc_show dev with Ok s -> Lpf.Tc.parse_qdisc_show dev s | _ -> []) devices in
+                 let observed_classes = List.concat_map (fun dev ->
+                   match Lpf.Tc.class_show dev with Ok s -> Lpf.Tc.parse_class_show dev s | _ -> []) devices in
+                 (match Lpf.diff_tc_policy ~file:path ~observed_qdisc:observed_qdiscs ~observed_class:observed_classes input with
+                  | Ok (diff, diagnostics) ->
+                      print_diagnostics diagnostics;
+                      if json then Printf.printf "{\"backend\":\"tc\",\"changes_required\":%B}\n" diff.Lpf.Tc.changes_required
+                      else print_endline diff.Lpf.Tc.text
+                  | Error diagnostics ->
+                      print_diagnostics diagnostics;
+                      exit 1))
        | "routing" ->
-           let live = match source with
-             | Observed_path p -> read_file p
-             | Live -> (match Lpf.Ip.rule_list () with Ok s -> s | _ -> "")
-           in
-           (match Lpf.render_routing_policy_text ~file:path input with
-            | Ok (rendered, diagnostics) ->
-                print_diagnostics diagnostics;
-                let changes = not (String.equal rendered live) in
-                let diff_out = if changes then Printf.sprintf "--- expected\n+++ observed\n-%s+%s" rendered live else "no changes" in
-                if json then Printf.printf "{\"backend\":\"routing\",\"changes_required\":%B}\n" changes
-                else print_endline diff_out
-            | Error diagnostics ->
-                print_diagnostics diagnostics;
-                exit 1)
+            (match source with
+             | Observed_path p ->
+                 let observed = read_file p in
+                 (match Lpf.render_routing_policy_text ~file:path input with
+                  | Ok (rendered, diagnostics) ->
+                      print_diagnostics diagnostics;
+                      let changes = not (String.equal rendered observed) in
+                      let diff_out = if changes then Printf.sprintf "--- expected\n+++ observed\n-%s+%s" rendered observed else "no changes" in
+                      if json then Printf.printf "{\"backend\":\"routing\",\"changes_required\":%B}\n" changes
+                      else print_endline diff_out
+                  | Error diagnostics ->
+                      print_diagnostics diagnostics;
+                      exit 1)
+             | Live ->
+                 let rule_text = match Lpf.Ip.rule_list () with Ok s -> s | _ -> "" in
+                 let observed_rules = Lpf.Ip.parse_rule_list rule_text in
+                 let plan = match Lpf.plan_policy_text ~file:path input with
+                   | Ok (plan, _) -> plan
+                   | Error _ -> Lpf.Plan.of_ir {
+                     Lpf.Ir.default_action = Lpf.Policy.Default_deny;
+                     interfaces = []; tables = []; queues = [];
+                     nats = []; rdrs = []; anchors = []; rules = [];
+                   }
+                 in
+                 let tables_needed =
+                   let cmds = Lpf.Routing.compile plan.Lpf.Plan.policy in
+                   List.filter_map (function
+                     | Lpf.Routing.Ip_route_add_default r -> Some r.table
+                     | _ -> None) cmds in
+                 let observed_routes = List.concat_map (fun table ->
+                   match Lpf.Ip.route_show table with
+                   | Ok s -> List.map (fun x -> { x with Lpf.Ip.table }) (Lpf.Ip.parse_route_show s)
+                   | _ -> []) tables_needed in
+                 (match Lpf.diff_routing_policy ~file:path ~observed_rules ~observed_routes input with
+                  | Ok (diff, diagnostics) ->
+                      print_diagnostics diagnostics;
+                      if json then Printf.printf "{\"backend\":\"routing\",\"changes_required\":%B}\n" diff.Lpf.Routing.changes_required
+                      else print_endline diff.Lpf.Routing.text
+                  | Error diagnostics ->
+                      print_diagnostics diagnostics;
+                      exit 1))
        | _ ->
            (match read_observed_ruleset source with
             | Error message ->
@@ -409,15 +481,29 @@ let handle_diff args =
       exit 64
 
 let handle_apply args =
+  let dry_run = List.mem "--dry-run" args in
   let rec parse confirm paths = function
     | [] -> (confirm, List.rev paths)
     | "--confirm" :: duration :: rest -> parse (Some duration) paths rest
+    | "--dry-run" :: rest -> parse confirm paths rest
     | arg :: rest when String.length arg > 0 && arg.[0] = '-' -> parse confirm paths rest
     | path :: rest -> parse confirm (path :: paths) rest
   in
   let confirm, paths = parse None [] args in
   match paths with
-
+  | [ path ] when dry_run -> (
+      let input = read_file path in
+      match Lpf.plan_policy_text ~file:path input with
+      | Ok (plan, diagnostics) ->
+          print_diagnostics diagnostics;
+          Printf.printf "dry-run: plan checksum %s, %d interfaces, %d rules\n"
+            (Lpf.Plan.checksum plan)
+            (List.length plan.Lpf.Plan.policy.Lpf.Ir.interfaces)
+            (List.length plan.Lpf.Plan.policy.Lpf.Ir.rules);
+          exit 0
+      | Error diagnostics ->
+          print_diagnostics diagnostics;
+          exit 1)
   | [ path ] -> (
       let input = read_file path in
       match Lpf.apply_policy_text ?confirm ~file:path input with
@@ -590,25 +676,30 @@ let handle_history args =
       exit 1
 
 let handle_state args =
-  match args with
-  | "list" :: _ -> (
+  let json = List.mem "--json" args in
+  let sub = List.find_opt (fun a -> not (String.starts_with ~prefix:"-" a)) args in
+  match sub with
+  | Some "list" -> (
       match Lpf.Conntrack.list () with
       | Ok output ->
           let entries = Lpf.Conntrack.parse_list output in
-          List.iter (fun (e : Lpf.Conntrack.conntrack_entry) -> Printf.printf "%s %s %s %s %s [%s]\n" e.protocol e.src e.dst e.sport e.dport e.state) entries;
+          if json then print_string (Lpf.Conntrack.entries_to_json entries)
+          else List.iter (fun (e : Lpf.Conntrack.conntrack_entry) -> Printf.printf "%s %s %s %s %s [%s]\n" e.protocol e.src e.dst e.sport e.dport e.state) entries;
           exit 0
       | Error error ->
           prerr_endline (Lpf.Conntrack.string_of_run_error error);
           exit 1)
-  | "flush" :: _ -> (
+  | Some "flush" -> (
       match Lpf.Conntrack.flush () with
       | Ok () ->
-          Printf.printf "conntrack table flushed\n";
+          if json then Printf.printf "{\"status\":\"flushed\"}\n"
+          else Printf.printf "conntrack table flushed\n";
           exit 0
       | Error error ->
           prerr_endline (Lpf.Conntrack.string_of_run_error error);
           exit 1)
-  | "kill" :: rest ->
+  | Some "kill" ->
+      let rest = List.filter (fun a -> a <> "kill" && a <> "--json") args in
       let rec parse_src_dst src dst = function
         | [] -> (src, dst)
         | "--src" :: s :: more -> parse_src_dst (Some s) dst more
@@ -628,11 +719,12 @@ let handle_state args =
        | _ ->
            prerr_endline "state kill: specify --src and --dst addresses";
            exit 64)
-  | "show" :: _ -> (
+  | Some "show" -> (
       match Lpf.Conntrack.list () with
       | Ok output ->
           let entries = Lpf.Conntrack.parse_list output in
-          List.iter (fun (e : Lpf.Conntrack.conntrack_entry) ->
+          if json then print_string (Lpf.Conntrack.entries_to_json entries)
+          else List.iter (fun (e : Lpf.Conntrack.conntrack_entry) ->
               Printf.printf "%s %s %s %s %s [%s]\n"
                 e.protocol e.src e.dst e.sport e.dport e.state)
             entries;
@@ -641,11 +733,13 @@ let handle_state args =
           prerr_endline (Lpf.Conntrack.string_of_run_error error);
           exit 1)
   | _ ->
-      prerr_endline "usage: lpf state <list|show|flush|kill>";
+      prerr_endline "usage: lpf state [--json] <list|show|flush|kill>";
       exit 64
 
 let handle_table args =
-  match args with
+  let json = List.mem "--json" args in
+  let clean args = List.filter (fun a -> a <> "--json") args in
+  match clean args with
   | name :: "add" :: element :: _ -> (
       match Lpf.Table.add name element with
       | Ok () ->
@@ -671,13 +765,20 @@ let handle_table args =
        | Error error ->
            prerr_endline (Lpf.Nft.string_of_run_error error);
            exit 1)
-  | name :: "show" :: _ ->
-      Printf.printf "table %s: use lpf rules show for full ruleset\n" name;
-      exit 0
+  | name :: "show" :: _ -> (
+      match Lpf.Table.counters name with
+      | Ok output ->
+          if json then print_string (Lpf.Table.elements_to_json (Lpf.Table.parse_counters_output output))
+          else print_endline output;
+          exit 0
+      | Error error ->
+          prerr_endline (Lpf.Nft.string_of_run_error error);
+          exit 1)
   | name :: "counters" :: _ -> (
       match Lpf.Table.counters name with
       | Ok output ->
-          print_endline output;
+          if json then print_string (Lpf.Table.elements_to_json (Lpf.Table.parse_counters_output output))
+          else print_endline output;
           exit 0
       | Error error ->
           prerr_endline (Lpf.Nft.string_of_run_error error);
@@ -747,9 +848,141 @@ let handle_e2e args =
         Printf.printf "lpf e2e: %d passed, %d failed, %d total on %s (%s)\n" result.passed
           result.failed result.scenario_count result.kernel_id result.kernel_release;
         if result.failed = 0 then exit 0 else exit 1
-      with Failure message | Invalid_argument message ->
-        prerr_endline message;
-         exit 1)
+       with Failure message | Invalid_argument message ->
+         prerr_endline message;
+          exit 1)
+
+let tool_property_name option_name =
+  let token =
+    option_name
+    |> String.trim
+    |> String.split_on_char ' '
+    |> function
+    | first :: _ -> first
+    | [] -> option_name
+  in
+  let token =
+    if String.starts_with ~prefix:"--" token then
+      String.sub token 2 (String.length token - 2)
+    else token
+  in
+  let buffer = Buffer.create (String.length token) in
+  String.iter
+    (fun character ->
+      let code = Char.code character in
+      let valid =
+        (code >= Char.code 'a' && code <= Char.code 'z')
+        || (code >= Char.code 'A' && code <= Char.code 'Z')
+        || (code >= Char.code '0' && code <= Char.code '9')
+      in
+      Buffer.add_char buffer (if valid then character else '_'))
+    token;
+  let name = Buffer.contents buffer in
+  if String.length name = 0 then "option" else name
+
+let deduplicate_properties properties =
+  let rec loop seen acc = function
+    | [] -> List.rev acc
+    | ((name, _) as property) :: rest ->
+        if List.mem name seen then loop seen acc rest
+        else loop (name :: seen) (property :: acc) rest
+  in
+  loop [] [] properties
+
+let tool_schema_properties doc =
+  let option_properties =
+    match doc with
+    | None -> []
+    | Some d ->
+        List.map
+          (fun (opt_name, opt_desc) -> (tool_property_name opt_name, ("string", opt_desc)))
+          d.Lpf.options
+  in
+  deduplicate_properties (option_properties @ [ ("policy", ("string", "the policy text")) ])
+
+let tool_schema_openai (name, command, summary) =
+  let doc = List.find_opt (fun d -> d.Lpf.command = command) Lpf.command_docs in
+  let properties = tool_schema_properties doc in
+  let required = ["policy"] in
+  let props_json =
+    String.concat ","
+      (List.map
+         (fun (k, (t, desc)) ->
+           Printf.sprintf "%s:{\"type\":%s,\"description\":%s}"
+             (Lpf.Json_util.string k) (Lpf.Json_util.string t) (Lpf.Json_util.string desc))
+         properties)
+  in
+  Printf.sprintf
+    "{\"name\":%s,\"description\":%s,\"parameters\":{\"type\":\"object\",\"properties\":{%s},\"required\":%s}}"
+    (Lpf.Json_util.string name) (Lpf.Json_util.string summary) props_json
+    (Lpf.Json_util.list Lpf.Json_util.string required)
+
+let tool_schema_jsonschema (name, _command, summary) =
+  Printf.sprintf "{\"$id\":%s,\"title\":%s,\"description\":%s,\"type\":\"object\",\"properties\":{\"policy\":{\"type\":\"string\",\"description\":\"the lpf policy text\"}},\"required\":[\"policy\"]}"
+    (Lpf.Json_util.string ("lpf-" ^ name))
+    (Lpf.Json_util.string name)
+    (Lpf.Json_util.string summary)
+
+let handle_tools args =
+  let rec parse format = function
+    | [] -> Ok format
+    | "--format" :: ("openai" as value) :: rest -> parse value rest
+    | "--format" :: ("jsonschema" as value) :: rest -> parse value rest
+    | "--format" :: ("system-prompt" as value) :: rest -> parse value rest
+    | "--format" :: value :: _ -> Error ("unsupported tools format: " ^ value)
+    | "--format" :: [] -> Error "missing value for --format"
+    | option :: _ when String.starts_with ~prefix:"-" option -> Error ("unknown option: " ^ option)
+    | value :: _ -> Error ("unknown lpf tools argument: " ^ value)
+  in
+  match parse "openai" args with
+  | Error message ->
+      prerr_endline message;
+      prerr_endline "usage: lpf tools [--format openai|jsonschema|system-prompt]";
+      exit 64
+  | Ok format ->
+      if String.equal format "system-prompt" then (
+        print_endline
+          (Lpf.Json_util.string
+             ("You are an lpf firewall automation agent. lpf is an OCaml control plane for Linux networking that compiles a PF-inspired policy language to nftables, policy routing, tc traffic shaping, and conntrack.\n\
+               \n\
+               Commands available:\n\
+               - lpf check <policy> - Parse and validate a policy without host changes. Use --json for structured output.\n\
+               - lpf fmt <policy> - Format policy files deterministically. Use --json for machine output.\n\
+               - lpf plan --json <policy> - Compile policy to a versioned JSON plan with stable checksum.\n\
+               - lpf diff --json <policy> - Compare intended state with live nftables/routing/tc state.\n\
+               - lpf apply <policy> [--confirm 60s] - Apply policy with atomic rollback support.\n\
+               - lpf apply --dry-run <policy> - Validate and plan without changing host state.\n\
+               - lpf explain --json from <addr> to <addr> proto <proto> port <port> <policy> - Explain packet handling.\n\
+               - lpf test --junit <path> <fixture> - Run policy assertion tests.\n\
+               - lpf table <name> <add|delete|replace|show|flush|counters> [--json] - Manage dynamic tables.\n\
+               - lpf state <list|show|flush|kill> [--json] - Inspect conntrack state.\n\
+               - lpf history [--json] - Show policy apply history.\n\
+               - lpf rollback [--now] [<policy-id>] - Restore previous policy.\n\
+               - lpf confirm - Confirm pending guarded apply.\n\
+               \n\
+               Safety: Always use lpf check before apply. Use guarded apply (--confirm) for remote hosts. Use rollback if traffic is disrupted. lpf requires root/CAP_NET_ADMIN.\n\
+               \n\
+               When writing policies, follow the lpf policy format: interfaces, tables, macros, NAT, RDR, queues, anchors, and rules with pass/block/reject actions. Use lpf fmt to normalize before applying."));
+        exit 0)
+      else
+        let tools =
+          List.filter
+            (fun (_name, cmd, _) ->
+              match cmd with
+              | Lpf.Check | Lpf.Fmt | Lpf.Plan | Lpf.Diff | Lpf.Apply | Lpf.Explain
+              | Lpf.Test | Lpf.Table | Lpf.State | Lpf.Rules | Lpf.History ->
+                  true
+              | _ -> false)
+            Lpf.all_commands
+        in
+        let render =
+          match format with
+          | "jsonschema" -> tool_schema_jsonschema
+          | _ -> tool_schema_openai
+        in
+        let schemas = List.map render tools in
+        Printf.printf "[%s]\n" (String.concat ",\n " schemas);
+        exit 0
 
 let () =
   match Array.to_list Sys.argv with
@@ -778,6 +1011,7 @@ let () =
   | _ :: "e2e" :: args -> handle_e2e args
   | _ :: "table" :: args -> handle_table args
   | _ :: "man" :: args -> handle_man args
+  | _ :: "tools" :: args -> handle_tools args
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with
       | Some Lpf.Version -> print_end Lpf.version

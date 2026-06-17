@@ -76,11 +76,19 @@ let policy_of_default = function
   | Policy.Default_pass -> Policy_accept
   | Policy.Default_deny -> Policy_drop
 
+let address_family_of_entry entry =
+  if String.contains entry ':' then "ipv6_addr" else "ipv4_addr"
+
 let table_of_policy_table (table : Ir.table) =
+  let set_type =
+    match table.entries with
+    | [] -> "ipv4_addr"
+    | entry :: _ -> address_family_of_entry entry
+  in
   {
     table = filter_table_name;
     name = set_name table.name;
-    set_type = "ipv4_addr";
+    set_type;
     flags = [ "interval" ];
     elements = List.sort String.compare table.entries;
   }

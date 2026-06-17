@@ -92,7 +92,10 @@ let find_shadow (ir : Ir.t) (pkt : packet) (matching_rule : rule option) =
             else if match_rule ir r pkt then Some r
             else find_before seen rest
       in
-      find_before [] ir.rules
+      let anchor_rules = List.concat_map (fun (a : anchor) -> a.rules) ir.anchors in
+      match find_before [] anchor_rules with
+      | Some r -> Some r
+      | None -> find_before [] ir.rules
 
 let explain (ir : Ir.t) (pkt : packet) =
   (* 1. Check RDR (Prerouting) *)

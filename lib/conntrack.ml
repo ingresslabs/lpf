@@ -55,3 +55,17 @@ let parse_line line =
 let parse_list output =
   String.split_on_char '\n' output
   |> List.filter_map parse_line
+
+let entry_to_json (e : conntrack_entry) =
+  Json_util.field_object
+    [
+      ("protocol", Json_util.string e.protocol);
+      ("src", Json_util.string e.src);
+      ("dst", Json_util.string e.dst);
+      ("sport", Json_util.string e.sport);
+      ("dport", Json_util.string e.dport);
+      ("state", Json_util.string e.state);
+    ]
+
+let entries_to_json entries =
+  Json_util.list entry_to_json entries ^ "\n"

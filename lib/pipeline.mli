@@ -20,6 +20,18 @@ val diff_nftables_policy :
   observed:string ->
   string ->
   (Nftables.diff_result * Policy.diagnostic list, Policy.diagnostic list) result
+val diff_tc_policy :
+  ?file:string ->
+  observed_qdisc:Tc.observed_qdisc list ->
+  observed_class:Tc.observed_class list ->
+  string ->
+  (Tc.diff_result * Policy.diagnostic list, Policy.diagnostic list) result
+val diff_routing_policy :
+  ?file:string ->
+  observed_rules:Ip.observed_rule list ->
+  observed_routes:Ip.observed_route list ->
+  string ->
+  (Routing.diff_result * Policy.diagnostic list, Policy.diagnostic list) result
 val explain_policy_text :
   ?file:string ->
   packet:Explain.packet ->

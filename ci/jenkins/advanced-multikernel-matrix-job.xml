@@ -32,7 +32,7 @@
         <hudson.model.StringParameterDefinition>
           <name>SCENARIO_COUNT</name>
           <description>Number of lpf e2e scenarios to run per available kernel. Advanced jobs require 500-1000.</description>
-          <defaultValue>990</defaultValue>
+          <defaultValue>984</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>

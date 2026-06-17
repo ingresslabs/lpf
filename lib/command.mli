@@ -14,6 +14,7 @@ type command =
   | History
   | E2e
   | Man
+  | Tools
   | Version
   | Help
 

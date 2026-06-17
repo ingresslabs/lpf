@@ -33,3 +33,5 @@ val flush : unit -> (unit, run_error) result
 val flush_with_runner : (invocation -> (string, run_error) result) -> (unit, run_error) result
 val string_of_run_error : run_error -> string
 val parse_list : string -> conntrack_entry list
+val entry_to_json : conntrack_entry -> string
+val entries_to_json : conntrack_entry list -> string

@@ -2,6 +2,7 @@ type scenario_family =
   | Nft_accept
   | Nft_drop
   | Nft_log
+  | Nft_reject
   | Ipv6_accept
   | Ipv6_drop
   | Routing
@@ -66,7 +67,7 @@ type context = {
   veth_b : string;
 }
 
-let default_scenario_count = 550
+let default_scenario_count = 552
 let max_scenario_count = 1000
 
 let validate_scenario_count count =
@@ -77,6 +78,7 @@ let family_name = function
   | Nft_accept -> "nftables-accept"
   | Nft_drop -> "nftables-drop"
   | Nft_log -> "nftables-log"
+  | Nft_reject -> "nftables-reject"
   | Ipv6_accept -> "ipv6-accept"
   | Ipv6_drop -> "ipv6-drop"
   | Routing -> "policy-routing"
@@ -91,6 +93,7 @@ let all_families =
     Nft_accept;
     Nft_drop;
     Nft_log;
+    Nft_reject;
     Ipv6_accept;
     Ipv6_drop;
     Routing;
@@ -102,17 +105,18 @@ let all_families =
   ]
 
 let family_of_index index =
-  match index mod 11 with
+  match index mod 12 with
   | 0 -> Nft_accept
   | 1 -> Nft_drop
   | 2 -> Nft_log
-  | 3 -> Ipv6_accept
-  | 4 -> Ipv6_drop
-  | 5 -> Routing
-  | 6 -> Traffic_shaping
-  | 7 -> Conntrack
-  | 8 -> Cleanup_idempotency
-  | 9 -> Readback_diff
+  | 3 -> Nft_reject
+  | 4 -> Ipv6_accept
+  | 5 -> Ipv6_drop
+  | 6 -> Routing
+  | 7 -> Traffic_shaping
+  | 8 -> Conntrack
+  | 9 -> Cleanup_idempotency
+  | 10 -> Readback_diff
   | _ -> Negative_invalid
 
 let description family variant =
@@ -125,6 +129,9 @@ let description family variant =
         variant
   | Nft_log ->
       Printf.sprintf "log and accept ICMP traffic through an lpf-owned nftables rule variant %03d"
+        variant
+  | Nft_reject ->
+      Printf.sprintf "reject ICMP traffic through an lpf-owned nftables rule variant %03d"
         variant
   | Ipv6_accept ->
       Printf.sprintf "accept IPv6 ICMP traffic through an lpf-owned nftables rule variant %03d"
@@ -328,7 +335,7 @@ let nft_cleanup_log ctx =
   ^ command_log "nft post-remove readback" list_invocation list_result
 
 let nft_ruleset ~verdict ~log_prefix =
-  let action = match verdict with `Accept -> "accept" | `Drop -> "drop" in
+  let action = match verdict with `Accept -> "accept" | `Drop -> "drop" | `Reject -> "reject" in
   let log =
     match log_prefix with
     | None -> ""
@@ -753,6 +760,44 @@ let run_negative_invalid ctx scenario =
   if ok then Ok (success_result log)
   else Error (log ^ "invalid backend update was not rejected cleanly for " ^ scenario.id)
 
+let run_nft_reject ctx scenario =
+  let apply, log = apply_ruleset_logged ctx (nft_ruleset ~verdict:`Reject ~log_prefix:(Some "lpf-e2e-reject")) in
+  if apply.code <> 0 then Error (log ^ "nft reject apply failed for " ^ scenario.id)
+  else
+    let ping_invocation = netns_exec ctx.ns_a "ping" [ "-c"; "1"; "-W"; "1"; "10.77.0.2" ] in
+    let ping = run_command ping_invocation in
+    let list_invocation = netns_exec ctx.ns_b "nft" [ "list"; "ruleset" ] in
+    let list_result = run_command list_invocation in
+    let log =
+      log ^ command_log "reject traffic probe" ping_invocation ping
+      ^ command_log "nft applied readback" list_invocation list_result
+    in
+    let ok, validation_log =
+      require_all
+        [
+          (ping.code <> 0, validation_line "packet.reject" (ping.code <> 0) "traffic was rejected");
+          require_contains "readback.reject" list_result.stdout "reject";
+          require_contains "readback.table" list_result.stdout "table ip lpf_e2e";
+        ]
+    in
+    let cleanup_log = nft_cleanup_log ctx in
+    let cleanup_readback =
+      let list_invocation = netns_exec ctx.ns_b "nft" [ "list"; "ruleset" ] in
+      run_command list_invocation
+    in
+    let cleanup_ok, cleanup_validation =
+      require_absent "cleanup.no_lpf_table" cleanup_readback.stdout "lpf_e2e"
+    in
+    let log =
+      log ^ validation_log ^ cleanup_log
+      ^ command_log "nft cleanup validation readback"
+          (netns_exec ctx.ns_b "nft" [ "list"; "ruleset" ])
+          cleanup_readback
+      ^ cleanup_validation
+    in
+    if ok && cleanup_ok then Ok (success_result log)
+    else Error (log ^ "semantic validation failed for " ^ scenario.id)
+
 let run_one ctx scenario =
   let started = Unix.gettimeofday () in
   let outcome =
@@ -760,6 +805,7 @@ let run_one ctx scenario =
     | Nft_accept -> run_nft_accept ctx scenario
     | Nft_drop -> run_nft_drop ctx scenario
     | Nft_log -> run_nft_log ctx scenario
+    | Nft_reject -> run_nft_reject ctx scenario
     | Ipv6_accept -> run_ipv6 ctx scenario `Accept
     | Ipv6_drop -> run_ipv6 ctx scenario `Drop
     | Routing -> run_routing ctx scenario

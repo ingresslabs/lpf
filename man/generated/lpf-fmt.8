@@ -2,16 +2,20 @@
 .SH NAME
 lpf\-fmt \- format policy files deterministically
 .SH SYNOPSIS
-lpf fmt <policy>
+lpf fmt [\-\-check] [\-\-json] <policy>
 .SH DESCRIPTION
 Format policy files deterministically for review and CI.
 .SH OPTIONS
 .TP
 \-\-check
 fail when formatting would change the policy
+.TP
+\-\-json
+emit machine\-readable formatted text or diagnostics
 .SH EXAMPLES
 lpf fmt /etc/lpf.conf
 lpf fmt \-\-check /etc/lpf.conf
+lpf fmt \-\-json fixtures/policies/basic.lpf
 .SH FILES
 /etc/lpf.conf
 .SH SAFETY NOTES
