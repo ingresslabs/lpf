@@ -1,0 +1,5 @@
+set default deny
+
+interface wan = "eth0"
+
+nat on wan from any to any -> wan extra

@@ -176,6 +176,10 @@ let strip_quotes text =
   if len >= 2 && text.[0] = '"' && text.[len - 1] = '"' then String.sub text 1 (len - 2)
   else text
 
+let is_quoted text =
+  let len = String.length text in
+  len >= 2 && text.[0] = '"' && text.[len - 1] = '"'
+
 let is_ident_char = function
   | 'a' .. 'z' | 'A' .. 'Z' | '0' .. '9' | '_' | '-' -> true
   | _ -> false
@@ -336,6 +340,10 @@ let parse_interface original tokens policy diagnostics =
         ( policy,
           add_diagnostic diagnostics
             (syntax_error name.span ("invalid interface name `" ^ name.text ^ "`")) )
+      else if not (is_quoted device.text) then
+        ( policy,
+          add_diagnostic diagnostics
+            (syntax_error device.span "interface device must be quoted") )
       else
         let interface =
           { name = name.text; device = strip_quotes device.text; span = statement_span }
@@ -378,16 +386,21 @@ let parse_macro original tokens policy diagnostics =
           (syntax_error statement_span "expected `<name> = <value>`") )
 
 let parse_table_entries tokens =
-  let rec loop entries expecting_entry = function
-    | [] -> Ok (List.rev entries)
+  let rec loop entries expecting_entry last_separator = function
+    | [] ->
+        if expecting_entry then
+          match last_separator with
+          | Some token -> Error (token.span, "empty table entry")
+          | None -> Ok (List.rev entries)
+        else Ok (List.rev entries)
     | token :: rest when text_is "," token ->
         if expecting_entry then Error (token.span, "empty table entry")
-        else loop entries true rest
+        else loop entries true (Some token) rest
     | token :: rest ->
-        if expecting_entry then loop (token.text :: entries) false rest
+        if expecting_entry then loop (token.text :: entries) false None rest
         else Error (token.span, "expected `,` between table entries")
   in
-  loop [] true tokens
+  loop [] true None tokens
 
 let parse_table original tokens policy diagnostics =
   let statement_span = span_of_tokens (line_span 1 original) tokens in

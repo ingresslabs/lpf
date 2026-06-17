@@ -95,6 +95,11 @@ let () =
   assert_check_fails ~contains:'a' "invalid-anchor-statement.lpf";
   assert_check_fails ~contains:'a' "invalid-anchor-unknown-reference.lpf";
   assert_check_fails ~contains:'a' "invalid-anchor-unclosed.lpf";
+  assert_check_fails ~contains:'i' "invalid-interface-device.lpf";
+  assert_check_fails ~contains:'u' "invalid-quoted-string.lpf";
+  assert_check_fails ~contains:'t' "invalid-table-trailing-comma.lpf";
+  assert_check_fails ~contains:'n' "invalid-nat-extra-token.lpf";
+  assert_check_fails ~contains:'r' "invalid-rdr-port.lpf";
   assert_check_has_diagnostic ~line:5 ~column:14
     ~message:"rule source references unknown table `<missing>`"
     "invalid-unknown-table.lpf";
@@ -143,6 +148,21 @@ let () =
   assert_check_has_diagnostic ~line:3 ~column:1
     ~message:"expected closing `}`"
     "invalid-anchor-unclosed.lpf";
+  assert_check_has_diagnostic ~line:3 ~column:17
+    ~message:"interface device must be quoted"
+    "invalid-interface-device.lpf";
+  assert_check_has_diagnostic ~line:3 ~column:17
+    ~message:"unterminated quoted string"
+    "invalid-quoted-string.lpf";
+  assert_check_has_diagnostic ~line:3 ~column:29
+    ~message:"empty table entry"
+    "invalid-table-trailing-comma.lpf";
+  assert_check_has_diagnostic ~line:5 ~column:35
+    ~message:"invalid nat: unexpected token after translation"
+    "invalid-nat-extra-token.lpf";
+  assert_check_has_diagnostic ~line:5 ~column:43
+    ~message:"invalid rdr: invalid port `70000`"
+    "invalid-rdr-port.lpf";
   assert_inline_check_has_diagnostic ~file:"inline-invalid-port.lpf"
     ~text:"set default deny\npass out proto tcp from any to any port 70000\n"
     ~line:2 ~column:41 ~message:"invalid rule: invalid port `70000`";
@@ -181,4 +201,21 @@ let () =
       "set default deny\n\n\
        table <trusted> { 10.0.0.0/8, 192.168.0.0/16 }\n\n\
        pass out proto tcp from any to any port 443 keep state\n"
-    "messy.lpf"
+    "messy.lpf";
+  assert_formats_to
+    ~expected:
+      "set default deny\n\n\
+       wan_port = 443\n\n\
+       interface lan = \"eth1\"\n\
+       interface wan = \"eth0\"\n\n\
+       table <trusted> { 192.168.0.0/16, 10.0.0.0/8 }\n\n\
+       queue slow on wan bandwidth 1M\n\
+       queue std on wan bandwidth 10M\n\n\
+       nat on wan from 10.0.0.0/24 to any -> wan\n\
+       rdr on wan proto tcp from any to any port 80 -> 10.0.0.5 port 8080\n\n\
+       anchor internal {\n\
+       \  pass in on lan from <trusted> to any queue std\n\
+       }\n\n\
+       pass out log (all) on wan proto tcp from any to any port $wan_port route-to 1.1.1.1 (wan) keep state\n\
+       block in log from any to any\n"
+    "messy-full.lpf"

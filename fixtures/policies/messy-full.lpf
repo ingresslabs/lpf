@@ -1,0 +1,15 @@
+# intentionally non-normalized policy that spans all Phase 1 constructs
+set default deny
+wan_port = 443
+interface wan = "eth0"
+interface lan = "eth1"
+table <trusted>{192.168.0.0/16,10.0.0.0/8}
+queue slow on wan bandwidth 1M
+queue std on wan bandwidth 10M
+nat on wan from 10.0.0.0/24 to any -> wan
+rdr on wan proto tcp from any to any port 80 -> 10.0.0.5 port 8080
+anchor internal {
+  pass in on lan from <trusted> to any queue std
+}
+pass out log (all) on wan proto tcp from any to any port $wan_port route-to 1.1.1.1 (wan) keep state
+block in log from any to any

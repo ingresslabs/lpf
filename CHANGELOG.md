@@ -28,3 +28,6 @@
   parsing, formatting, validation, and malformed syntax diagnostics.
 - Added top-level anchor parsing, formatting, validation, and valid/invalid
   fixtures for rule-only anchor blocks.
+- Added Phase 1 policy-language hardening fixtures for malformed interface,
+  quoted string, table, NAT, and redirect syntax plus broader formatter
+  round-trip coverage.

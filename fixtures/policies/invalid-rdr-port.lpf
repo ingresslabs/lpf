@@ -1,0 +1,5 @@
+set default deny
+
+interface wan = "eth0"
+
+rdr on wan proto tcp from any to any port 70000 -> 10.0.0.5

@@ -1,0 +1,3 @@
+set default deny
+
+interface wan = "eth0
