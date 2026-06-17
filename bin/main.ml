@@ -412,23 +412,15 @@ let handle_diff args =
       exit 64
 
 let handle_apply args =
-  let _, paths =
-    List.fold_left
-      (fun (confirm, paths) arg ->
-        if String.equal arg "--confirm" then (confirm, paths) (* handled below *)
-        else if String.length arg > 0 && arg.[0] = '-' then (confirm, paths) (* ignore other flags for now *)
-        else (confirm, paths @ [ arg ]))
-      (None, []) args
+  let rec parse confirm paths = function
+    | [] -> (confirm, List.rev paths)
+    | "--confirm" :: duration :: rest -> parse (Some duration) paths rest
+    | arg :: rest when String.length arg > 0 && arg.[0] = '-' -> parse confirm paths rest
+    | path :: rest -> parse confirm (path :: paths) rest
   in
-  let confirm =
-    let rec find = function
-      | flag :: value :: _ when String.equal flag "--confirm" -> Some value
-      | _ :: rest -> find rest
-      | [] -> None
-    in
-    find args
-  in
+  let confirm, paths = parse None [] args in
   match paths with
+
   | [ path ] -> (
       let input = read_file path in
       match Lpf.apply_policy_text ?confirm ~file:path input with
