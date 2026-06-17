@@ -15,12 +15,22 @@ jobs:
         ocaml: ["5.1.1", "5.2.1"]
     steps:
       - uses: actions/checkout@v4
+
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: ${{ matrix.ocaml }}
+
       - run: opam install . --deps-only --with-test
+
       - run: opam exec -- dune build
+
       - run: opam exec -- dune runtest
+
+      - run: opam exec -- dune exec -- lpf man check
+        if: matrix.ocaml == '5.2.1'
+
+      - run: opam lint lpf.opam
+        if: matrix.ocaml == '5.2.1'
 
   network-ns:
     name: Network namespace isolation
