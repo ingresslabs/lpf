@@ -8,6 +8,8 @@ let read_file path =
 
 let fixture path = Filename.concat "../fixtures/policies" path
 let nft_fixture path = Filename.concat "../fixtures/nftables" path
+let nft_observed_fixture path = Filename.concat "../fixtures/nftables-observed" path
+let nft_diff_fixture path = Filename.concat "../fixtures/nftables-diff" path
 
 let contains_substring text needle =
   let text_length = String.length text in
@@ -210,6 +212,27 @@ let assert_nftables_golden_fixtures () =
   assert_nftables_golden "logging.lpf" "logging.nft";
   assert_nftables_golden "anchor-log.lpf" "anchor-log.nft"
 
+let assert_nftables_diff policy_name observed_path expected_name =
+  let path = fixture policy_name in
+  let observed = read_file observed_path in
+  match Lpf.diff_nftables_policy_text ~file:path ~observed (read_file path) with
+  | Ok (diff, diagnostics) ->
+      assert (diagnostics = []);
+      let expected = read_file (nft_diff_fixture expected_name) in
+      if not (String.equal diff expected) then
+        failwith ("nftables diff mismatch for " ^ policy_name ^ " / " ^ expected_name)
+  | Error diagnostics ->
+      failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics))
+
+let assert_nftables_diff_fixtures () =
+  assert_nftables_diff "basic.lpf" (nft_fixture "basic.nft") "unchanged.diff";
+  assert_nftables_diff "basic.lpf" (nft_observed_fixture "missing-owned.nft")
+    "missing-owned.diff";
+  assert_nftables_diff "basic.lpf" (nft_observed_fixture "extra-rule.nft")
+    "extra-rule.diff";
+  assert_nftables_diff "basic.lpf" (nft_observed_fixture "changed-rule.nft")
+    "changed-rule.diff"
+
 let assert_inline_check_has_diagnostic ~file ~text ~line ~column ~message =
   match Lpf.check_policy_text ~file text with
   | { Lpf.Policy.policy = None; diagnostics } ->
@@ -348,6 +371,7 @@ let () =
   assert_phase1_fixture_ir ();
   assert_plan_json ();
   assert_nftables_golden_fixtures ();
+  assert_nftables_diff_fixtures ();
   let basic = read_file (fixture "basic.lpf") in
   (match Lpf.format_policy_text ~file:(fixture "basic.lpf") basic with
    | Ok formatted -> assert (String.equal formatted basic)

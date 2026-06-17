@@ -1,0 +1,5 @@
+table inet foreign_firewall {
+  chain input {
+    type filter hook input priority 0; policy accept;
+  }
+}

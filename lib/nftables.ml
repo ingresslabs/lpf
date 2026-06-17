@@ -394,5 +394,113 @@ let render_table (nft : t) (table : table) =
 let to_string nft =
   "flush ruleset\n\n" ^ String.concat "\n\n" (List.map (render_table nft) nft.tables) ^ "\n"
 
+let owned_table_names = [ filter_table_name; nat_table_name ]
+
+let is_owned_table name = List.exists (String.equal name) owned_table_names
+
+let words text =
+  text |> String.trim |> String.split_on_char ' '
+  |> List.filter (fun word -> not (String.equal word ""))
+
+let owned_table_name_from_header line =
+  match words line with
+  | "table" :: _family :: name :: _ when is_owned_table name -> Some name
+  | _ -> None
+
+let brace_delta line =
+  let delta = ref 0 in
+  String.iter
+    (function
+      | '{' -> incr delta
+      | '}' -> decr delta
+      | _ -> ())
+    line;
+  !delta
+
+let extract_owned_tables text =
+  let rec outside tables = function
+    | [] -> List.rev tables
+    | line :: rest -> (
+        match owned_table_name_from_header line with
+        | None -> outside tables rest
+        | Some name ->
+            let depth = brace_delta line in
+            if depth <= 0 then outside ((name, line) :: tables) rest
+            else inside tables name depth [ line ] rest)
+  and inside tables name depth lines = function
+    | [] -> List.rev ((name, String.concat "\n" (List.rev lines)) :: tables)
+    | line :: rest ->
+        let depth = depth + brace_delta line in
+        let lines = line :: lines in
+        if depth <= 0 then outside ((name, String.concat "\n" (List.rev lines)) :: tables) rest
+        else inside tables name depth lines rest
+  in
+  outside [] (String.split_on_char '\n' text)
+
+let owned_ruleset_text text =
+  let tables = extract_owned_tables text in
+  let blocks =
+    owned_table_names
+    |> List.filter_map (fun name ->
+           tables
+           |> List.find_opt (fun (table_name, _) -> String.equal table_name name)
+           |> Option.map snd)
+  in
+  match blocks with
+  | [] -> ""
+  | _ -> String.concat "\n\n" blocks ^ "\n"
+
+let split_lines text =
+  let lines = String.split_on_char '\n' text in
+  match List.rev lines with
+  | "" :: rest -> List.rev rest
+  | _ -> lines
+
+type diff_line =
+  | Context of string
+  | Remove of string
+  | Add of string
+
+let diff_lines ~observed ~intended =
+  let observed = Array.of_list (split_lines observed) in
+  let intended = Array.of_list (split_lines intended) in
+  let observed_count = Array.length observed in
+  let intended_count = Array.length intended in
+  let common = Array.make_matrix (observed_count + 1) (intended_count + 1) 0 in
+  for i = observed_count - 1 downto 0 do
+    for j = intended_count - 1 downto 0 do
+      common.(i).(j) <-
+        if String.equal observed.(i) intended.(j) then common.(i + 1).(j + 1) + 1
+        else max common.(i + 1).(j) common.(i).(j + 1)
+    done
+  done;
+  let rec walk i j acc =
+    if i = observed_count && j = intended_count then List.rev acc
+    else if
+      i < observed_count && j < intended_count && String.equal observed.(i) intended.(j)
+    then walk (i + 1) (j + 1) (Context observed.(i) :: acc)
+    else if
+      i < observed_count && (j = intended_count || common.(i + 1).(j) >= common.(i).(j + 1))
+    then walk (i + 1) j (Remove observed.(i) :: acc)
+    else walk i (j + 1) (Add intended.(j) :: acc)
+  in
+  walk 0 0 []
+
+let render_diff_line = function
+  | Context line -> " " ^ line
+  | Remove line -> "-" ^ line
+  | Add line -> "+" ^ line
+
+let diff_text ~intended ~observed =
+  let intended = owned_ruleset_text intended in
+  let observed = owned_ruleset_text observed in
+  if String.equal intended observed then "nftables diff: no changes\n"
+  else
+    "nftables diff: changes required\n\
+     --- observed lpf-owned nftables\n\
+     +++ intended lpf-owned nftables\n"
+    ^ String.concat "\n" (List.map render_diff_line (diff_lines ~observed ~intended))
+    ^ "\n"
+
 let render_ir ir = ir |> of_ir |> to_string
 let render_plan plan = plan |> of_plan |> to_string

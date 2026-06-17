@@ -37,3 +37,5 @@
   JSON with stable checksums.
 - Added a read-only nftables renderer exposed through `lpf rules show <policy>`
   with golden fixture coverage.
+- Added read-only `lpf rules diff --observed <ruleset> <policy>` comparison
+  for supplied lpf-owned nftables table readback text.

@@ -144,6 +144,13 @@ Render deterministic read-only nftables rules from a checked policy with
 source-policy annotations. This command must not inspect installed state or
 change host networking state.
 
+### `lpf rules diff [--backend nftables] --observed <ruleset> <policy>`
+
+Compare rendered nftables intent with supplied observed ruleset text. The
+current implementation extracts only `lpf`-owned nftables tables from the
+observed input and reports deterministic text differences. It does not call
+`nft`, inspect the live host, or change host networking state.
+
 ### `lpf history`
 
 Show applied policy versions, operator, timestamp, checksum, test result, and

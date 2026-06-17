@@ -118,10 +118,13 @@ Initial implementation status:
 
 - `lpf rules show <policy>` renders deterministic nftables text from the
   semantic plan without applying host changes.
+- `lpf rules diff --observed <ruleset> <policy>` compares rendered intent with
+  supplied observed nftables ruleset text, extracting only `lpf`-owned table
+  blocks.
 - Golden fixtures cover basic filtering, NAT/RDR, queues, route-to, logging,
   and anchors.
-- Installed-state readback, diffing, atomic update operations, and apply
-  remain open.
+- Live installed-state readback, top-level semantic `lpf diff`, atomic update
+  operations, and apply remain open.
 
 ## Phase 4: Linux Routing, tc, And Conntrack Integration
 

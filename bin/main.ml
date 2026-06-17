@@ -26,6 +26,16 @@ let read_file path =
       let length = in_channel_length channel in
       really_input_string channel length)
 
+let read_stdin () =
+  let buffer = Buffer.create 4096 in
+  (try
+     while true do
+       Buffer.add_string buffer (input_line stdin);
+       Buffer.add_char buffer '\n'
+     done
+   with End_of_file -> ());
+  Buffer.contents buffer
+
 let generated_path ~dir page = Filename.concat dir page.Lpf.filename
 
 let generate_man_pages ~dir =
@@ -174,6 +184,31 @@ let parse_rules_args args =
   in
   loop "nftables" [] args
 
+type rules_diff_args = {
+  observed : string option;
+  policies : string list;
+}
+
+let parse_rules_diff_args args =
+  let rec loop parsed = function
+    | [] -> Ok { parsed with policies = List.rev parsed.policies }
+    | "--backend" :: "nftables" :: rest -> loop parsed rest
+    | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
+    | "--observed" :: observed :: rest -> (
+        match parsed.observed with
+        | None -> loop { parsed with observed = Some observed } rest
+        | Some _ -> Error "duplicate --observed option")
+    | "--observed" :: [] -> Error "missing value for --observed"
+    | option :: _ when String.length option > 0 && option.[0] = '-' ->
+        Error ("unknown option: " ^ option)
+    | policy :: rest -> loop { parsed with policies = policy :: parsed.policies } rest
+  in
+  loop { observed = None; policies = [] } args
+
+let read_observed_ruleset = function
+  | "-" -> read_stdin ()
+  | path -> read_file path
+
 let handle_rules = function
   | "show" :: args -> (
       match parse_rules_args args with
@@ -192,6 +227,25 @@ let handle_rules = function
               exit 1)
       | Ok _ ->
           prerr_endline "usage: lpf rules show [--backend nftables] <policy>";
+          exit 64)
+  | "diff" :: args -> (
+      match parse_rules_diff_args args with
+      | Error message ->
+          prerr_endline message;
+          prerr_endline "usage: lpf rules diff [--backend nftables] --observed <ruleset|-> <policy>";
+          exit 64
+      | Ok { observed = Some observed_path; policies = [ path ]; _ } -> (
+          let observed = read_observed_ruleset observed_path in
+          let input = read_file path in
+          match Lpf.diff_nftables_policy_text ~file:path ~observed input with
+          | Ok (diff, diagnostics) ->
+              print_diagnostics diagnostics;
+              print_string diff
+          | Error diagnostics ->
+              print_diagnostics diagnostics;
+              exit 1)
+      | Ok _ ->
+          prerr_endline "usage: lpf rules diff [--backend nftables] --observed <ruleset|-> <policy>";
           exit 64)
   | [ path ] -> (
       let input = read_file path in

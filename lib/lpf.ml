@@ -65,7 +65,7 @@ let all_commands =
     ("test", Test, "run policy assertion fixtures");
     ("table", Table, "manage dynamic policy tables");
     ("state", State, "inspect or modify conntrack state");
-    ("rules", Rules, "show generated backend rules");
+    ("rules", Rules, "show or diff generated backend rules");
     ("history", History, "show policy apply history and rollback points");
     ("import", Import, "import existing nftables or iptables-save policy");
     ("ui", Ui, "serve, build, or test the Bonsai browser UI");
@@ -264,14 +264,25 @@ let command_docs =
     {
       command = Rules;
       section = 8;
-      synopsis = "lpf rules show <policy>";
+      synopsis =
+        "lpf rules show <policy>\n\
+         lpf rules diff --observed <ruleset> <policy>";
       description =
         [
           "Render deterministic read-only nftables rules from a checked lpf policy.";
-          "This command does not inspect installed state and does not apply host changes.";
+          "Diff rendered rules against observed lpf-owned nftables table blocks.";
+          "This command reads supplied observed ruleset text and does not apply host changes.";
         ];
-      options = [ ("--backend nftables", "select nftables rendering; currently the only backend") ];
-      examples = [ "lpf rules show fixtures/policies/basic.lpf" ];
+      options =
+        [
+          ("--backend nftables", "select nftables rendering; currently the only backend");
+          ("--observed <ruleset>", "read observed nftables ruleset text from a file or - for stdin");
+        ];
+      examples =
+        [
+          "lpf rules show fixtures/policies/basic.lpf";
+          "lpf rules diff --observed current.nft fixtures/policies/basic.lpf";
+        ];
       files = shared_files;
       safety_notes = [ "This command is read-only." ];
       see_also = [ "lpf-diff(8)"; "lpf-plan(8)" ];
@@ -515,6 +526,11 @@ let plan_policy_text ?file text =
 let render_nftables_policy_text ?file text =
   match plan_policy_text ?file text with
   | Ok (plan, diagnostics) -> Ok (Nftables.render_plan plan, diagnostics)
+  | Error diagnostics -> Error diagnostics
+
+let diff_nftables_policy_text ?file ~observed text =
+  match render_nftables_policy_text ?file text with
+  | Ok (intended, diagnostics) -> Ok (Nftables.diff_text ~intended ~observed, diagnostics)
   | Error diagnostics -> Error diagnostics
 
 let usage_lines () =
