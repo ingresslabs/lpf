@@ -81,6 +81,19 @@ let match_rdr (ir : Ir.t) (rdr : rdr) (pkt : packet) =
   match_address ir rdr.destination pkt.destination &&
   match_port rdr.port pkt.port
 
+let find_shadow (ir : Ir.t) (pkt : packet) (matching_rule : rule option) =
+  match matching_rule with
+  | None -> None
+  | Some matched ->
+      let rec find_before seen = function
+        | [] -> None
+        | (r : rule) :: rest ->
+            if r == matched then find_before seen rest
+            else if match_rule ir r pkt then Some r
+            else find_before seen rest
+      in
+      find_before [] ir.rules
+
 let explain (ir : Ir.t) (pkt : packet) =
   (* 1. Check RDR (Prerouting) *)
   let rdr = List.find_opt (fun r -> match_rdr ir r pkt) ir.rdrs in
@@ -104,7 +117,7 @@ let explain (ir : Ir.t) (pkt : packet) =
     packet = pkt;
     decision;
     matching_rule;
-    shadowed_by = None; (* TODO: add shadow analysis if needed *)
+    shadowed_by = find_shadow ir pkt matching_rule;
     nat;
     rdr;
     route_to = (match matching_rule with Some r -> r.route_to | None -> None);

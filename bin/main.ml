@@ -442,9 +442,21 @@ let handle_rollback args =
     | Error diagnostics ->
         print_diagnostics diagnostics;
         exit 1
-  else (
-    prerr_endline "manual lpf rollback by ID is planned; use --now for watchdog rollback";
-    exit 2)
+  else
+    let policy_id = List.find_opt (fun a -> not (String.starts_with ~prefix:"-" a)) args in
+    match policy_id with
+    | Some id -> (
+        match Lpf.Apply_guard.rollback_by_id id with
+        | Ok ((), diagnostics) ->
+            print_diagnostics diagnostics;
+            Printf.printf "rolled back to policy %s\n" id;
+            exit 0
+        | Error diagnostics ->
+            print_diagnostics diagnostics;
+            exit 1)
+    | None ->
+        prerr_endline "usage: lpf rollback [--now] [<policy-id>]";
+        exit 64
 
 let handle_explain args =
   let json, args =
@@ -650,15 +662,19 @@ let handle_e2e args =
   | Error message ->
       prerr_endline message;
       prerr_endline
-        "usage: lpf e2e <run|list> [--scenario-count N] [--junit PATH] [--allure-dir DIR] [--evidence-dir DIR] [--kernel-id ID] [--dry-run]";
+        "usage: lpf e2e <run|list> [--scenario-count 1..1000] [--junit PATH] [--allure-dir DIR] [--evidence-dir DIR] [--kernel-id ID] [--dry-run]";
       exit 64
   | Ok ("list", scenario_count, _, _, _, _, _) ->
-      Lpf.E2e.scenario_catalog scenario_count
-      |> List.iter (fun scenario ->
-             Printf.printf "%s\t%s\t%s\n" scenario.Lpf.E2e.id
-               (Lpf.E2e.family_name scenario.family)
-               scenario.description);
-      exit 0
+      (try
+         Lpf.E2e.scenario_catalog scenario_count
+         |> List.iter (fun scenario ->
+                Printf.printf "%s\t%s\t%s\n" scenario.Lpf.E2e.id
+                  (Lpf.E2e.family_name scenario.family)
+                  scenario.description);
+         exit 0
+       with Invalid_argument message ->
+         prerr_endline message;
+         exit 1)
   | Ok (_, scenario_count, junit_path, allure_dir, evidence_dir, kernel_id, dry_run) -> (
       try
         let result =

@@ -62,6 +62,11 @@ type context = {
 }
 
 let default_scenario_count = 480
+let max_scenario_count = 1000
+
+let validate_scenario_count count =
+  if count < 1 || count > max_scenario_count then
+    invalid_arg (Printf.sprintf "scenario_count must be between 1 and %d" max_scenario_count)
 
 let family_name = function
   | Nft_accept -> "nftables-accept"
@@ -97,7 +102,7 @@ let description family variant =
   | Conntrack -> Printf.sprintf "exercise traffic and inspect conntrack statistics variant %03d" variant
 
 let scenario_catalog count =
-  if count < 1 then invalid_arg "scenario_count must be positive";
+  validate_scenario_count count;
   List.init count (fun index ->
       let family = family_of_index index in
       let variant = (index / 6) + 1 in
@@ -142,6 +147,21 @@ let exit_code_of_status = function
   | Unix.WSTOPPED signal -> 128 + signal
 
 let command_line invocation = String.concat " " invocation.argv
+
+let command_log label invocation result =
+  String.concat "\n"
+    [
+      "## " ^ label;
+      "$ " ^ command_line invocation;
+      "exit=" ^ string_of_int result.code;
+      "stdout:";
+      result.stdout;
+      "stderr:";
+      result.stderr;
+      "";
+    ]
+
+let success_result stdout = { code = 0; stdout; stderr = "" }
 
 let run_command invocation =
   with_temp_file "lpf-e2e-stdout" (fun stdout_path ->
@@ -236,10 +256,20 @@ let require_tools () =
          | Ok _ -> ()
          | Error message -> failwith ("missing or unusable E2E tool: " ^ message))
 
-let apply_ruleset ctx ruleset =
+let apply_ruleset_logged ctx ruleset =
   with_temp_file "lpf-e2e-ruleset" (fun path ->
       write_file path ruleset;
-      expect_success (netns_exec ctx.ns_b "nft" [ "-f"; path ]))
+      let invocation = netns_exec ctx.ns_b "nft" [ "-f"; path ] in
+      let result = run_command invocation in
+      (result, "intended-ruleset:\n" ^ ruleset ^ command_log "nft apply" invocation result))
+
+let nft_cleanup_log ctx =
+  let flush_invocation = netns_exec ctx.ns_b "nft" [ "flush"; "ruleset" ] in
+  let flush_result = run_command flush_invocation in
+  let list_invocation = netns_exec ctx.ns_b "nft" [ "list"; "ruleset" ] in
+  let list_result = run_command list_invocation in
+  command_log "nft remove all rules" flush_invocation flush_result
+  ^ command_log "nft post-remove readback" list_invocation list_result
 
 let nft_ruleset ~verdict ~log_prefix =
   let action = match verdict with `Accept -> "accept" | `Drop -> "drop" in
@@ -263,139 +293,146 @@ let nft_ruleset ~verdict ~log_prefix =
       "";
     ]
 
-let run_ping ctx =
-  run_command (netns_exec ctx.ns_a "ping" [ "-c"; "1"; "-W"; "1"; "10.77.0.2" ])
-
 let run_nft_accept ctx scenario =
-  match apply_ruleset ctx (nft_ruleset ~verdict:`Accept ~log_prefix:None) with
-  | Error message -> Error message
-  | Ok _ ->
-      let ping = run_ping ctx in
-      if ping.code = 0 then Ok ping
-      else Error (Printf.sprintf "expected ping to pass for %s, got exit %d" scenario.id ping.code)
+  let apply, log = apply_ruleset_logged ctx (nft_ruleset ~verdict:`Accept ~log_prefix:None) in
+  if apply.code <> 0 then Error (log ^ "nft apply failed for " ^ scenario.id)
+  else
+    let ping_invocation = netns_exec ctx.ns_a "ping" [ "-c"; "1"; "-W"; "1"; "10.77.0.2" ] in
+    let ping = run_command ping_invocation in
+    let list_invocation = netns_exec ctx.ns_b "nft" [ "list"; "ruleset" ] in
+    let list_result = run_command list_invocation in
+    let log =
+      log ^ command_log "traffic probe" ping_invocation ping
+      ^ command_log "nft applied readback" list_invocation list_result
+      ^ nft_cleanup_log ctx
+    in
+    if ping.code = 0 then Ok (success_result log)
+    else Error (log ^ Printf.sprintf "expected ping to pass for %s, got exit %d" scenario.id ping.code)
 
 let run_nft_drop ctx scenario =
-  match apply_ruleset ctx (nft_ruleset ~verdict:`Drop ~log_prefix:None) with
-  | Error message -> Error message
-  | Ok _ ->
-      let ping = run_ping ctx in
-      if ping.code <> 0 then Ok ping else Error (Printf.sprintf "expected ping to be dropped for %s" scenario.id)
+  let apply, log = apply_ruleset_logged ctx (nft_ruleset ~verdict:`Drop ~log_prefix:None) in
+  if apply.code <> 0 then Error (log ^ "nft apply failed for " ^ scenario.id)
+  else
+    let ping_invocation = netns_exec ctx.ns_a "ping" [ "-c"; "1"; "-W"; "1"; "10.77.0.2" ] in
+    let ping = run_command ping_invocation in
+    let list_invocation = netns_exec ctx.ns_b "nft" [ "list"; "ruleset" ] in
+    let list_result = run_command list_invocation in
+    let log =
+      log ^ command_log "traffic probe expected drop" ping_invocation ping
+      ^ command_log "nft applied readback" list_invocation list_result
+      ^ nft_cleanup_log ctx
+    in
+    if ping.code <> 0 then Ok (success_result log)
+    else Error (log ^ Printf.sprintf "expected ping to be dropped for %s" scenario.id)
 
 let run_nft_log ctx scenario =
   let prefix = Printf.sprintf "lpf-e2e-%03d " scenario.index in
-  match apply_ruleset ctx (nft_ruleset ~verdict:`Accept ~log_prefix:(Some prefix)) with
-  | Error message -> Error message
-  | Ok _ -> (
-      let ping = run_ping ctx in
-      if ping.code <> 0 then Error (Printf.sprintf "expected logged ping to pass, got exit %d" ping.code)
-      else
-        match expect_success (netns_exec ctx.ns_b "nft" [ "list"; "ruleset" ]) with
-        | Error message -> Error message
-        | Ok listed ->
-            if String.contains listed.stdout 'l' && String.contains listed.stdout 'p' then Ok listed
-            else Error ("nft ruleset did not contain expected logging rule for " ^ scenario.id))
+  let apply, log = apply_ruleset_logged ctx (nft_ruleset ~verdict:`Accept ~log_prefix:(Some prefix)) in
+  if apply.code <> 0 then Error (log ^ "nft apply failed for " ^ scenario.id)
+  else (
+    let ping_invocation = netns_exec ctx.ns_a "ping" [ "-c"; "1"; "-W"; "1"; "10.77.0.2" ] in
+    let ping = run_command ping_invocation in
+    if ping.code <> 0 then Error (log ^ Printf.sprintf "expected logged ping to pass, got exit %d" ping.code)
+    else
+      let list_invocation = netns_exec ctx.ns_b "nft" [ "list"; "ruleset" ] in
+      let listed = run_command list_invocation in
+      let log =
+        log ^ command_log "traffic probe with nft log rule" ping_invocation ping
+        ^ command_log "nft log rule readback" list_invocation listed
+        ^ nft_cleanup_log ctx
+      in
+      if listed.code = 0 && String.contains listed.stdout 'l' && String.contains listed.stdout 'p' then
+        Ok (success_result log)
+      else Error (log ^ "nft ruleset did not contain expected logging rule for " ^ scenario.id))
 
 let run_routing ctx scenario =
   let table = 1000 + scenario.index in
   let priority = 10000 + scenario.index in
   let mark = Printf.sprintf "0x%x" (0x1000 + scenario.index) in
-  ignore_result
-    (ip
-       [
-         "-n";
-         ctx.ns_a;
-         "rule";
-         "delete";
-         "priority";
-         string_of_int priority;
-         "fwmark";
-         mark;
-         "table";
-         string_of_int table;
-       ]);
-  match
-    expect_success
-      (ip
-         [
-           "-n";
-           ctx.ns_a;
-           "rule";
-           "add";
-           "priority";
-           string_of_int priority;
-           "fwmark";
-           mark;
-           "table";
-           string_of_int table;
-         ])
-  with
-  | Error message -> Error message
-  | Ok _ -> (
-      match
-        expect_success
-          (ip
-             [
-               "-n";
-               ctx.ns_a;
-               "route";
-               "replace";
-               "default";
-               "via";
-               "10.77.0.2";
-               "dev";
-               ctx.veth_a;
-               "table";
-               string_of_int table;
-             ])
-      with
-      | Error message -> Error message
-      | Ok _ -> (
-          match expect_success (ip [ "-n"; ctx.ns_a; "route"; "show"; "table"; string_of_int table ]) with
-          | Error message -> Error message
-          | Ok route ->
-              if String.contains route.stdout 'd' && String.contains route.stdout '1' then Ok route
-              else Error ("policy route table did not render expected default route for " ^ scenario.id)))
+  let delete_rule =
+    ip [ "-n"; ctx.ns_a; "rule"; "delete"; "priority"; string_of_int priority; "fwmark"; mark; "table"; string_of_int table ]
+  in
+  let add_rule =
+    ip [ "-n"; ctx.ns_a; "rule"; "add"; "priority"; string_of_int priority; "fwmark"; mark; "table"; string_of_int table ]
+  in
+  let add_route =
+    ip [ "-n"; ctx.ns_a; "route"; "replace"; "default"; "via"; "10.77.0.2"; "dev"; ctx.veth_a; "table"; string_of_int table ]
+  in
+  let show_route = ip [ "-n"; ctx.ns_a; "route"; "show"; "table"; string_of_int table ] in
+  let show_rule = ip [ "-n"; ctx.ns_a; "rule"; "show" ] in
+  let flush_route = ip [ "-n"; ctx.ns_a; "route"; "flush"; "table"; string_of_int table ] in
+  let before_delete = run_command delete_rule in
+  let add_rule_result = run_command add_rule in
+  let add_route_result = run_command add_route in
+  let route_result = run_command show_route in
+  let rule_result = run_command show_rule in
+  let flush_route_result = run_command flush_route in
+  let delete_rule_result = run_command delete_rule in
+  let after_route_result = run_command show_route in
+  let log =
+    command_log "routing pre-clean rule" delete_rule before_delete
+    ^ command_log "routing apply rule" add_rule add_rule_result
+    ^ command_log "routing apply route" add_route add_route_result
+    ^ command_log "routing route readback" show_route route_result
+    ^ command_log "routing rule readback" show_rule rule_result
+    ^ command_log "routing remove route table" flush_route flush_route_result
+    ^ command_log "routing remove rule" delete_rule delete_rule_result
+    ^ command_log "routing post-remove route readback" show_route after_route_result
+  in
+  if add_rule_result.code <> 0 then Error (log ^ "policy routing rule apply failed for " ^ scenario.id)
+  else if add_route_result.code <> 0 then Error (log ^ "policy route apply failed for " ^ scenario.id)
+  else if route_result.code = 0 && String.contains route_result.stdout 'd' && String.contains route_result.stdout '1' then
+    Ok (success_result log)
+  else Error (log ^ "policy route table did not render expected default route for " ^ scenario.id)
 
 let run_tc ctx scenario =
   let rate = Printf.sprintf "%dmbit" ((scenario.index mod 40) + 1) in
-  ignore_result (netns_exec ctx.ns_a "tc" [ "qdisc"; "del"; "dev"; ctx.veth_a; "root" ]);
-  match
-    expect_success
-      (netns_exec ctx.ns_a "tc"
-         [ "qdisc"; "add"; "dev"; ctx.veth_a; "root"; "handle"; "1:"; "htb"; "default"; "10" ])
-  with
-  | Error message -> Error message
-  | Ok _ -> (
-      match
-        expect_success
-          (netns_exec ctx.ns_a "tc"
-             [
-               "class";
-               "add";
-               "dev";
-               ctx.veth_a;
-               "parent";
-               "1:";
-               "classid";
-               "1:10";
-               "htb";
-               "rate";
-               rate;
-               "ceil";
-               rate;
-             ])
-      with
-      | Error message -> Error message
-      | Ok _ -> (
-          match expect_success (netns_exec ctx.ns_a "tc" [ "class"; "show"; "dev"; ctx.veth_a ]) with
-          | Error message -> Error message
-          | Ok output ->
-              if String.contains output.stdout 'h' && String.contains output.stdout 'r' then Ok output
-              else Error ("tc class output did not contain expected HTB class for " ^ scenario.id)))
+  let del_qdisc = netns_exec ctx.ns_a "tc" [ "qdisc"; "del"; "dev"; ctx.veth_a; "root" ] in
+  let add_qdisc =
+    netns_exec ctx.ns_a "tc" [ "qdisc"; "add"; "dev"; ctx.veth_a; "root"; "handle"; "1:"; "htb"; "default"; "10" ]
+  in
+  let add_class =
+    netns_exec ctx.ns_a "tc"
+      [ "class"; "add"; "dev"; ctx.veth_a; "parent"; "1:"; "classid"; "1:10"; "htb"; "rate"; rate; "ceil"; rate ]
+  in
+  let show_class = netns_exec ctx.ns_a "tc" [ "class"; "show"; "dev"; ctx.veth_a ] in
+  let show_qdisc = netns_exec ctx.ns_a "tc" [ "qdisc"; "show"; "dev"; ctx.veth_a ] in
+  let before_delete = run_command del_qdisc in
+  let add_qdisc_result = run_command add_qdisc in
+  let add_class_result = run_command add_class in
+  let class_result = run_command show_class in
+  let qdisc_result = run_command show_qdisc in
+  let cleanup_result = run_command del_qdisc in
+  let after_qdisc_result = run_command show_qdisc in
+  let log =
+    command_log "tc pre-clean qdisc" del_qdisc before_delete
+    ^ command_log "tc apply qdisc" add_qdisc add_qdisc_result
+    ^ command_log "tc apply class" add_class add_class_result
+    ^ command_log "tc class readback" show_class class_result
+    ^ command_log "tc qdisc readback" show_qdisc qdisc_result
+    ^ command_log "tc remove qdisc" del_qdisc cleanup_result
+    ^ command_log "tc post-remove readback" show_qdisc after_qdisc_result
+  in
+  if add_qdisc_result.code <> 0 then Error (log ^ "tc qdisc apply failed for " ^ scenario.id)
+  else if add_class_result.code <> 0 then Error (log ^ "tc class apply failed for " ^ scenario.id)
+  else if class_result.code = 0 && String.contains class_result.stdout 'h' && String.contains class_result.stdout 'r' then
+    Ok (success_result log)
+  else Error (log ^ "tc class output did not contain expected HTB class for " ^ scenario.id)
 
 let run_conntrack ctx _scenario =
-  ignore (run_ping ctx);
-  expect_success (netns_exec ctx.ns_a "conntrack" [ "-S" ])
+  let ping_invocation = netns_exec ctx.ns_a "ping" [ "-c"; "1"; "-W"; "1"; "10.77.0.2" ] in
+  let ping = run_command ping_invocation in
+  let stats_invocation = netns_exec ctx.ns_a "conntrack" [ "-S" ] in
+  let stats = run_command stats_invocation in
+  let flush_invocation = netns_exec ctx.ns_a "conntrack" [ "-F" ] in
+  let flush = run_command flush_invocation in
+  let log =
+    command_log "conntrack traffic probe" ping_invocation ping
+    ^ command_log "conntrack stats readback" stats_invocation stats
+    ^ command_log "conntrack cleanup flush" flush_invocation flush
+  in
+  if stats.code = 0 then Ok (success_result log)
+  else Error (log ^ "conntrack stats failed")
 
 let run_one ctx scenario =
   let started = Unix.gettimeofday () in
@@ -541,6 +578,21 @@ let evidence_manifest suite =
     ]
   ^ "\n"
 
+let scenario_log_line result =
+  Json_util.field_object
+    [
+      ("id", json_string result.scenario.id);
+      ("family", json_string (family_name result.scenario.family));
+      ("status", json_string (status_name result.status));
+      ("duration_ms", json_int result.duration_ms);
+      ("description", json_string result.scenario.description);
+      ("stdout", json_string result.stdout);
+      ("stderr", json_string result.stderr);
+    ]
+  ^ "\n"
+
+let scenario_log suite = String.concat "" (List.map scenario_log_line suite.results)
+
 let write_outputs (config : config) (suite : suite_result) =
   (match config.junit_path with Some path -> write_file path (to_junit suite) | None -> ());
   (match config.allure_dir with
@@ -556,7 +608,8 @@ let write_outputs (config : config) (suite : suite_result) =
   | None -> ()
   | Some dir ->
       ensure_dir dir;
-      write_file (Filename.concat dir "manifest.json") (evidence_manifest suite)
+      write_file (Filename.concat dir "manifest.json") (evidence_manifest suite);
+      write_file (Filename.concat dir "scenario-log.jsonl") (scenario_log suite)
 
 let dry_run (config : config) =
   let kernel_release = kernel_release () in
@@ -570,8 +623,7 @@ let dry_run (config : config) =
   suite
 
 let run (config : config) =
-  if config.scenario_count < 1 || config.scenario_count > 600 then
-    invalid_arg "scenario_count must be between 1 and 600";
+  validate_scenario_count config.scenario_count;
   if config.dry_run then dry_run config
   else (
     require_tools ();

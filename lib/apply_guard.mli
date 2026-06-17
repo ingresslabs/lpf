@@ -28,3 +28,5 @@ val apply_policy_text_with_runners :
   ?confirm:string ->
   string ->
   (unit * Policy.diagnostic list, Policy.diagnostic list) result
+val rollback_by_id : string -> (unit * Policy.diagnostic list, Policy.diagnostic list) result
+val preimage_for_id : string -> string

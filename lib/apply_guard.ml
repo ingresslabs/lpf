@@ -1,5 +1,6 @@
 let var_dir = try Sys.getenv "LPF_VAR_DIR" with _ -> "/var/lib/lpf"
 let rollback_dir = Filename.concat var_dir "rollback"
+let preimage_for_id id = Filename.concat rollback_dir ("preimage.nft." ^ id)
 let preimage_path = Filename.concat rollback_dir "preimage.nft"
 let watchdog_pid_path = Filename.concat rollback_dir "watchdog.pid"
 
@@ -84,6 +85,22 @@ let get_history () =
   | Ok h -> Ok (h, [])
   | Error message -> Error [ error_diagnostic message ]
 
+let rollback_by_id_with_runner runner id =
+  let path = preimage_for_id id in
+  if not (Sys.file_exists path) then Error [ error_diagnostic ("no preimage found for policy " ^ id) ]
+  else
+    let preimage =
+      let ic = open_in path in
+      Fun.protect ~finally:(fun () -> close_in ic) (fun () -> really_input_string ic (in_channel_length ic))
+    in
+    match runner preimage with
+    | Ok () ->
+        Sys.remove path;
+        Ok ((), [])
+    | Error error -> Error [ error_diagnostic (Nft.string_of_run_error error) ]
+
+let rollback_by_id id = rollback_by_id_with_runner default_runners.apply id
+
 let apply_policy_text_with_runners runners ?file ?confirm text =
   match Pipeline.render_nftables_policy_text ?file text with
   | Ok (rendered, diagnostics) -> (
@@ -122,6 +139,7 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
               | Some seconds ->
                   ensure_rollback_dir ();
                   write_file preimage_path preimage;
+                  write_file (preimage_for_id history_entry.History.id) preimage;
                   let lpf_exe = Sys.argv.(0) in
                   let watchdog_command =
                     Printf.sprintf "sleep %d && %s rollback --now" seconds lpf_exe

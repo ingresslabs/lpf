@@ -221,6 +221,40 @@ Exit criteria:
 - `lpf table threats replace threats.txt`
 - table changes are atomic and reversible.
 
+## Phase 9: Firecracker E2E And Kernel Matrix Evidence
+
+Goal: prove backend-affecting behavior on real disposable Linux guests before
+claiming support.
+
+Tasks:
+
+- Run `lpf e2e` inside Firecracker VMs, not on the host.
+- Cover nftables accept/drop/logging, policy routing, route-table cleanup, tc
+  HTB traffic shaping, conntrack readback, and cleanup/removal paths.
+- Emit JUnit, Allure, sanitized manifests, and `scenario-log.jsonl` command
+  evidence for each scenario.
+- Maintain a matrix contract that separates requested, available, covered, and
+  missing kernel labels.
+- Refuse to count a kernel as covered unless a real VM booted that kernel and
+  completed the scenario suite.
+- Use 500 to 1000 scenarios for advanced lab pipelines.
+
+Initial implementation status:
+
+- `lpf e2e run` supports up to 1000 deterministic scenarios per guest.
+- Scenario evidence records command argv, exit status, stdout/stderr, applied
+  state readback, cleanup, and post-remove readback where applicable.
+- The advanced Jenkins matrix archives requested, available, covered, and
+  missing kernel artifacts separately.
+
+Exit criteria:
+
+- Lab 141 or another approved Firecracker cloud profile can run the latest
+  kernel.org matrix without relabeling missing images as covered.
+- Each matrix entry records commit, OCaml version, Dune version, kernel,
+  nftables, iproute2, conntrack-tools, command, fixture family, plan/evidence
+  checksum, apply, confirm, rollback, and cleanup result.
+
 ## Phase 11: Packaging And Release
 
 Goal: make `lpf` easy to install and safe to operate.

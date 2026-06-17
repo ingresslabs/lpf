@@ -50,4 +50,11 @@
 - Implemented `lpf rollback --now` for immediate restoration of the captured
   preimage.
 - Added `lpf e2e run` with a 480-scenario Firecracker guest networking catalog
-  plus JUnit, Allure, and sanitized evidence outputs.
+  plus JUnit, Allure, sanitized evidence outputs, and per-scenario apply,
+  readback, remove, and cleanup logs.
+- Extended `lpf e2e run` to support up to 1000 scenarios per disposable lab
+  guest for advanced routing, traffic-shaping, nftables, logging, and
+  conntrack coverage.
+- Added an advanced Jenkins Firecracker matrix contract that records requested,
+  available, covered, and missing kernel labels separately so unavailable
+  kernels are never reported as covered.

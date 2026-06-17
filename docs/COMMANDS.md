@@ -175,9 +175,12 @@ rollback availability.
 ### `lpf e2e <run|list>`
 
 Run real end-to-end Linux networking validation inside a disposable lab
-environment.
+environment. The runner is intended for Firecracker VMs or equivalent throwaway
+Linux guests with root/CAP_NET_ADMIN.
 
-The default catalog contains 480 deterministic scenarios split across:
+The default catalog contains 480 deterministic scenarios and accepts 1 to 1000
+scenarios per run. Advanced CI jobs normally use 500 to 1000 scenarios per
+available kernel. The catalog is split across:
 
 - nftables accept decisions with real ICMP traffic over veth namespaces
 - nftables drop decisions with observed traffic failure
@@ -190,13 +193,20 @@ Supported report outputs:
 
 - `--junit <path>` for Jenkins trend reporting
 - `--allure-dir <dir>` for Allure result JSON files
-- `--evidence-dir <dir>` for a sanitized run manifest
+- `--evidence-dir <dir>` for a sanitized run manifest plus
+  `scenario-log.jsonl`
 - `--kernel-id <id>` to attach the matrix kernel label
 - `--dry-run` to render the catalog and reports without changing networking
   state
 
 This command requires root/CAP_NET_ADMIN and must not be run in a production
 network namespace.
+
+Scenario evidence includes the intended nftables ruleset or routing/tc action,
+the command argv, exit status, stdout/stderr, readback output, and cleanup or
+post-remove readback where applicable. Kernel-matrix jobs must keep requested,
+available, covered, and missing kernel labels separate; missing kernel images
+must never be counted as covered.
 
 ### `lpf man <operation>`
 
