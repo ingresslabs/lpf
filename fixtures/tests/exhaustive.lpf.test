@@ -1,0 +1,197 @@
+policy: ../policies/exhaustive.lpf
+
+test: Banned Ingress TCP (1)
+expect block in on eth0 proto tcp from 1.2.3.4 to 10.0.0.10 port 80
+
+test: Banned Ingress UDP (2)
+expect block in on eth0 proto udp from 1.2.3.4 to 10.0.0.10 port 80
+
+test: Banned Ingress ICMP (3)
+expect block in on eth0 proto icmp from 1.2.3.4 to 10.0.0.10 port 80
+
+test: Banned Egress TCP (4)
+expect block out on eth0 proto tcp from 10.0.0.10 to 5.6.7.8 port 80
+
+test: Banned Egress UDP (5)
+expect block out on eth0 proto udp from 10.0.0.10 to 5.6.7.8 port 80
+
+test: Banned Egress ICMP (6)
+expect block out on eth0 proto icmp from 10.0.0.10 to 5.6.7.8 port 80
+
+test: Banned Ingress Trusted Dest (7)
+expect block in on eth0 proto tcp from 5.6.7.8 to 192.168.1.1 port 80
+
+test: Banned Egress Trusted Source (8)
+expect block out on eth0 proto tcp from 192.168.1.1 to 1.2.3.4 port 80
+
+test: Banned LAN Ingress (9)
+expect block in on eth1 proto tcp from 1.2.3.4 to 10.0.0.10 port 80
+
+test: Banned LAN Egress (10)
+expect block out on eth1 proto tcp from 10.0.0.10 to 5.6.7.8 port 80
+
+test: HTTP WAN Ingress (11)
+expect pass in on eth0 proto tcp from 8.8.8.8 to 10.0.0.10 port 8080
+
+test: HTTPS WAN Ingress (12)
+expect pass in on eth0 proto tcp from 8.8.8.8 to 10.0.0.10 port 8443
+
+test: HTTP LAN Ingress (13)
+expect pass in on eth1 proto tcp from 10.0.0.5 to 10.0.0.10 port 8080
+
+test: DNS UDP WAN Ingress (14)
+expect pass in on eth0 proto udp from 8.8.8.8 to 10.0.0.53 port 53
+
+test: DNS UDP LAN Ingress (15)
+expect pass in on eth1 proto udp from 10.0.0.5 to 10.0.0.53 port 53
+
+test: HTTP wrong port (16)
+expect block in on eth0 proto tcp from 8.8.8.8 to 10.0.0.10 port 80
+
+test: HTTPS wrong port (17)
+expect block in on eth0 proto tcp from 8.8.8.8 to 10.0.0.10 port 443
+
+test: DNS TCP WAN Ingress (18)
+expect block in on eth0 proto tcp from 8.8.8.8 to 10.0.0.53 port 53
+
+test: HTTP wrong dest (19)
+expect block in on eth0 proto tcp from 8.8.8.8 to 10.0.0.11 port 8080
+
+test: HTTPS wrong dest (20)
+expect block in on eth0 proto tcp from 8.8.8.8 to 10.0.0.11 port 8443
+
+test: SSH Trusted WAN (21)
+expect pass in on eth0 proto tcp from 10.0.0.5 to 192.168.1.1 port 22
+
+test: SSH Trusted2 WAN (22)
+expect pass in on eth0 proto tcp from 192.168.1.5 to 10.0.0.10 port 22
+
+test: SSH Trusted3 WAN (23)
+expect pass in on eth0 proto tcp from 172.16.5.5 to 10.0.0.10 port 22
+
+test: SSH Untrusted WAN (24)
+expect block in on eth0 proto tcp from 8.8.8.8 to 10.0.0.10 port 22
+
+test: SSH Untrusted WAN 2 (25)
+expect block in on eth0 proto tcp from 1.1.1.1 to 192.168.1.1 port 22
+
+test: SSH Trusted LAN (26)
+expect pass in on eth1 proto tcp from 10.0.0.5 to 192.168.1.1 port 22
+
+test: SSH Trusted2 LAN (27)
+expect pass in on eth1 proto tcp from 192.168.1.5 to 10.0.0.10 port 22
+
+test: SSH Untrusted LAN (28)
+expect block in on eth1 proto tcp from 8.8.8.8 to 10.0.0.10 port 22
+
+test: SSH UDP (29)
+expect block in on eth0 proto udp from 10.0.0.5 to 192.168.1.1 port 22
+
+test: SSH ICMP (30)
+expect block in on eth0 proto icmp from 10.0.0.5 to 192.168.1.1 port 22
+
+test: LAN Any TCP Trusted (31)
+expect pass in on eth1 proto tcp from 10.0.0.5 to 8.8.8.8 port 1234
+
+test: LAN Any UDP Trusted (32)
+expect pass in on eth1 proto udp from 192.168.1.5 to 8.8.8.8 port 1234
+
+test: LAN Any ICMP Trusted (33)
+expect pass in on eth1 proto icmp from 172.16.5.5 to 8.8.8.8 port 0
+
+test: LAN Any TCP Untrusted (34)
+expect block in on eth1 proto tcp from 8.8.8.8 to 8.8.4.4 port 1234
+
+test: LAN Any UDP Untrusted (35)
+expect block in on eth1 proto udp from 8.8.8.8 to 8.8.4.4 port 1234
+
+test: LAN Any ICMP Untrusted (36)
+expect block in on eth1 proto icmp from 8.8.8.8 to 8.8.4.4 port 0
+
+test: LAN to LAN Trusted (37)
+expect pass in on eth1 proto tcp from 10.0.0.5 to 10.0.0.6 port 80
+
+test: LAN to LAN Untrusted (38)
+expect block in on eth1 proto tcp from 8.8.8.8 to 10.0.0.6 port 80
+
+test: LAN Banned Source (39)
+expect block in on eth1 proto tcp from 1.2.3.4 to 10.0.0.6 port 80
+
+test: LAN Banned Dest (40)
+expect block in on eth1 proto tcp from 10.0.0.5 to 5.6.7.8 port 80
+
+test: Egress HTTP Trusted (41)
+expect pass out on eth0 proto tcp from 10.0.0.5 to 8.8.8.8 port 80
+
+test: Egress HTTPS Trusted (42)
+expect pass out on eth0 proto tcp from 192.168.1.5 to 8.8.8.8 port 443
+
+test: Egress DNS Trusted (43)
+expect pass out on eth0 proto udp from 172.16.5.5 to 8.8.8.8 port 53
+
+test: Egress ICMP Trusted (44)
+expect pass out on eth0 proto icmp from 10.0.0.5 to 8.8.8.8 port 0
+
+test: Egress HTTP Untrusted (45)
+expect block out on eth0 proto tcp from 8.8.8.8 to 8.8.4.4 port 80
+
+test: Egress HTTPS Untrusted (46)
+expect block out on eth0 proto tcp from 8.8.8.8 to 8.8.4.4 port 443
+
+test: Egress DNS Untrusted (47)
+expect block out on eth0 proto udp from 8.8.8.8 to 8.8.4.4 port 53
+
+test: Egress ICMP Untrusted (48)
+expect block out on eth0 proto icmp from 8.8.8.8 to 8.8.4.4 port 0
+
+test: Egress SSH Trusted (49)
+expect block out on eth0 proto tcp from 10.0.0.5 to 8.8.8.8 port 22
+
+test: Egress Random Trusted (50)
+expect block out on eth0 proto tcp from 10.0.0.5 to 8.8.8.8 port 1234
+
+test: PBR HTTP (51)
+expect pass in on eth1 proto tcp from 10.0.0.55 to 8.8.8.8 port 80
+
+test: PBR HTTPS (52)
+expect pass in on eth1 proto tcp from 10.0.0.55 to 8.8.8.8 port 443
+
+test: PBR Wrong IP HTTP (53)
+expect block in on eth1 proto tcp from 10.0.0.56 to 8.8.8.8 port 80
+
+test: PBR Wrong IP HTTPS (54)
+expect block in on eth1 proto tcp from 10.0.0.56 to 8.8.8.8 port 443
+
+test: PBR Wrong Port (55)
+expect pass in on eth1 proto tcp from 10.0.0.55 to 8.8.8.8 port 8080
+
+test: PBR Wrong Proto (56)
+expect pass in on eth1 proto udp from 10.0.0.55 to 8.8.8.8 port 80
+
+test: PBR Outbound HTTP (57)
+expect pass out on eth0 proto tcp from 10.0.0.55 to 8.8.8.8 port 80
+
+test: PBR Outbound HTTPS (58)
+expect pass out on eth0 proto tcp from 10.0.0.55 to 8.8.8.8 port 443
+
+test: PBR Untrusted Source (59)
+expect block in on eth1 proto tcp from 8.8.8.8 to 8.8.4.4 port 80
+
+test: PBR Banned Dest (60)
+expect block in on eth1 proto tcp from 10.0.0.55 to 1.2.3.4 port 80
+
+test: Default Ingress WAN (61)
+expect block in on eth0 proto tcp from 8.8.8.8 to 10.0.0.10 port 1234
+
+test: Default Ingress LAN (62)
+expect block in on eth1 proto tcp from 8.8.8.8 to 10.0.0.10 port 1234
+
+test: Default Egress WAN (63)
+expect block out on eth0 proto tcp from 8.8.8.8 to 10.0.0.10 port 1234
+
+test: Default Egress LAN (64)
+expect block out on eth1 proto tcp from 10.0.0.5 to 10.0.0.10 port 1234
+
+test: Default ICMP (65)
+expect block in on eth0 proto icmp from 8.8.8.8 to 10.0.0.10 port 0
+

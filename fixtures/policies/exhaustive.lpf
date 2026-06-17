@@ -1,0 +1,46 @@
+set default deny
+
+interface wan = "eth0"
+interface lan = "eth1"
+interface opt1 = "eth2"
+
+table <trusted> { 10.0.0.5, 192.168.1.5, 172.16.5.5, 10.0.0.55 }
+table <banned> { 1.2.3.4, 5.6.7.8 }
+
+# RDR (Prerouting)
+rdr on wan proto tcp from any to any port 80 -> 10.0.0.10 port 8080
+rdr on wan proto tcp from any to any port 443 -> 10.0.0.10 port 8443
+rdr on wan proto udp from any to any port 53 -> 10.0.0.53 port 53
+
+# NAT (Postrouting)
+nat on wan proto tcp from <trusted> to any -> 192.0.2.1
+nat on wan proto udp from <trusted> to any -> 192.0.2.1
+nat on wan proto icmp from <trusted> to any -> 192.0.2.1
+
+# Queues
+queue bulk on wan bandwidth 10mbit
+queue interactive on wan bandwidth 1mbit parent bulk
+
+# Banned traffic drops immediately
+block in log (user) from <banned> to any
+block in log (user) from any to <banned>
+block out log (user) from <banned> to any
+block out log (user) from any to <banned>
+
+# Ingress Rules
+pass in on wan proto tcp from any to 10.0.0.10 port 8080 queue bulk
+pass in on wan proto tcp from any to 10.0.0.10 port 8443 queue bulk
+pass in on wan proto udp from any to 10.0.0.53 port 53 queue interactive
+pass in on wan proto tcp from <trusted> to any port 22 queue interactive
+block in log (all) on wan proto tcp from any to any port 22
+pass in on lan from <trusted> to any
+
+# Egress Rules
+pass out on wan proto tcp from <trusted> to any port 80 keep state queue bulk
+pass out on wan proto tcp from <trusted> to any port 443 keep state queue bulk
+pass out on wan proto udp from <trusted> to any port 53 keep state queue interactive
+pass out on wan proto icmp from <trusted> to any keep state queue interactive
+
+# Policy Routing
+pass in on lan proto tcp from 10.0.0.55 to any port 80 route-to 192.168.1.1 (opt1)
+pass in on lan proto tcp from 10.0.0.55 to any port 443 route-to 192.168.1.1 (opt1)
