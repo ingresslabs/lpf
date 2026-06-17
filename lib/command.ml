@@ -404,7 +404,7 @@ let help () =
       ])
 
 let command_status = function
-  | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | History | Rules | E2e | Man ->
+  | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules | History | Import | E2e | Man ->
       "implemented"
   | Version | Help -> "implemented"
   | _ -> "planned; implementation must be OCaml"

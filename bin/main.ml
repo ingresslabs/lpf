@@ -352,23 +352,7 @@ let parse_diff_args args =
   in
   loop { json = false; source = None; policies = [] } args
 
-let json_escape text =
-  let buffer = Buffer.create (String.length text + 16) in
-  String.iter
-    (function
-      | '"' -> Buffer.add_string buffer "\\\""
-      | '\\' -> Buffer.add_string buffer "\\\\"
-      | '\b' -> Buffer.add_string buffer "\\b"
-      | '\012' -> Buffer.add_string buffer "\\f"
-      | '\n' -> Buffer.add_string buffer "\\n"
-      | '\r' -> Buffer.add_string buffer "\\r"
-      | '\t' -> Buffer.add_string buffer "\\t"
-      | c when Char.code c < 0x20 -> Buffer.add_string buffer (Printf.sprintf "\\u%04x" (Char.code c))
-      | c -> Buffer.add_char buffer c)
-    text;
-  Buffer.contents buffer
-
-let json_string text = "\"" ^ json_escape text ^ "\""
+let json_string text = Lpf.Json_util.string text
 let json_bool value = if value then "true" else "false"
 
 let diff_json ~source (diff : Lpf.Nftables.diff_result) =
@@ -603,21 +587,6 @@ let handle_state args =
       prerr_endline "usage: lpf state <list|flush>";
       exit 64
 
-let handle_import args =
-  match args with
-  | "nftables" :: _ -> (
-      match Lpf.Nft.list_ruleset () with
-      | Ok ruleset ->
-          let imported = Lpf.Import_nft.of_ruleset ruleset in
-          print_endline imported;
-          exit 0
-      | Error error ->
-          prerr_endline (Lpf.Nft.string_of_run_error error);
-          exit 1)
-  | _ ->
-      prerr_endline "usage: lpf import <nftables>";
-      exit 64
-
 let handle_table args =
   match args with
   | name :: "add" :: element :: _ -> (
@@ -730,9 +699,8 @@ let () =
   | _ :: "history" :: args -> handle_history args
   | _ :: "rules" :: args -> handle_rules args
   | _ :: "state" :: args -> handle_state args
-  | _ :: "import" :: args -> handle_import args
-  | _ :: "table" :: args -> handle_table args
   | _ :: "e2e" :: args -> handle_e2e args
+  | _ :: "table" :: args -> handle_table args
   | _ :: "man" :: args -> handle_man args
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with

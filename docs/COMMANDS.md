@@ -214,25 +214,6 @@ Supported report outputs:
 This command requires root/CAP_NET_ADMIN and must not be run in a production
 network namespace.
 
-### `lpf ui <operation>`
-
-Operate the Bonsai/Bonsai_web UI.
-
-Operations:
-
-- `serve --mock`
-- `serve --listen <addr:port>`
-- `build`
-- `test`
-
-The UI must call typed OCaml API endpoints and must never execute backend host
-commands directly from browser code.
-
-### `lpf kernel-matrix`
-
-Plan or run kernel compatibility validation. This command owns the five-latest
-kernel rule and Lab 141 evidence contract.
-
 ### `lpf man <operation>`
 
 Generate, check, and install man pages from OCaml command metadata.

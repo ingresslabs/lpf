@@ -46,12 +46,12 @@ module Tc = Tc
 module Routing = Routing
 module Nft = Nft
 module Explain = Explain
+module Json_util = Json_util
 module Test_engine = Test_engine
 module Test_parser = Test_parser
 module History = History
 module Apply_guard = Apply_guard
 module Conntrack = Conntrack
-module Import_nft = Import_nft
 module Table = Table
 module E2e = E2e
 

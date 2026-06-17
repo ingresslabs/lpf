@@ -46,12 +46,12 @@ module Tc : module type of Tc
 module Routing : module type of Routing
 module Nft : module type of Nft
 module Explain : module type of Explain
+module Json_util : module type of Json_util
 module Test_engine : module type of Test_engine
 module Test_parser : module type of Test_parser
 module History : module type of History
 module Apply_guard : module type of Apply_guard
 module Conntrack : module type of Conntrack
-module Import_nft : module type of Import_nft
 module Table : module type of Table
 module E2e : module type of E2e
 

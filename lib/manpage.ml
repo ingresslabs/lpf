@@ -69,7 +69,7 @@ let overview_page () =
     [
       "lpf is an OCaml-first control plane for readable Linux firewall and routing policy.";
       "It compiles typed policy into nftables, policy routing, tc, conntrack, and logging plans.";
-      "Remote-safe apply, rollback, explainability, policy tests, generated man pages, and kernel-matrix validation are core requirements.";
+      "Remote-safe apply, rollback, explainability, policy tests, generated man pages, and kernel compatibility validation are core requirements.";
     ];
   Buffer.add_string buffer ".SH COMMANDS\n";
   Command.command_docs

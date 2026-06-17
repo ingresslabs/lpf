@@ -31,9 +31,7 @@ Initial page set:
 - `lpf-rules(8)`
 - `lpf-history(8)`
 - `lpf-import(8)`
-- `lpf-ui(8)`
 - `lpf-support-bundle(8)`
-- `lpf-kernel-matrix(8)`
 - `lpf-man(8)`
 - `lpf.conf(5)`
 - `lpf-policy-tests(5)`
