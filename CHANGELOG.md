@@ -24,3 +24,5 @@
   declarations and rule-level queue assignment.
 - Added rule-level `route-to` parsing, formatting, validation, and malformed
   syntax diagnostics.
+- Added rule-level `log`, `log (all)`, `log (matches)`, and `log (user)`
+  parsing, formatting, validation, and malformed syntax diagnostics.

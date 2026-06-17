@@ -47,6 +47,8 @@ type table = {
   span : span;
 }
 
+type log_option = Log_all | Log_matches | Log_user
+
 type rule = {
   action : action;
   direction : direction option;
@@ -61,6 +63,8 @@ type rule = {
   port : port;
   port_span : span option;
   keep_state : bool;
+  log : log_option option;
+  log_span : span option;
   queue : string option;
   queue_span : span option;
   route_to : (reference * reference option) option;

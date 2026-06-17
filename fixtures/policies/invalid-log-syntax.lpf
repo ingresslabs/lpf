@@ -1,0 +1,3 @@
+set default deny
+
+pass log (all from any to any

@@ -1,0 +1,3 @@
+set default deny
+
+pass log (packet) from any to any

@@ -47,6 +47,8 @@ type table = {
   span : span;
 }
 
+type log_option = Log_all | Log_matches | Log_user
+
 type rule = {
   action : action;
   direction : direction option;
@@ -61,6 +63,8 @@ type rule = {
   port : port;
   port_span : span option;
   keep_state : bool;
+  log : log_option option;
+  log_span : span option;
   queue : string option;
   queue_span : span option;
   route_to : (reference * reference option) option;
@@ -204,6 +208,12 @@ let parse_port token =
           | _ -> Error ("invalid port `" ^ token ^ "`")))
 
 let parse_action = function "pass" -> Some Pass | "block" -> Some Block | _ -> None
+
+let parse_log_option = function
+  | "all" -> Some Log_all
+  | "matches" -> Some Log_matches
+  | "user" -> Some Log_user
+  | _ -> None
 
 let add_diagnostic diagnostics diag = diag :: diagnostics
 
@@ -436,6 +446,8 @@ let parse_rule original tokens policy diagnostics =
               port = Port_any;
               port_span = None;
               keep_state = false;
+              log = None;
+              log_span = None;
               queue = None;
               queue_span = None;
               route_to = None;
@@ -447,6 +459,31 @@ let parse_rule original tokens policy diagnostics =
           in
           let rec loop (state : rule) source_seen destination_seen port_seen = function
             | [] -> Ok state
+            | token :: rest when text_is "log" token -> (
+                match state.log_span with
+                | Some _ -> Error (token.span, "duplicate log assignment")
+                | None -> (
+                    match rest with
+                    | open_token :: [] when text_is "(" open_token ->
+                        Error (open_token.span, "missing log option after `(`")
+                    | open_token :: value :: [] when text_is "(" open_token ->
+                        Error (value.span, "expected closing `)` after log option")
+                    | open_token :: value :: closing :: rest
+                      when text_is "(" open_token && text_is ")" closing -> (
+                        match parse_log_option value.text with
+                        | Some option ->
+                            loop
+                              { state with log = Some option; log_span = Some token.span }
+                              source_seen destination_seen port_seen rest
+                        | None -> Error (value.span, "invalid log option `" ^ value.text ^ "`"))
+                    | open_token :: _value :: unexpected :: _ when text_is "(" open_token ->
+                        Error (unexpected.span, "expected closing `)` after log option")
+                    | close_token :: _ when text_is ")" close_token ->
+                        Error (close_token.span, "unexpected `)` after `log`")
+                    | _ ->
+                        loop
+                          { state with log = Some Log_matches; log_span = Some token.span }
+                          source_seen destination_seen port_seen rest))
             | token :: rest when text_is "in" token -> (
                 match state.direction with
                 | Some _ -> Error (token.span, "duplicate direction")
@@ -1039,6 +1076,7 @@ let check ?file text =
 let string_of_default_action = function Default_pass -> "pass" | Default_deny -> "deny"
 let string_of_action = function Pass -> "pass" | Block -> "block"
 let string_of_direction = function In -> "in" | Out -> "out"
+let string_of_log_option = function Log_all -> "all" | Log_matches -> "matches" | Log_user -> "user"
 
 let string_of_reference = function
   | Any -> "any"
@@ -1125,6 +1163,12 @@ let format_policy (policy : policy) =
     let parts = [ string_of_action rule.action ] in
     let parts =
       match rule.direction with None -> parts | Some direction -> parts @ [ string_of_direction direction ]
+    in
+    let parts =
+      match rule.log with
+      | None -> parts
+      | Some Log_matches -> parts @ [ "log" ]
+      | Some option -> parts @ [ "log"; "(" ^ string_of_log_option option ^ ")" ]
     in
     let parts =
       match rule.interface with

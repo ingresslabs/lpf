@@ -428,8 +428,9 @@ let config_page () =
   add_section buffer "DESCRIPTION"
     [
       "The lpf policy format is a PF-inspired language for Linux networking.";
-      "The current parser covers default actions, interfaces, macros, tables, queues, pass/block rules, NAT, redirects, and rule-level route-to annotations.";
-      "Later phases will add logging, anchors, typed plans, and backend compilation.";
+      "The current parser covers default actions, interfaces, macros, tables, queues, pass/block rules, rule logging, NAT, redirects, and rule-level route-to annotations.";
+      "Rule logging supports log, log (all), log (matches), and log (user).";
+      "Later phases will add anchors, typed plans, and backend compilation.";
     ];
   add_section buffer "EXAMPLES"
     [
@@ -437,7 +438,8 @@ let config_page () =
       "interface wan = \"eth0\"";
       "table <trusted> { 10.0.0.0/8, 192.168.0.0/16 }";
       "queue std on wan bandwidth 10M";
-      "pass out on wan proto tcp from any to any port 443 queue std route-to 1.1.1.1 (wan) keep state";
+      "pass out log on wan proto tcp from any to any port 443 queue std route-to 1.1.1.1 (wan) keep state";
+      "block in log (all) on wan proto icmp from any to any";
     ];
   add_section buffer "SEE ALSO" [ "lpf-check(8), lpf-plan(8), lpf-apply(8)" ];
   { filename = "lpf.conf.5"; section = 5; title = "LPF.CONF"; content = Buffer.contents buffer }

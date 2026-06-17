@@ -79,12 +79,16 @@ let () =
   assert_check_ok "basic.lpf";
   assert_check_ok "nat-rdr.lpf";
   assert_check_ok "queue-route.lpf";
+  assert_check_ok "logging.lpf";
   assert_check_fails ~contains:'m' "invalid-unknown-table.lpf";
   assert_check_fails ~contains:'e' "invalid-syntax.lpf";
   assert_check_fails ~contains:'d' "invalid-queue-duplicate-fields.lpf";
   assert_check_fails ~contains:'q' "invalid-queue-name.lpf";
   assert_check_fails ~contains:'q' "invalid-queue-references.lpf";
   assert_check_fails ~contains:'r' "invalid-route-to-syntax.lpf";
+  assert_check_fails ~contains:'l' "invalid-log-duplicate.lpf";
+  assert_check_fails ~contains:'l' "invalid-log-option.lpf";
+  assert_check_fails ~contains:'l' "invalid-log-syntax.lpf";
   assert_check_has_diagnostic ~line:5 ~column:14
     ~message:"rule source references unknown table `<missing>`"
     "invalid-unknown-table.lpf";
@@ -106,6 +110,15 @@ let () =
   assert_check_has_diagnostic ~line:5 ~column:55
     ~message:"invalid rule: expected closing `)` after route-to interface"
     "invalid-route-to-syntax.lpf";
+  assert_check_has_diagnostic ~line:3 ~column:14
+    ~message:"invalid rule: duplicate log assignment"
+    "invalid-log-duplicate.lpf";
+  assert_check_has_diagnostic ~line:3 ~column:11
+    ~message:"invalid rule: invalid log option `packet`"
+    "invalid-log-option.lpf";
+  assert_check_has_diagnostic ~line:3 ~column:15
+    ~message:"invalid rule: expected closing `)` after log option"
+    "invalid-log-syntax.lpf";
   assert_inline_check_has_diagnostic ~file:"inline-invalid-port.lpf"
     ~text:"set default deny\npass out proto tcp from any to any port 70000\n"
     ~line:2 ~column:41 ~message:"invalid rule: invalid port `70000`";
@@ -124,6 +137,12 @@ let () =
   let queue_route = read_file (fixture "queue-route.lpf") in
   (match Lpf.format_policy_text ~file:(fixture "queue-route.lpf") queue_route with
    | Ok formatted -> assert (String.equal formatted queue_route)
+   | Error diagnostics ->
+       failwith
+         (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics)));
+  let logging = read_file (fixture "logging.lpf") in
+  (match Lpf.format_policy_text ~file:(fixture "logging.lpf") logging with
+   | Ok formatted -> assert (String.equal formatted logging)
    | Error diagnostics ->
        failwith
          (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics)));

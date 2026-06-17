@@ -1,0 +1,9 @@
+set default deny
+
+interface wan = "eth0"
+
+queue std on wan bandwidth 10M
+
+pass out log on wan proto tcp from any to any port 443 queue std keep state
+block in log (all) on wan proto icmp from any to any
+pass in log (user) from any to any
