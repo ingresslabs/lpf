@@ -252,7 +252,7 @@ pipeline {
                     junit allowEmptyResults: true, testResults: "evidence/${safeKernel}/junit.xml"
                     catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                       step([
-                        $class: 'AllureReportPublisher',
+                        $class: 'org.allurereport.jenkins.AllureReportPublisher',
                         includeProperties: false,
                         reportBuildPolicy: 'ALWAYS',
                         results: [[path: "allure-results/${safeKernel}"]]
