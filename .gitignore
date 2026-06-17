@@ -20,3 +20,4 @@ full-e2e.groovy
 *-e2e.xml
 security.groovy
 disable_csrf.groovy
+create_job.py
