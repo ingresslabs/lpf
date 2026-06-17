@@ -1,16 +1,35 @@
 opam-version: "2.0"
 synopsis: "PF-style control plane for Linux networking"
-description: "OCaml-first firewall policy control plane targeting nftables, policy routing, tc, conntrack, and NFLOG."
+description: """
+OCaml-first firewall policy control plane targeting nftables, policy routing,
+tc, conntrack, and NFLOG. Provides readable policy files, safe atomic apply
+with rollback, packet decision explainability, policy tests, dynamic tables,
+and multi-backend diff/live readback.
+"""
 maintainer: "avkcode"
 authors: ["avkcode"]
 license: "Apache-2.0"
 homepage: "https://github.com/avkcode/lpf"
 bug-reports: "https://github.com/avkcode/lpf/issues"
+dev-repo: "git+https://github.com/avkcode/lpf.git"
+tags: ["firewall" "nftables" "networking" "pf" "linux" "tc" "routing" "conntrack"]
 depends: [
   "ocaml" {>= "5.1"}
   "dune" {>= "3.11"}
 ]
+available: os = "linux"
+depexts: [
+  ["nftables"] {os-family = "debian"}
+  ["nftables"] {os-family = "ubuntu"}
+  ["nftables"] {os-distribution = "fedora"}
+  ["nftables"] {os-distribution = "centos"}
+  ["iproute2"] {os-family = "debian"}
+  ["iproute2"] {os-family = "ubuntu"}
+  ["iproute"] {os-distribution = "fedora"}
+  ["iproute"] {os-distribution = "centos"}
+  ["conntrack-tools"] {os-family = "debian" | os-family = "ubuntu"}
+  ["conntrack-tools"] {os-distribution = "fedora" | os-distribution = "centos"}
+]
 build: [
   ["dune" "build" "-p" name "-j" jobs]
 ]
-

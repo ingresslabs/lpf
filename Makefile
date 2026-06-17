@@ -14,6 +14,8 @@ REMOTE_DIR ?= /tmp/lpf-remote-check
 .PHONY: man-generate man-check man-install
 .PHONY: policy-check policy-fmt policy-fmt-check fixture-check
 .PHONY: plan rules-show rules-diff remote-check
+.PHONY: release-checksums release-sign release-verify
+.PHONY: e2e-dry-run e2e-list
 
 all: build
 
@@ -98,3 +100,38 @@ rules-diff:
 
 remote-check:
 	git archive --format=tar HEAD | ssh $(REMOTE) 'set -eu; rm -rf "$(REMOTE_DIR)"; mkdir -p "$(REMOTE_DIR)"; tar -xf - -C "$(REMOTE_DIR)"; cd "$(REMOTE_DIR)"; dune build; dune runtest; dune exec -- lpf man check'
+
+# Release infrastructure
+RELEASE_VERSION ?= $(shell $(LPF) version)
+RELEASE_TARBALL ?= lpf-$(RELEASE_VERSION).tar.gz
+CHECKSUM_FILE ?= SHA256SUMS
+SIGN_KEY ?=
+
+release-checksum:
+	git archive --prefix=lpf-$(RELEASE_VERSION)/ -o $(RELEASE_TARBALL) HEAD
+	sha256sum $(RELEASE_TARBALL) > $(CHECKSUM_FILE)
+	@printf 'checksums written to %s\n' $(CHECKSUM_FILE)
+
+release-sign: release-checksum
+	@if [ -z "$(SIGN_KEY)" ]; then printf 'set SIGN_KEY to your GPG key ID\n'; exit 1; fi
+	gpg --detach-sign --armor --local-user $(SIGN_KEY) $(CHECKSUM_FILE)
+	gpg --detach-sign --armor --local-user $(SIGN_KEY) $(RELEASE_TARBALL)
+	@printf 'signed %s and %s with key %s\n' $(RELEASE_TARBALL) $(CHECKSUM_FILE) $(SIGN_KEY)
+
+release-verify:
+	sha256sum -c $(CHECKSUM_FILE)
+	@if [ -f $(CHECKSUM_FILE).asc ]; then gpg --verify $(CHECKSUM_FILE).asc; fi
+	@if [ -f $(RELEASE_TARBALL).asc ]; then gpg --verify $(RELEASE_TARBALL).asc; fi
+	@printf 'release verified\n'
+
+# E2E validation
+E2E_SCENARIO_COUNT ?= 480
+E2E_JUNIT ?= evidence/junit.xml
+E2E_ALLURE ?= allure-results
+E2E_EVIDENCE ?= evidence
+
+e2e-dry-run:
+	$(LPF) e2e run --dry-run --scenario-count $(E2E_SCENARIO_COUNT) --junit $(E2E_JUNIT) --allure-dir $(E2E_ALLURE) --evidence-dir $(E2E_EVIDENCE)
+
+e2e-list:
+	$(LPF) e2e list --scenario-count 12
