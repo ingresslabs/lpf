@@ -74,6 +74,10 @@ dune build
 dune runtest
 ```
 
+## Configuration
+
+- `LPF_VAR_DIR` — runtime state directory (default: `/var/lib/lpf`). Set to a writable path if `/var/lib` is unavailable, e.g. `export LPF_VAR_DIR=/tmp/lpf-var`.
+
 ## Kernel Validation
 
 Backend-affecting features must pass kernel compatibility validation as described in [docs/PLAN.md](docs/PLAN.md).
