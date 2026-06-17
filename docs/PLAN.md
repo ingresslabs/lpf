@@ -20,8 +20,6 @@ networking primitives.
 - Operator-facing commands must have generated man pages from OCaml metadata.
 - Code changes must compile and test locally and on a remote Linux machine when
   one is reachable.
-- All backend-changing features must pass the five-kernel matrix.
-- Lab 141 is the preferred kernel-matrix proving ground.
 
 ## Phase 0: Repository And Engineering Baseline
 
@@ -31,7 +29,6 @@ Tasks:
 - Define public CLI command names.
 - Add agent rules.
 - Add command contract.
-- Add kernel-matrix evidence contract.
 - Add man-page generation contract.
 - Add changelog.
 - Add GitHub Actions for lint/build/test once the repository is pushed.
@@ -261,76 +258,7 @@ Exit criteria:
 - `lpf support-bundle`
 - redaction tests prevent secrets and full private inventories from leaking.
 
-## Phase 11: Bonsai UI
-
-Goal: provide a safe browser operations surface using Bonsai/Bonsai_web.
-
-Tasks:
-
-- Extract shared policy, plan, diff, explain, history, support-bundle, and
-  evidence models for CLI/server/UI reuse.
-- Add an OCaml local API server for typed UI operations.
-- Add `lpf ui serve --mock` for rootless UI development.
-- Add `lpf ui serve --listen 127.0.0.1:9443` for local/SSH-forwarded use.
-- Add a Bonsai Policy Workbench with editor, diagnostics, plan, diff, explain,
-  and policy test panes.
-- Add a Bonsai Apply Guard with plan checksum, rollback preimage, countdown,
-  confirm, and rollback actions.
-- Add dynamic table, conntrack, history, support bundle, and kernel evidence
-  screens.
-- Add Bonsai component tests and browser smoke tests.
-
-Exit criteria:
-
-- `lpf ui serve --mock` opens a working Bonsai UI without root.
-- UI check/plan/diff/explain flows use typed mock API fixtures.
-- guarded apply flow refuses changed plan checksums.
-- Bonsai component tests cover workbench, explain, apply guard, rollback
-  timer, and support-bundle redaction.
-- the base `lpf` CLI still builds without Bonsai dependencies.
-
-## Phase 12: Man Page Generation
-
-Goal: keep operator docs synchronized with command metadata.
-
-Tasks:
-
-- Define OCaml command metadata for every command and subcommand.
-- Generate `lpf(8)`, per-command man pages, `lpf.conf(5)`, and test fixture
-  format pages.
-- Add `lpf man generate`.
-- Add `lpf man check`.
-- Add tests that fail when generated man pages are stale.
-
-Exit criteria:
-
-- `lpf man generate`
-- `lpf man check`
-- generated pages exist for every operator-facing command.
-
-## Phase 13: Kernel Matrix And Lab 141 Automation
-
-Goal: prove backend behavior on current kernels.
-
-Tasks:
-
-- Implement `lpf e2e run` for real Firecracker guest networking scenarios with
-  JUnit, Allure, and redacted evidence outputs.
-- Implement `lpf kernel-matrix plan`.
-- Implement `lpf kernel-matrix run` for lab orchestration.
-- Refresh kernel.org matrix before release.
-- Record redacted JSON evidence per kernel.
-- Keep lab-specific logic in OCaml modules, with configuration in data files.
-
-Exit criteria:
-
-- evidence exists for the five latest kernel.org release lines
-- the 400-600 scenario E2E catalog passes on every registered Firecracker
-  kernel image
-- each command's backend behavior is exercised per kernel
-- evidence references Lab 141 when used
-
-## Phase 14: Packaging And Release
+## Phase 11: Packaging And Release
 
 Goal: make `lpf` easy to install and safe to operate.
 
@@ -347,4 +275,3 @@ Exit criteria:
 
 - installable package
 - reproducible release notes
-- kernel-matrix evidence attached to release

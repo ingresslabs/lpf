@@ -12,8 +12,6 @@ type command =
   | State
   | Rules
   | History
-  | Import
-  | Support_bundle
   | E2e
   | Man
   | Version
@@ -48,8 +46,6 @@ let all_commands =
     ("state", State, "inspect or modify conntrack state");
     ("rules", Rules, "show or diff generated backend rules");
     ("history", History, "show policy apply history and rollback points");
-    ("import", Import, "import existing nftables or iptables-save policy");
-    ("support-bundle", Support_bundle, "collect redacted diagnostic evidence");
     ("e2e", E2e, "run Firecracker guest end-to-end networking scenarios");
     ("man", Man, "generate, check, or install man pages");
     ("version", Version, "print lpf version");
@@ -70,8 +66,6 @@ let command_name = function
   | State -> "state"
   | Rules -> "rules"
   | History -> "history"
-  | Import -> "import"
-  | Support_bundle -> "support-bundle"
   | E2e -> "e2e"
   | Man -> "man"
   | Version -> "version"
@@ -308,29 +302,7 @@ let command_docs =
       examples = [ "lpf history" ];
       files = [ "/var/lib/lpf/history" ];
       safety_notes = [ "History output must redact private host inventory." ];
-      see_also = [ "lpf-rollback(8)"; "lpf-support-bundle(8)" ];
-    };
-    {
-      command = Import;
-      section = 8;
-      synopsis = "lpf import <nftables|iptables-save|ufw|firewalld>";
-      description = [ "Import existing firewall state into an lpf policy starting point." ];
-      options = [ ("--output <path>", "write imported policy to a file") ];
-      examples = [ "lpf import nftables"; "lpf import iptables-save < rules.v4" ];
-      files = [ "/etc/nftables.conf"; "/etc/ufw"; "/etc/firewalld" ];
-      safety_notes = [ "Untranslatable constructs must be marked explicitly and never silently dropped." ];
-      see_also = [ "lpf-check(8)"; "lpf.conf(5)" ];
-    };
-    {
-      command = Support_bundle;
-      section = 8;
-      synopsis = "lpf support-bundle";
-      description = [ "Collect redacted diagnostic evidence for support and release validation." ];
-      options = [ ("--output <path>", "write the bundle to a target directory or archive") ];
-      examples = [ "lpf support-bundle --output /tmp/lpf-support" ];
-      files = shared_files;
-      safety_notes = [ "Never include raw secrets, private keys, packet payloads, or unredacted inventory." ];
-      see_also = [ "lpf-history(8)"; "lpf-man(8)" ];
+      see_also = [ "lpf-rollback(8)"; "lpf-man(8)" ];
     };
     {
       command = E2e;
@@ -404,10 +376,9 @@ let help () =
       ])
 
 let command_status = function
-  | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules | History | Import | E2e | Man ->
+  | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules | History | E2e | Man ->
       "implemented"
   | Version | Help -> "implemented"
-  | _ -> "planned; implementation must be OCaml"
 
 let command_help command =
   Printf.sprintf "lpf %s\n\n%s\n\nStatus: %s." (command_name command)

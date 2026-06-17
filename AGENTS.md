@@ -41,24 +41,6 @@ NFLOG.
 - If the remote machine is unreachable or lacks required package managers,
   state the exact blocker in the handoff.
 
-## Bonsai UI Rule
-
-- Browser UI MUST be implemented with Jane Street Bonsai/Bonsai_web.
-- Do not introduce React, Vue, Svelte, TypeScript, plain JavaScript app logic,
-  Elm, or another browser UI framework.
-- The UI must reuse typed OCaml policy, plan, diff, explain, history, and
-  evidence models from the CLI/backend libraries. Do not reimplement firewall
-  semantics in the browser as string manipulation.
-- The browser must never execute `nft`, `ip`, `tc`, `conntrack`, or host shell
-  commands. All host changes go through the same OCaml plan/apply engine used
-  by the CLI.
-- Destructive UI actions must require a reviewed plan, an explicit operator
-  confirmation, and the same rollback preimage required by `lpf apply`.
-- Bonsai components must have Bonsai/OCaml tests before being marked complete.
-- UI code belongs in a separate package/build target from the base CLI so the
-  core firewall tool remains buildable on hosts that do not install web
-  dependencies.
-
 ## Agent Workflow
 
 - Inspect `git status --short --branch` before non-trivial edits.
@@ -67,47 +49,8 @@ NFLOG.
 - Preserve unrelated user changes. Never reset or revert unrelated work.
 - Update `docs/COMMANDS.md` when adding, removing, or changing a command.
 - Update `docs/PLAN.md` when completing or materially changing milestone scope.
-- Update `docs/UI.md` when adding or changing UI surfaces, UI security model,
-  UI routes, or Bonsai component contracts.
 - Update `docs/MANPAGES.md` when command documentation generation changes.
-- Update `docs/KERNEL_LAB_MATRIX.md` when kernel-matrix behavior changes.
 - User-visible behavior changes require a changelog entry.
-
-## Kernel Matrix Rule
-
-Before a feature that touches generated backend state is marked complete, it
-must be validated against the latest five active kernel.org release lines.
-As of 2026-06-16, the pinned initial matrix is:
-
-- `7.1` mainline
-- `7.0.12` stable
-- `6.18.35` longterm
-- `6.12.93` longterm
-- `6.6.142` longterm
-
-Refresh this list from https://www.kernel.org/ before a release or any claim
-about "latest" kernel coverage.
-
-## Lab 141 Rule
-
-Kernel-matrix evidence must be collected in the
-`jenkins-firecracker-cloud-plugin` lab profile identified as `141` whenever
-that lab is available. Treat lab credentials and host inventory as secrets.
-Do not commit private keys, tokens, raw inventories, or full support bundles.
-
-Each lab run must record:
-
-- lpf git commit
-- OCaml compiler version
-- Dune version
-- kernel version under test
-- nftables version
-- iproute2 version
-- conntrack-tools version
-- command under test
-- policy fixture path
-- generated backend plan checksum
-- apply, confirm, rollback, and cleanup result
 
 ## Feature Completion Bar
 
@@ -122,4 +65,3 @@ A feature is not done until it has:
 - failure behavior
 - rollback or cleanup behavior
 - explain output where applicable
-- kernel-matrix evidence for backend-affecting behavior

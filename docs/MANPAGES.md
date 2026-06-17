@@ -30,8 +30,6 @@ Initial page set:
 - `lpf-state(8)`
 - `lpf-rules(8)`
 - `lpf-history(8)`
-- `lpf-import(8)`
-- `lpf-support-bundle(8)`
 - `lpf-man(8)`
 - `lpf.conf(5)`
 - `lpf-policy-tests(5)`

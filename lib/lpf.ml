@@ -12,8 +12,6 @@ type command = Command.command =
   | State
   | Rules
   | History
-  | Import
-  | Support_bundle
   | E2e
   | Man
   | Version

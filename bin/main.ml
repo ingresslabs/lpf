@@ -669,11 +669,7 @@ let handle_e2e args =
         if result.failed = 0 then exit 0 else exit 1
       with Failure message | Invalid_argument message ->
         prerr_endline message;
-        exit 1)
-
-let planned command =
-  print_end (Lpf.command_help command);
-  exit 2
+         exit 1)
 
 let () =
   match Array.to_list Sys.argv with
@@ -706,7 +702,7 @@ let () =
       match Lpf.command_of_string name with
       | Some Lpf.Version -> print_end Lpf.version
       | Some Lpf.Help -> print_end (Lpf.help ())
-      | Some command -> planned command
+      | Some _ -> ()
       | None ->
           prerr_endline ("unknown lpf command: " ^ name);
           exit 64)

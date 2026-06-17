@@ -172,26 +172,10 @@ networking state.
 Show applied policy versions, operator, timestamp, checksum, test result, and
 rollback availability.
 
-### `lpf import <source>`
-
-Import existing firewall state into a readable `lpf` starting point.
-
-Initial importers:
-
-- `nftables`
-- `iptables-save`
-- `ufw`
-- `firewalld`
-
-### `lpf support-bundle`
-
-Create a redacted diagnostic bundle. It must never include raw secrets,
-private keys, full packet payloads, or unredacted host inventory.
-
 ### `lpf e2e <run|list>`
 
 Run real end-to-end Linux networking validation inside a disposable lab
-environment, normally a Firecracker VM provisioned by Lab 141.
+environment.
 
 The default catalog contains 480 deterministic scenarios split across:
 
