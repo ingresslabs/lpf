@@ -719,21 +719,8 @@ let handle_state args =
        | _ ->
            prerr_endline "state kill: specify --src and --dst addresses";
            exit 64)
-  | Some "show" -> (
-      match Lpf.Conntrack.list () with
-      | Ok output ->
-          let entries = Lpf.Conntrack.parse_list output in
-          if json then print_string (Lpf.Conntrack.entries_to_json entries)
-          else List.iter (fun (e : Lpf.Conntrack.conntrack_entry) ->
-              Printf.printf "%s %s %s %s %s [%s]\n"
-                e.protocol e.src e.dst e.sport e.dport e.state)
-            entries;
-          exit 0
-      | Error error ->
-          prerr_endline (Lpf.Conntrack.string_of_run_error error);
-          exit 1)
   | _ ->
-      prerr_endline "usage: lpf state [--json] <list|show|flush|kill>";
+      prerr_endline "usage: lpf state [--json] <list|flush|kill>";
       exit 64
 
 let handle_table args =
@@ -765,15 +752,6 @@ let handle_table args =
        | Error error ->
            prerr_endline (Lpf.Nft.string_of_run_error error);
            exit 1)
-  | name :: "show" :: _ -> (
-      match Lpf.Table.counters name with
-      | Ok output ->
-          if json then print_string (Lpf.Table.elements_to_json (Lpf.Table.parse_counters_output output))
-          else print_endline output;
-          exit 0
-      | Error error ->
-          prerr_endline (Lpf.Nft.string_of_run_error error);
-          exit 1)
   | name :: "counters" :: _ -> (
       match Lpf.Table.counters name with
       | Ok output ->
@@ -792,7 +770,7 @@ let handle_table args =
           prerr_endline (Lpf.Nft.string_of_run_error error);
           exit 1)
   | _ ->
-      prerr_endline "usage: lpf table <name> <add|delete|replace|show|flush|counters> [...]";
+      prerr_endline "usage: lpf table <name> <add|delete|replace|flush|counters> [...]";
       exit 64
 
 let handle_ebpf args =

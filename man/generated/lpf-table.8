@@ -2,7 +2,7 @@
 .SH NAME
 lpf\-table \- manage dynamic policy tables
 .SH SYNOPSIS
-lpf table [\-\-json] <name> <add|delete|replace|show|flush|counters>
+lpf table [\-\-json] <name> <add|delete|replace|flush|counters>
 .SH DESCRIPTION
 Manage dynamic policy tables without a full policy reload.
 .SH OPTIONS
@@ -14,7 +14,7 @@ emit machine\-readable table element and counter data
 attach a time\-to\-live where supported
 .SH EXAMPLES
 lpf table threats add 203.0.113.10
-lpf table threats show \-\-json
+lpf table threats counters \-\-json
 lpf table threats replace threats.txt
 lpf table threats flush
 .SH FILES

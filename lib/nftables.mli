@@ -55,9 +55,6 @@ type t = {
   rules : rule list;
 }
 
-val of_ir : Ir.t -> t
-val of_plan : Plan.t -> t
-val to_string : t -> string
 val owned_ruleset_text : string -> string
 type diff_result = {
   changes_required : bool;
@@ -65,5 +62,4 @@ type diff_result = {
 }
 val diff : intended:string -> observed:string -> diff_result
 val diff_text : intended:string -> observed:string -> string
-val render_ir : Ir.t -> string
 val render_plan : Plan.t -> string

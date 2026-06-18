@@ -2,7 +2,7 @@
 .SH NAME
 lpf\-state \- inspect or modify conntrack state
 .SH SYNOPSIS
-lpf state [\-\-json] <list|show|flush|kill>
+lpf state [\-\-json] <list|flush|kill>
 .SH DESCRIPTION
 Inspect and manage lpf\-related conntrack state.
 .SH OPTIONS
@@ -17,7 +17,6 @@ source address for kill operation
 destination address for kill operation
 .SH EXAMPLES
 lpf state list \-\-json
-lpf state show
 lpf state kill \-\-src 10.0.0.1 \-\-dst 10.0.0.2
 lpf state flush
 .SH FILES

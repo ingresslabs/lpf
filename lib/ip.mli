@@ -1,15 +1,15 @@
-type invocation = {
+type invocation = Process.invocation = {
   program : string;
   argv : string list;
 }
 
-type run_status =
+type run_status = Process.run_status =
   | Exited of int
   | Signaled of int
   | Stopped of int
   | Failed_to_start of string
 
-type run_error = {
+type run_error = Process.run_error = {
   invocation : invocation;
   status : run_status;
   stderr : string;

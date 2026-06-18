@@ -543,5 +543,4 @@ let diff ~intended ~observed =
 
 let diff_text ~intended ~observed = (diff ~intended ~observed).text
 
-let render_ir ir = ir |> of_ir |> to_string
 let render_plan plan = plan |> of_plan |> to_string

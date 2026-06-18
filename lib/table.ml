@@ -1,5 +1,3 @@
-type element = string
-
 let add_element_invocation table_name element =
   { Nft.program = "nft"; argv = [ "nft"; "add"; "element"; "inet"; "lpf_filter"; "tbl_" ^ table_name; "{"; element; "}" ] }
 

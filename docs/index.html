@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="lpf is a next-generation Linux firewall.">
+  <meta name="description" content="lpf is an OCaml-first PF-style control plane for Linux networking.">
   <title>lpf</title>
   <style>
     :root {
@@ -583,43 +583,19 @@
     <section class="hero" id="top">
       <canvas class="hero-canvas" id="stage" aria-hidden="true"></canvas>
       <div class="hero-inner">
+        <div class="kicker">OCaml firewall control plane</div>
         <h1>lpf</h1>
-        <p class="lede">Next-generation Linux firewall</p>
+        <p class="lede">A PF-style policy language for Linux networking: readable rules, typed plans, guarded apply, rollback, and explainable packets.</p>
         <div class="hero-meta" aria-label="Project traits">
           <span>PF-style syntax</span>
-          <span>eBPF/XDP output</span>
-          <span>Z3 prove roadmap</span>
+          <span>nftables first</span>
           <span>safe remote apply</span>
+          <span>JSON ready</span>
         </div>
       </div>
     </section>
 
     <main>
-      <section class="section" id="core">
-        <div class="section-inner">
-          <div class="section-head">
-            <div class="eyebrow">Core path</div>
-            <div>
-              <h2>eBPF now. Z3 proofs next.</h2>
-              <p class="copy">Compile checked policy IR to native eBPF/XDP C today. Z3-backed <code>lpf prove</code> is shown as the proof target, and remains marked roadmap until the OCaml command, tests, fixtures, and man pages land.</p>
-            </div>
-          </div>
-          <div class="command-grid">
-            <article class="terminal">
-              <div class="terminal-title">eBPF/XDP usage</div>
-              <pre><code><span class="prompt">$</span> lpf ebpf /etc/lpf.conf &gt; lpf_xdp.c
-<span class="prompt">$</span> clang -O2 -target bpf -c lpf_xdp.c -o lpf_xdp.o</code></pre>
-            </article>
-            <article class="terminal">
-              <div class="terminal-title">Z3 prove target</div>
-              <pre><code><span class="muted"># roadmap command; not current CLI</span>
-<span class="prompt">$</span> lpf prove --solver z3 /etc/lpf.conf
-<span class="muted"># prove reachability and deny/public invariants</span></code></pre>
-            </article>
-          </div>
-        </div>
-      </section>
-
       <section class="section" id="install">
         <div class="section-inner">
           <div class="section-head">
@@ -679,7 +655,8 @@
           <div class="section-head">
             <div class="eyebrow">Configs</div>
             <div>
-              <h2>Policy examples</h2>
+              <h2>Examples under cut.</h2>
+              <p class="copy">Minimal policy shapes for common Linux hosts. Open only the one you need.</p>
             </div>
           </div>
           <div class="cut-list">
@@ -797,6 +774,13 @@ block in log from any to any</code></pre>
       </section>
 
       <section class="loop-zone" aria-label="Infinite usage rail">
+        <div class="loop-intro">
+          <div class="eyebrow">Scroll</div>
+          <div>
+            <h2>Operational loop, forever.</h2>
+            <p class="copy">The page continues with a repeating command rail: validate, inspect, deploy, confirm, explain, test.</p>
+          </div>
+        </div>
         <div class="loop-list" data-loop></div>
         <div class="sentinel" data-sentinel aria-hidden="true"></div>
       </section>
@@ -804,7 +788,7 @@ block in log from any to any</code></pre>
 
     <footer>
       <div class="footer-inner">
-        <span>Next-generation Linux firewall</span>
+        <span>lpf - OCaml-first Linux packet policy</span>
         <a href="https://github.com/ingresslabs/lpf">github.com/ingresslabs/lpf</a>
       </div>
     </footer>

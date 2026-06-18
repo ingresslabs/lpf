@@ -64,8 +64,8 @@ let string_of_command = function
 let to_string t =
   String.concat "\n" (List.map string_of_command t) ^ if t = [] then "" else "\n"
 
-let qdisc_show_invocation device = { Nft.program = "tc"; argv = [ "tc"; "qdisc"; "show"; "dev"; device ] }
-let class_show_invocation device = { Nft.program = "tc"; argv = [ "tc"; "class"; "show"; "dev"; device ] }
+let qdisc_show_invocation device = { Process.program = "tc"; argv = [ "tc"; "qdisc"; "show"; "dev"; device ] }
+let class_show_invocation device = { Process.program = "tc"; argv = [ "tc"; "class"; "show"; "dev"; device ] }
 
 let qdisc_show_with_runner runner device = runner (qdisc_show_invocation device)
 let qdisc_show device = qdisc_show_with_runner Nft.run device

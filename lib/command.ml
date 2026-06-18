@@ -280,7 +280,7 @@ let command_docs =
     {
       command = Table;
       section = 8;
-      synopsis = "lpf table [--json] <name> <add|delete|replace|show|flush|counters>";
+      synopsis = "lpf table [--json] <name> <add|delete|replace|flush|counters>";
       description = [ "Manage dynamic policy tables without a full policy reload." ];
       options =
         [
@@ -290,7 +290,7 @@ let command_docs =
       examples =
         [
           "lpf table threats add 203.0.113.10";
-          "lpf table threats show --json";
+          "lpf table threats counters --json";
           "lpf table threats replace threats.txt";
           "lpf table threats flush";
         ];
@@ -301,7 +301,7 @@ let command_docs =
     {
       command = State;
       section = 8;
-      synopsis = "lpf state [--json] <list|show|flush|kill>";
+      synopsis = "lpf state [--json] <list|flush|kill>";
       description = [ "Inspect and manage lpf-related conntrack state." ];
       options =
         [
@@ -312,7 +312,6 @@ let command_docs =
       examples =
         [
           "lpf state list --json";
-          "lpf state show";
           "lpf state kill --src 10.0.0.1 --dst 10.0.0.2";
           "lpf state flush";
         ];
