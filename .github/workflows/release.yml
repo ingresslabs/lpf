@@ -86,10 +86,12 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=$(release/lpf version)
-          mkdir -p _rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS} release/packages/rpm
-          git archive --prefix="lpf-${VERSION}/" -o "_rpmbuild/SOURCES/lpf-${VERSION}.tar.gz" HEAD
-          rpmbuild -ba --nodeps packaging/rpm/lpf.spec --define "_topdir $PWD/_rpmbuild"
-          find _rpmbuild/RPMS _rpmbuild/SRPMS -type f \( -name '*.rpm' -o -name '*.src.rpm' \) -exec cp {} release/packages/rpm/ \;
+          RPM_TOPDIR="${RUNNER_TEMP:-/tmp}/lpf-rpmbuild"
+          rm -rf "$RPM_TOPDIR"
+          mkdir -p "$RPM_TOPDIR"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS} release/packages/rpm
+          git archive --prefix="lpf-${VERSION}/" -o "$RPM_TOPDIR/SOURCES/lpf-${VERSION}.tar.gz" HEAD
+          rpmbuild -ba --nodeps packaging/rpm/lpf.spec --define "_topdir $RPM_TOPDIR"
+          find "$RPM_TOPDIR/RPMS" "$RPM_TOPDIR/SRPMS" -type f \( -name '*.rpm' -o -name '*.src.rpm' \) -exec cp {} release/packages/rpm/ \;
 
       - name: Generate checksums
         run: |

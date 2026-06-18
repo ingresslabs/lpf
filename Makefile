@@ -146,4 +146,4 @@ deb:
 	set -eu; rm -rf debian; cp -a packaging/deb debian; trap 'rm -rf debian' EXIT; dpkg-buildpackage -b -us -uc -d
 
 rpm:
-	rpmbuild -bb --nodeps packaging/rpm/lpf.spec --define "_topdir $$(pwd)/_rpmbuild"
+	set -eu; VERSION=$$($(LPF) version); RPM_TOPDIR="$$(pwd)/../lpf-rpmbuild"; rm -rf "$$RPM_TOPDIR"; mkdir -p "$$RPM_TOPDIR/BUILD" "$$RPM_TOPDIR/BUILDROOT" "$$RPM_TOPDIR/RPMS" "$$RPM_TOPDIR/SOURCES" "$$RPM_TOPDIR/SPECS" "$$RPM_TOPDIR/SRPMS"; git archive --prefix="lpf-$$VERSION/" -o "$$RPM_TOPDIR/SOURCES/lpf-$$VERSION.tar.gz" HEAD; rpmbuild -bb --nodeps packaging/rpm/lpf.spec --define "_topdir $$RPM_TOPDIR"
