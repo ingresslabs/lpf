@@ -37,7 +37,7 @@ jobs:
       - run: opam exec -- dune runtest
       - run: opam exec -- dune exec -- lpf man check
       - run: opam lint lpf.opam
-      - run: opam exec -- dune build --profile=static
+      - run: opam exec -- dune build --profile=static bin/main.exe
 
       - name: Build release binary
         run: |

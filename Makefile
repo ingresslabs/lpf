@@ -47,7 +47,7 @@ build:
 	$(DUNE) build
 
 static:
-	$(DUNE) build --profile=static
+	$(DUNE) build --profile=static bin/main.exe
 
 test:
 	$(DUNE) runtest
