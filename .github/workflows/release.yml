@@ -44,6 +44,7 @@ jobs:
           set -euo pipefail
           mkdir -p release
           cp _build/default/bin/main.exe release/lpf
+          chmod u+w release/lpf
           strip release/lpf
 
       - name: Smoke release binary
