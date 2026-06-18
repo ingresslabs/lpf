@@ -4,47 +4,9 @@
 
 Tired of juggling `iptables`, `nftables`, `tc`, and `ip route`? `lpf` provides a single, coherent control plane with human-readable policies, guarded deployments, and explainable decisions.
 
-But `lpf` is more than just a wrapper. It already includes a native eBPF/XDP C backend and keeps formal verification on the roadmap.
-
 ---
 
 ## Core Features
-
-### Native eBPF / XDP Dataplane (`lpf ebpf`)
-Want to drop packets before the Linux kernel even allocates memory for them? `lpf` can generate native eBPF/XDP C source from checked policy IR.
-
-Instead of rendering only to `nftables`, `lpf` can compile policy logic into C that is suitable for `clang -target bpf` and kernel verifier testing.
-
-```sh
-# Compile the policy into eBPF C source
-$ lpf ebpf /etc/lpf.conf > lpf_xdp.c
-$ clang -O2 -target bpf -c lpf_xdp.c -o lpf_xdp.o
-```
-
-### Formal Verification Roadmap
-
-`lpf prove` and Z3-backed invariant checks are planned, but they are not part
-of the current CLI. Until that command lands with OCaml implementation, tests,
-fixtures, and man pages, release CI does not label Z3 proof coverage as
-available.
-
-### The Market Landscape: Why Mathematical Proofs Matter
-
-Applying mathematical formal verification to networking has recently shifted from academia to powering the world's most critical infrastructure. However, the market is highly fragmented:
-
-1. **Cloud IAM (e.g., AWS Zelkova):** Translates IAM and S3 bucket policies into SMT formulas (using Z3) to mathematically prove a bucket isn't public. Powers AWS IAM Access Analyzer.
-2. **Control Plane Simulation (e.g., Batfish):** Parses thousands of lines of BGP/OSPF configurations from physical routers to simulate the network control plane and map reachability before deployment.
-3. **Enterprise Digital Twins (e.g., Forward Networks):** Commercial platforms that ingest live state from every switch and firewall in a corporate network to build a queryable mathematical model of the entire enterprise.
-
-**The Unique Position of `lpf`:**
-Historically, formal network verification required either being a massive cloud provider or purchasing six-figure enterprise software. 
-
-`lpf` is aiming to bring Z3-backed formal verification directly to the Linux
-command line, alongside a compiler that generates eBPF/XDP C source. That proof
-feature remains roadmap work until the CLI, tests, fixtures, and man pages land
-together.
-
----
 
 ## Safe & Predictable Operations
 

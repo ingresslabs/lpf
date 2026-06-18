@@ -1,6 +1,13 @@
+lpf (0.1.2-1) unstable; urgency=medium
+
+  * Remove the experimental dataplane compiler command and release evidence.
+  * Refresh generated manuals and package metadata for the smaller CLI surface.
+
+ -- lpf maintainers <lpf@example.com>  Thu, 18 Jun 2026 00:00:00 +0000
+
 lpf (0.1.1-1) unstable; urgency=medium
 
-  * CI hardening, eBPF release coverage, and lab documentation cleanup.
+  * CI hardening, release coverage, and lab documentation cleanup.
 
  -- lpf maintainers <lpf@example.com>  Thu, 18 Jun 2026 00:00:00 +0000
 

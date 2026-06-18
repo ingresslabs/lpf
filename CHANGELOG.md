@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.2 - 2026-06-18
 
 ### Removed
 
+- Removed the experimental dataplane compiler command and library module from
+  the active CLI surface.
 - Removed `lpf e2e` command and E2e module — Firecracker guest networking
   scenario runner extracted to its own repository.
 - Removed redundant `lpf state show` and `lpf table show` subcommands
@@ -18,7 +20,7 @@
 ### Changed
 
 - `tc.ml` uses `Process.program` instead of `Nft.program` for TC invocations.
-- Man page count reduced from 20 to 19 after e2e removal.
+- Man page count reduced from 20 to 18 after command removals.
 
 ### Added
 
@@ -31,7 +33,7 @@
 ### Added
 
 - Hardened GitHub CI into focused workflow jobs for OCaml checks, repository
-  hygiene, generated eBPF compilation, dry-run E2E catalog coverage, Linux
+  hygiene, generated compilation coverage, dry-run catalog coverage, Linux
   namespace smoke coverage, and OCaml coverage artifacts.
 - Hardened the release workflow to build and upload the static binary tarball,
   generated man pages, SBOM, checksums, Debian package, and RPM/SRPM artifacts.

@@ -44,13 +44,45 @@ let string_of_run_error error = Process.string_of_run_error "conntrack" error
 
 let parse_line line =
   let fields = String.split_on_char ' ' line |> List.filter (fun s -> String.length s > 0) in
+  let rec find_field key = function
+    | field :: value :: _ when String.equal field key -> Some value
+    | _ :: rest -> find_field key rest
+    | [] -> None
+  in
+  let rec find_field_starts prefix = function
+    | field :: _ when String.starts_with ~prefix field || String.equal field prefix ->
+        (match String.split_on_char '=' field with
+         | [ _; value ] -> Some value
+         | _ -> Some field)
+    | _ :: rest -> find_field_starts prefix rest
+    | [] -> None
+  in
   match fields with
   | proto :: src :: dst :: rest ->
-      let sport = try List.nth rest 0 with _ -> "" in
-      let dport = try List.nth rest 2 with _ -> "" in
-      let state = try List.nth rest 3 with _ -> "" in
+      let sport = Option.value (find_field "sport=" rest) ~default:(Option.value (find_field "sport" rest) ~default:"") in
+      let dport = Option.value (find_field "dport=" rest) ~default:(Option.value (find_field "dport" rest) ~default:"") in
+      let state = Option.value (find_field_starts "TIME_WAIT" rest) ~default:
+                    (Option.value (find_field_starts "ESTABLISHED" rest) ~default:
+                      (Option.value (find_field_starts "CLOSE" rest) ~default:
+                        (Option.value (find_field_starts "SYN_SENT" rest) ~default:
+                          (Option.value (find_field_starts "NONE" rest) ~default:
+                            (Option.value (find_field_starts "ASSURED" rest) ~default:
+                              (Option.value (find_field_starts "UNREPLIED" rest) ~default:
+                                (match find_field "[UNREPLIED]" rest with Some _ -> "UNREPLIED" | None -> ""))))))) in
       Some { protocol = proto; src; dst; sport; dport; state; raw = line }
-  | _ -> None
+  | [ _ ] | [] -> None
+  | _ ->
+      match fields with
+      | proto :: rest when String.ends_with ~suffix:"src=" proto ->
+          let src = match String.split_on_char '=' proto with [ _; v ] -> v | _ -> proto in
+          let dst = Option.value (find_field "dst=" rest) ~default:"" in
+          let sport = Option.value (find_field "sport=" rest) ~default:"" in
+          let dport = Option.value (find_field "dport=" rest) ~default:"" in
+          let state = Option.value (find_field_starts "TIME_WAIT" rest) ~default:
+                        (Option.value (find_field_starts "ESTABLISHED" rest) ~default:"") in
+          Some { protocol = (match find_field "protonum=" rest with Some p -> p | None -> "unknown");
+                 src; dst; sport; dport; state; raw = line }
+      | _ -> None
 
 let parse_list output =
   String.split_on_char '\n' output

@@ -234,6 +234,28 @@ Exit criteria:
 - XDP drops packets before the kernel allocates `sk_buff`.
 - Unifies routing and firewalling into a single dataplane.
 
+## Phase 8.5: Z3-Backed Formal Verification
+
+Goal: prove policy invariants before host mutation by translating `lpf` IR into
+SMT constraints checked with Z3.
+
+Tasks:
+
+- Define a bounded packet model for source, destination, protocol, port,
+  interface, direction, state, NAT, queue, and route decisions.
+- Compile policy rules, tables, anchors, and default actions into SMT formulas.
+- Add invariant checks for reachability, isolation, shadowing, public exposure,
+  and expected management access.
+- Emit proof diagnostics with source-policy spans and counterexample packets.
+- Gate any `lpf prove` command on OCaml implementation, fixtures, man pages,
+  and CI evidence.
+
+Exit criteria:
+
+- `lpf prove` can prove allow/deny invariants against policy fixtures.
+- Counterexamples include source spans and packet dimensions.
+- Release notes distinguish implemented proof checks from roadmap-only work.
+
 ## Phase 9: Dynamic Tables
 
 Goal: make threat/customer/allowlist tables operationally useful.

@@ -128,7 +128,7 @@ release-verify:
 	@if [ -f $(RELEASE_TARBALL).asc ]; then gpg --verify $(RELEASE_TARBALL).asc; fi
 	@printf 'release verified\n'
 
-.PHONY: deb rpm
+deb:
 	set -eu; rm -rf debian; cp -a packaging/deb debian; trap 'rm -rf debian' EXIT; dpkg-buildpackage -b -us -uc -d
 
 rpm:

@@ -12,7 +12,6 @@ type command =
   | State
   | Rules
   | History
-  | Ebpf
   | Man
   | Tools
   | Version
@@ -30,7 +29,7 @@ type command_doc = {
   see_also : string list;
 }
 
-let version = "0.1.1"
+let version = "0.1.2"
 
 let all_commands =
   [
@@ -47,7 +46,6 @@ let all_commands =
     ("state", State, "inspect or modify conntrack state");
     ("rules", Rules, "show or diff generated backend rules");
     ("history", History, "show policy apply history and rollback points");
-    ("ebpf", Ebpf, "compile policy to native eBPF/XDP C source");
     ("man", Man, "generate, check, or install man pages");
     ("tools", Tools, "emit tool-calling schemas for AI agents");
     ("version", Version, "print lpf version");
@@ -68,7 +66,6 @@ let command_name = function
   | State -> "state"
   | Rules -> "rules"
   | History -> "history"
-  | Ebpf -> "ebpf"
   | Man -> "man"
   | Tools -> "tools"
   | Version -> "version"
@@ -358,33 +355,6 @@ let command_docs =
       see_also = [ "lpf-rollback(8)"; "lpf-man(8)" ];
     };
     {
-      command = Ebpf;
-      section = 8;
-      synopsis = "lpf ebpf [--static] [--map-updates] <policy>";
-      description =
-        [
-          "Compile a policy to a native eBPF/XDP C source file or dynamic map updates.";
-          "This generates an XDP program that unifies routing and firewalling at the lowest level.";
-          "The default mode generates a generic engine C file. Use --static for a specialized unrolled C file.";
-          "Use --map-updates to generate bpftool commands for populating dynamic maps.";
-        ];
-      options =
-        [
-          ("--static", "generate specialized C code with rules baked in for maximum performance");
-          ("--map-updates", "generate bpftool commands to update dynamic rule maps");
-        ];
-      examples =
-        [
-          "lpf ebpf /etc/lpf.conf > lpf_xdp.c";
-          "lpf ebpf --static /etc/lpf.conf > lpf_xdp_static.c";
-          "lpf ebpf --map-updates /etc/lpf.conf | sh";
-          "clang -O2 -target bpf -c lpf_xdp.c -o lpf_xdp.o";
-        ];
-      files = shared_files;
-      safety_notes = [ "This command is read-only. Compiling and attaching the eBPF object is done separately." ];
-      see_also = [ "lpf-plan(8)"; "lpf-rules(8)" ];
-    };
-    {
       command = Man;
       section = 8;
       synopsis = "lpf man <generate|check|install>";
@@ -438,12 +408,12 @@ let help () =
     @ usage_lines ()
     @ [
         "";
-        "Read-only policy, plan, nftables render, diff, and man-page flows are implemented. Host mutation remains planned.";
+        "Read-only flows (check, fmt, plan, diff, explain, rules, man, tools) are implemented. Host mutation (apply, rollback, table, state) and per-backend rollback (nftables, tc, routing) are supported.";
       ])
 
 let command_status = function
   | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules
-  | History | Ebpf | Man | Tools ->
+  | History | Man | Tools ->
       "implemented"
   | Version | Help -> "implemented"
 

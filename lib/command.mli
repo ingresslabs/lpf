@@ -12,7 +12,6 @@ type command =
   | State
   | Rules
   | History
-  | Ebpf
   | Man
   | Tools
   | Version

@@ -30,22 +30,23 @@ let mark_for_target ir target =
 
 let compile (ir : Ir.t) : t =
   let targets = extract_route_targets ir in
-  List.mapi
-    (fun idx target ->
-      let mark = 100 + idx in
-      let table = 100 + idx in
-      let gateway, iface_opt = target in
-      let gateway_str =
-        match gateway with
-        | Ir.Literal s -> s
-        | _ -> failwith "routing: gateway is not a literal address; this is a bug in IR validation"
-      in
-      let device_str = match iface_opt with Some (i : Ir.interface_ref) -> Some i.device | None -> None in
-      [
-        Ip_rule_add { mark; table };
-        Ip_route_add_default { gateway = gateway_str; device = device_str; table };
-      ])
-    targets
+  targets
+  |> List.mapi (fun idx target -> (idx, target))
+  |> List.filter_map
+    (fun (idx, (gateway, iface_opt)) ->
+      match gateway with
+      | Ir.Literal gateway_str ->
+          let mark = 100 + idx in
+          let table = 100 + idx in
+          let device_str = match iface_opt with Some (i : Ir.interface_ref) -> Some i.device | None -> None in
+          let cmds = [
+            Ip_rule_add { mark; table };
+            Ip_route_add_default { gateway = gateway_str; device = device_str; table };
+          ] in
+          Some cmds
+      | _ ->
+          Printf.eprintf "routing: skipping non-literal gateway at target %d\n" idx;
+          None)
   |> List.flatten
 
 let string_of_command = function

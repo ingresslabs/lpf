@@ -93,6 +93,12 @@ jobs:
           rpmbuild -ba --nodeps packaging/rpm/lpf.spec --define "_topdir $RPM_TOPDIR"
           find "$RPM_TOPDIR/RPMS" "$RPM_TOPDIR/SRPMS" -type f \( -name '*.rpm' -o -name '*.src.rpm' \) -exec cp {} release/packages/rpm/ \;
 
+      - name: Create source tarball
+        run: |
+          set -euo pipefail
+          VERSION=$(release/lpf version)
+          git archive --prefix="lpf-${VERSION}/" -o "release/lpf-${VERSION}-source.tar.gz" HEAD
+
       - name: Generate checksums
         run: |
           set -euo pipefail
@@ -115,6 +121,7 @@ jobs:
             release/SBOM.txt
             release/man/**
             release/packages/**
+            release/lpf-*-source.tar.gz
             lpf-*-linux-x86_64.tar.gz
 
       - name: Upload to release
@@ -122,6 +129,7 @@ jobs:
         with:
           files: |
             lpf-*.tar.gz
+            release/lpf-*-source.tar.gz
             release/packages/deb/*
             release/packages/rpm/*
           generate_release_notes: true

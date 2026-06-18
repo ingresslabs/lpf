@@ -58,6 +58,50 @@ let rec skip_whitespace line pos =
     | ' ' | '\t' | '\n' | '\r' -> skip_whitespace line (pos + 1)
     | _ -> pos
 
+let rec find_value_end line pos =
+  if pos >= String.length line then String.length line
+  else
+    match line.[pos] with
+    | '{' ->
+        let rec skip_nested depth i =
+          if i >= String.length line then String.length line
+          else
+            match line.[i] with
+            | '{' -> skip_nested (depth + 1) (i + 1)
+            | '}' when depth = 1 -> i
+            | '}' -> skip_nested (depth - 1) (i + 1)
+            | '"' ->
+                let rec past_string j =
+                  if j >= String.length line then String.length line
+                  else if line.[j] = '"' && line.[j - 1] <> '\\' then j + 1
+                  else past_string (j + 1)
+                in
+                skip_nested depth (past_string (i + 1))
+            | _ -> skip_nested depth (i + 1)
+        in
+        skip_nested 1 (pos + 1)
+    | '[' ->
+        let rec skip_array depth i =
+          if i >= String.length line then String.length line
+          else
+            match line.[i] with
+            | '[' -> skip_array (depth + 1) (i + 1)
+            | ']' when depth = 1 -> i
+            | ']' -> skip_array (depth - 1) (i + 1)
+            | '"' ->
+                let rec past_string j =
+                  if j >= String.length line then String.length line
+                  else if line.[j] = '"' && line.[j - 1] <> '\\' then j + 1
+                  else past_string (j + 1)
+                in
+                skip_array depth (past_string (i + 1))
+            | _ -> skip_array depth (i + 1)
+        in
+        skip_array 1 (pos + 1)
+    | ',' | '}' -> pos
+    | ' ' | '\t' | '\n' | '\r' -> find_value_end line (pos + 1)
+    | _ -> find_value_end line (pos + 1)
+
 let find_json_value line key =
   let key_pattern = "\"" ^ key ^ "\"" in
   let rec search pos =
@@ -84,15 +128,13 @@ let find_json_value line key =
             if end_idx < String.length line then
               parse_json_string (String.sub line val_start (end_idx - val_start + 1))
             else ""
+          else if line.[val_start] = '{' || line.[val_start] = '[' then
+            let end_idx = find_value_end line val_start in
+            if end_idx < String.length line then
+              String.sub line val_start (end_idx - val_start + 1)
+            else ""
           else
-            let rec find_value_end i =
-              if i >= String.length line then String.length line
-              else
-                match line.[i] with
-                | ',' | '}' -> i
-                | _ -> find_value_end (i + 1)
-            in
-            let end_idx = find_value_end val_start in
+            let end_idx = find_value_end line val_start in
             String.trim (String.sub line val_start (end_idx - val_start))
       else search (pos + 1)
   in

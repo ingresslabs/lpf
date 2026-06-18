@@ -12,7 +12,6 @@ type command = Command.command =
   | State
   | Rules
   | History
-  | Ebpf
   | Man
   | Tools
   | Version
@@ -53,7 +52,6 @@ module Apply_guard : module type of Apply_guard
 module Conntrack : module type of Conntrack
 module Table : module type of Table
 module Ip : module type of Ip
-module Ebpf : module type of Ebpf
 module Process : module type of Process
 module File_util : module type of File_util
 

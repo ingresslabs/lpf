@@ -75,6 +75,22 @@ let parse_rule_list output =
       | _ -> None)
 
 let parse_route_show output =
+  let find_device parts =
+    let rec loop = function
+      | "dev" :: d :: _ -> Some d
+      | _ :: more -> loop more
+      | [] -> None
+    in
+    loop parts
+  in
+  let find_via parts =
+    let rec loop = function
+      | "via" :: gw :: _ -> Some gw
+      | _ :: more -> loop more
+      | [] -> None
+    in
+    loop parts
+  in
   String.split_on_char '\n' output
   |> List.filter_map (fun line ->
     let line = String.trim line in
@@ -82,14 +98,17 @@ let parse_route_show output =
     else
       let parts = tokens line in
       match parts with
-      | "default" :: "via" :: gw :: rest ->
-          let device =
-            let rec find_dev = function
-              | "dev" :: d :: _ -> Some d
-              | _ :: more -> find_dev more
-              | [] -> None
-            in
-            find_dev rest
-          in
-          Some { gateway = gw; device; table = 0 }
-      | _ -> None)
+      | "default" :: rest ->
+          let gateway = find_via rest in
+          let device = find_device rest in
+          Some { gateway = Option.value gateway ~default:""; device; table = 0 }
+      | _ ->
+          let gateway = find_via parts in
+          let device = find_device parts in
+          let subnet = match parts with first :: _ when not (String.equal first "default") -> Some first | _ -> None in
+          match (gateway, subnet) with
+          | Some gw, _ -> Some { gateway = gw; device; table = 0 }
+          | _, Some _net ->
+              let gateway = Option.value gateway ~default:"" in
+              Some { gateway; device; table = 0 }
+          | None, None -> None)

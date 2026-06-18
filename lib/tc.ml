@@ -173,3 +173,8 @@ let diff ~intended ~observed_qdisc ~observed_class =
     intended;
   if not !changes then { changes_required = false; text = "tc diff: no changes\n" }
   else { changes_required = true; text = "tc diff: changes required\n" ^ Buffer.contents buf }
+
+let delete_invocation device = { Process.program = "tc"; argv = [ "tc"; "qdisc"; "delete"; "dev"; device; "root" ] }
+
+let delete_with_runner runner device = runner (delete_invocation device) |> Result.map ignore
+let delete device = delete_with_runner Nft.run device

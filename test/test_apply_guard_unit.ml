@@ -14,6 +14,8 @@ let () =
   let mock_runners = {
     Lpf.Apply_guard.list_ruleset = (fun () -> Ok "mock ruleset");
     apply = (fun _ruleset -> Ok ());
+    tc_delete = (fun _device -> Ok ());
+    routing_flush_table = (fun _table -> Ok ());
   } in
 
   let result =

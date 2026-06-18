@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           lpf
-Version:        0.1.1
+Version:        0.1.2
 Release:        1%{?dist}
 Summary:        PF-style control plane for Linux networking
 License:        Apache-2.0
@@ -38,8 +38,11 @@ opam exec -- dune exec -- lpf man install --prefix %{buildroot}/usr
 %doc README.md CHANGELOG.md
 
 %changelog
+* Thu Jun 18 2026 avkcode - 0.1.2-1
+- Remove the experimental dataplane compiler command and refresh packages
+
 * Thu Jun 18 2026 avkcode - 0.1.1-1
-- CI hardening, eBPF release coverage, and external lab documentation cleanup
+- CI hardening, release coverage, and external lab documentation cleanup
 
 * Wed Jun 17 2026 avkcode - 0.1.0-1
 - Initial release
