@@ -6,7 +6,7 @@ Release:        1%{?dist}
 Summary:        PF-style control plane for Linux networking
 License:        Apache-2.0
 URL:            https://github.com/avkcode/lpf
-Source0:        https://github.com/avkcode/lpf/archive/refs/tags/v%{version}.tar.gz
+Source0:        lpf-%{version}.tar.gz
 
 BuildRequires:  ocaml >= 5.1.0
 BuildRequires:  ocaml-dune >= 3.11
@@ -41,5 +41,5 @@ opam exec -- dune exec -- lpf man install --prefix %{buildroot}/usr
 * Thu Jun 18 2026 avkcode - 0.1.1-1
 - CI hardening, eBPF release coverage, and external lab documentation cleanup
 
-* Sun Jun 22 2026 avkcode - 0.1.0-1
+* Wed Jun 17 2026 avkcode - 0.1.0-1
 - Initial release
