@@ -336,14 +336,14 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
                         if Filename.is_relative argv0 then
                           Filename.concat (Sys.getcwd ()) argv0 else argv0
                     in
-                    let watchdog_command =
-                      Printf.sprintf "sleep %d && %s rollback --now" seconds lpf_exe
-                    in
                     let pid =
                       try
-                        Some (Unix.create_process "setsid"
-                          [| "setsid"; "/bin/sh"; "-c"; watchdog_command |]
-                          Unix.stdin Unix.stdout Unix.stderr)
+                        let watchdog = Printf.sprintf "sleep %d && %s rollback --now" seconds lpf_exe in
+                        match Unix.fork () with
+                        | 0 ->
+                            (try let _ = Unix.setsid () in () with _ -> ());
+                            (try Unix.execv "/bin/sh" [| "/bin/sh"; "-c"; watchdog |] with _ -> exit 1)
+                        | child_pid -> Some child_pid
                       with Unix.Unix_error (_error, _, _) ->
                         cleanup_rollback_files_for_id history_entry.History.id;
                         let _ = if Sys.file_exists preimage_current_id_path then Sys.remove preimage_current_id_path in
