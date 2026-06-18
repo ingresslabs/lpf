@@ -10,19 +10,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.2.1
+
       - name: Install eBPF Toolchain
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-headers-generic linux-tools-common linux-tools-generic file python3
-          
-          # Use linux-tools-generic which installs bpftool via a wrapper
-          sudo apt-get install -y linux-tools-$(uname -r)
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-headers-generic bpftool file python3
+
+      - name: Build lpf
+        run: |
+          opam install . --deps-only --with-test
+          opam exec -- dune build
 
       - name: Compile CO-RE Engine
         run: |
+          set -euo pipefail
           mkdir -p evidence/ebpf
-          # Use bpf target and include standard linux headers
-          clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -I/usr/include/x86_64-linux-gnu -c bpf/lpf_engine.c -o evidence/ebpf/lpf_engine.o
+          cat > evidence/ebpf/table-policy.lpf <<'POLICY'
+          set default deny
+          table <trusted> { 10.0.0.1, 10.0.0.2 }
+          pass in proto tcp from <trusted> to any
+          POLICY
+          opam exec -- dune exec -- lpf ebpf evidence/ebpf/table-policy.lpf > evidence/ebpf/lpf_engine.c
+          clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -I/usr/include/x86_64-linux-gnu -c evidence/ebpf/lpf_engine.c -o evidence/ebpf/lpf_engine.o
           file evidence/ebpf/lpf_engine.o
           file evidence/ebpf/lpf_engine.o | grep "eBPF"
 
