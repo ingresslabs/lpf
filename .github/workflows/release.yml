@@ -88,7 +88,7 @@ jobs:
           VERSION=$(release/lpf version)
           mkdir -p _rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS} release/packages/rpm
           git archive --prefix="lpf-${VERSION}/" -o "_rpmbuild/SOURCES/lpf-${VERSION}.tar.gz" HEAD
-          rpmbuild -ba packaging/rpm/lpf.spec --define "_topdir $PWD/_rpmbuild"
+          rpmbuild -ba --nodeps packaging/rpm/lpf.spec --define "_topdir $PWD/_rpmbuild"
           find _rpmbuild/RPMS _rpmbuild/SRPMS -type f \( -name '*.rpm' -o -name '*.src.rpm' \) -exec cp {} release/packages/rpm/ \;
 
       - name: Generate checksums

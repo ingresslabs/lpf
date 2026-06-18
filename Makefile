@@ -146,4 +146,4 @@ deb:
 	set -eu; rm -rf debian; cp -a packaging/deb debian; trap 'rm -rf debian' EXIT; dpkg-buildpackage -b -us -uc -d
 
 rpm:
-	rpmbuild -bb packaging/rpm/lpf.spec --define "_topdir $$(pwd)/_rpmbuild"
+	rpmbuild -bb --nodeps packaging/rpm/lpf.spec --define "_topdir $$(pwd)/_rpmbuild"
