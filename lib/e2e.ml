@@ -211,6 +211,10 @@ let require_contains label output needle =
   let ok = string_contains output needle in
   (ok, validation_line label ok ("contains " ^ Json_util.string needle))
 
+let require_contains_ascii_ci label output needle =
+  let ok = string_contains (String.lowercase_ascii output) (String.lowercase_ascii needle) in
+  (ok, validation_line label ok ("contains " ^ Json_util.string needle ^ " case-insensitive"))
+
 let require_absent label output needle =
   let ok = not (string_contains output needle) in
   (ok, validation_line label ok ("absent " ^ Json_util.string needle))
@@ -639,7 +643,7 @@ let run_tc ctx scenario =
         (traffic_probe_result.code = 0, validation_line "tc.packet" (traffic_probe_result.code = 0) "icmp probe passed");
         require_contains "tc.qdisc_readback" qdisc_result.stdout "htb";
         require_contains "tc.class_readback" class_result.stdout "1:10";
-        require_contains "tc.rate_readback" class_result.stdout rate;
+        require_contains_ascii_ci "tc.rate_readback" class_result.stdout rate;
         require_contains "tc.stats_readback" qdisc_stats_result.stdout "Sent";
         require_absent "tc.cleanup_qdisc_absent" after_qdisc_result.stdout "htb";
       ]

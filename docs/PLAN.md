@@ -142,10 +142,21 @@ Tasks:
 - Add sysctl requirement checks for forwarding, rp_filter, bridge netfilter,
   and IPv6 forwarding.
 
+Initial implementation status:
+
+- Sysctl module (`lib/sysctl.ml`) reads and writes kernel parameters via
+  `/proc/sys`, captures snapshots for rollback preimages, and provides
+  structured diffs for drift detection. Required sysctls include
+  `net.ipv4.ip_forward`, `net.ipv4.conf.*.rp_filter`,
+  `net.ipv6.conf.*.forwarding`, and `bridge.bridge-nf-call-ip{,6}tables`.
+- `lpf apply --confirm` captures sysctl preimages alongside nftables, tc, and
+  routing preimages. `lpf rollback` restores captured sysctl values.
+- `lpf diff --backend sysctl` is wired into the pipeline.
+
 Exit criteria:
 
-- `lpf plan` includes route and tc sections.
-- `lpf diff` reports route/tc drift.
+- `lpf plan` includes route and tc sections and sysctl requirements.
+- `lpf diff` reports route/tc/sysctl drift.
 - `lpf state list` works through OCaml process execution.
 
 ## Phase 5: Safe Apply And Rollback
@@ -203,7 +214,27 @@ Exit criteria:
 - `lpf test fixtures/tests/basic.yaml`
 - CI can block a policy change on failed assertions.
 
-## Phase 8: Dynamic Tables
+## Phase 8: Native eBPF / XDP Compiler Backend
+
+Goal: bypass Netfilter entirely by compiling `lpf` IR directly to an eBPF byte-code object attached to the XDP hook.
+
+Tasks:
+
+- Design an OCaml-to-C or OCaml-to-eBPF compilation pipeline.
+- Implement XDP program generation for basic pass/drop/log filtering.
+- Implement XDP map generation for fast dynamic table lookups.
+- Implement XDP forwarding/redirects for route-to and simple NAT.
+- Add `lpf apply --backend ebpf` or similar command flags.
+- Extend `lpf diff` to support eBPF map state comparison.
+
+Exit criteria:
+
+- `lpf` can generate a valid C file or eBPF object.
+- The eBPF object can be loaded via libbpf or bpftool.
+- XDP drops packets before the kernel allocates `sk_buff`.
+- Unifies routing and firewalling into a single dataplane.
+
+## Phase 9: Dynamic Tables
 
 Goal: make threat/customer/allowlist tables operationally useful.
 
@@ -221,7 +252,7 @@ Exit criteria:
 - `lpf table threats replace threats.txt`
 - table changes are atomic and reversible.
 
-## Phase 9: Firecracker E2E And Kernel Matrix Evidence
+## Phase 10: Firecracker E2E And Kernel Matrix Evidence
 
 Goal: prove backend-affecting behavior on real disposable Linux guests before
 claiming support.
@@ -261,7 +292,7 @@ Exit criteria:
   nftables, iproute2, conntrack-tools, command, fixture family, plan/evidence
   checksum, apply, confirm, rollback, and cleanup result.
 
-## Phase 11: Packaging And Release
+## Phase 12: Packaging And Release
 
 Goal: make `lpf` easy to install and safe to operate.
 
