@@ -796,7 +796,7 @@ block in log from any to any</code></pre>
         </div>
       </section>
 
-      <section class="loop-zone" aria-label="Infinite usage rail">
+      <section class="loop-zone" aria-label="Usage example gallery">
         <div class="loop-list" data-loop></div>
         <div class="sentinel" data-sentinel aria-hidden="true"></div>
       </section>
@@ -914,31 +914,66 @@ block in log from any to any</code></pre>
     (() => {
       const loop = document.querySelector("[data-loop]");
       const sentinel = document.querySelector("[data-sentinel]");
-      const templates = [
-        ["check", "$ lpf check /etc/lpf.conf\nok: policy lowered to typed IR"],
-        ["diff", "$ lpf diff --live /etc/lpf.conf\nstatus: lpf-owned nftables drift only"],
-        ["apply", "$ lpf apply --confirm 60s /etc/lpf.conf\npending: confirmation timer armed"],
-        ["confirm", "$ lpf confirm\nok: latest policy marked known-good"],
-        ["explain", "$ lpf explain --src 10.0.0.5 --dst 1.1.1.1 --tcp --dport 443 --in /etc/lpf.conf\ndecision: pass"],
-        ["test", "$ lpf test fixtures/tests/basic.lpf.test\nok: assertions passed"]
+      const examples = [
+        ["format gate", "$ lpf fmt --check configs/policies/web-server.lpf\nok: canonical policy formatting"],
+        ["typecheck json", "$ lpf check --json configs/policies/web-server.lpf\n{\"status\":\"ok\",\"warnings\":[]}"],
+        ["semantic plan", "$ lpf plan --json configs/policies/reverse-proxy.lpf > plan.json\n$ jq '.checksum' plan.json"],
+        ["render nft", "$ lpf rules show --backend nftables configs/policies/nat-gateway.lpf\n# deterministic lpf-owned ruleset"],
+        ["observed diff", "$ nft list ruleset > observed.nft\n$ lpf rules diff --backend nftables \\\n  --observed observed.nft \\\n  configs/policies/web-server.lpf"],
+        ["live drift", "$ sudo lpf diff --live configs/policies/web-server.lpf\nstatus: compare live lpf-owned state"],
+        ["json drift", "$ sudo lpf diff --json --live \\\n  configs/policies/reverse-proxy.lpf\n{\"status\":\"changed\",\"backend\":\"nftables\"}"],
+        ["guarded apply", "$ sudo lpf apply --confirm 60s \\\n  configs/policies/web-server.lpf\npending: rollback timer armed"],
+        ["confirm apply", "$ lpf confirm\nok: latest policy marked known-good"],
+        ["rollback", "$ sudo lpf rollback previous\nok: restored captured backend preimage"],
+        ["packet explain", "$ lpf explain --src 10.0.0.5 \\\n  --dst 1.1.1.1 --tcp --dport 443 \\\n  --in /etc/lpf.conf\ndecision: pass"],
+        ["ssh deny trace", "$ lpf explain --src 203.0.113.99 \\\n  --dst firewall --tcp --dport 22 \\\n  --in configs/policies/web-server.lpf\ndecision: block"],
+        ["dynamic table", "$ sudo lpf table <blocked> add 10.0.0.66\n$ sudo lpf table <blocked> show"],
+        ["state list", "$ sudo lpf state list --json\n[{\"proto\":\"tcp\",\"state\":\"established\"}]"],
+        ["kill flow", "$ sudo lpf state kill --src 10.0.0.1 --dst 10.0.0.2\nok: matching conntrack entries removed"],
+        ["ebpf source", "$ lpf ebpf configs/policies/basic.lpf > lpf_xdp.c\nok: emitted native eBPF/XDP C"],
+        ["bpf object", "$ clang -O2 -target bpf \\\n  -c lpf_xdp.c -o lpf_xdp.o\nok: object ready for verifier lab"],
+        ["z3 proof target", "# roadmap command; not current CLI\n$ lpf prove --solver z3 \\\n  configs/policies/web-server.lpf\n# prove deny/public reachability invariants"],
+        ["openai tools", "$ lpf tools --format openai > tools.json\nok: generated tool-calling schema"],
+        ["agent prompt", "$ lpf tools --format system-prompt > lpf-agent.txt\nok: compact operator prompt emitted"],
+        ["policy test", "$ lpf test --junit evidence/basic.xml fixtures/tests/basic.lpf.test\nok: assertions exported for CI"],
+        ["e2e dry run", "$ sudo lpf e2e run --dry-run \\\n  --scenario-count 50 \\\n  --junit evidence/e2e.xml\nok: rendered scenario catalog"],
+        ["e2e evidence", "$ sudo lpf e2e run \\\n  --scenario-count 552 \\\n  --evidence-dir evidence/lpf\nok: sanitized evidence manifest written"],
+        ["history", "$ lpf history\npolicy-id  checksum  confirmed  rollback"],
+        ["man check", "$ lpf man check\nok: generated man pages are current"],
+        ["man install", "$ sudo lpf man install\nok: operator docs installed"]
       ];
-      let batch = 0;
+      const pageSize = 6;
+      let cursor = 0;
+      let complete = false;
 
       const appendBatch = () => {
+        if (complete) return;
         const fragment = document.createDocumentFragment();
-        templates.forEach(([title, text], index) => {
+        const batch = examples.slice(cursor, cursor + pageSize);
+        batch.forEach(([title, text], index) => {
           const card = document.createElement("article");
           card.className = "loop-card";
-          card.dataset.batch = String(batch);
-          card.innerHTML = `<b>${String(batch + 1).padStart(2, "0")} / ${title}</b><pre><code></code></pre>`;
+          const number = String(cursor + index + 1).padStart(2, "0");
+          card.innerHTML = `<b>${number} / ${title}</b><pre><code></code></pre>`;
           card.querySelector("code").textContent = text;
-          if ((batch + index) % 5 === 0) {
+          if ((cursor + index) % 5 === 0) {
             card.querySelector("b").classList.add("signal");
           }
           fragment.appendChild(card);
         });
+        cursor += batch.length;
+
+        if (cursor >= examples.length) {
+          complete = true;
+          const done = document.createElement("article");
+          done.className = "loop-card";
+          done.innerHTML = "<b>complete</b><pre><code></code></pre>";
+          done.querySelector("code").textContent = "Catalog complete.\nMore policies: configs/policies.";
+          fragment.appendChild(done);
+          sentinel.style.display = "none";
+        }
+
         loop.appendChild(fragment);
-        batch += 1;
       };
 
       appendBatch();
