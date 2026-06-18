@@ -294,7 +294,7 @@ let handle_rules = function
           match read_observed_ruleset source with
           | Error message ->
               prerr_endline message;
-              exit 1
+              exit Lpf.Exit_codes.host_tool_failed
           | Ok observed -> (
               let input = read_file path in
               match Lpf.diff_nftables_policy_text ~file:path ~observed input with
@@ -445,11 +445,13 @@ let handle_diff args =
                      nats = []; rdrs = []; anchors = []; rules = [];
                    }
                  in
-                 let tables_needed =
-                   let cmds = Lpf.Routing.compile plan.Lpf.Plan.policy in
-                   List.filter_map (function
-                     | Lpf.Routing.Ip_route_add_default r -> Some r.table
-                     | _ -> None) cmds in
+                  let tables_needed =
+                    (match Lpf.Routing.compile plan.Lpf.Plan.policy with
+                     | Ok cmds ->
+                         List.filter_map (function
+                           | Lpf.Routing.Ip_route_add_default r -> Some r.table
+                           | _ -> None) cmds
+                     | Error _ -> []) in
                  let observed_routes = List.concat_map (fun table ->
                    match Lpf.Ip.route_show table with
                    | Ok s -> List.map (fun x -> { x with Lpf.Ip.table }) (Lpf.Ip.parse_route_show s)
@@ -463,10 +465,10 @@ let handle_diff args =
                       print_diagnostics diagnostics;
                       exit 1))
        | _ ->
-           (match read_observed_ruleset source with
-            | Error message ->
-                prerr_endline message;
-                exit 1
+            (match read_observed_ruleset source with
+             | Error message ->
+                 prerr_endline message;
+                 exit Lpf.Exit_codes.host_tool_failed
             | Ok observed ->
                 (match Lpf.diff_nftables_policy ~file:path ~observed input with
                  | Ok (diff, diagnostics) ->
@@ -687,8 +689,10 @@ let handle_state args =
           else List.iter (fun (e : Lpf.Conntrack.conntrack_entry) -> Printf.printf "%s %s %s %s %s [%s]\n" e.protocol e.src e.dst e.sport e.dport e.state) entries;
           exit 0
       | Error error ->
+          let stderr = error.Lpf.Conntrack.stderr in
+          let code = if String.contains stderr 'p' then Lpf.Exit_codes.permission_denied else Lpf.Exit_codes.host_tool_failed in
           prerr_endline (Lpf.Conntrack.string_of_run_error error);
-          exit 1)
+          exit code)
   | Some "flush" -> (
       match Lpf.Conntrack.flush () with
       | Ok () ->
@@ -697,7 +701,7 @@ let handle_state args =
           exit 0
       | Error error ->
           prerr_endline (Lpf.Conntrack.string_of_run_error error);
-          exit 1)
+          exit Lpf.Exit_codes.host_tool_failed)
   | Some "kill" ->
       let rest = List.filter (fun a -> a <> "kill" && a <> "--json") args in
       let rec parse_src_dst src dst = function
@@ -709,13 +713,13 @@ let handle_state args =
       let src, dst = parse_src_dst None None rest in
       (match (src, dst) with
        | Some s, Some d -> (
-           match Lpf.Conntrack.delete ~src:s ~dst:d with
-           | Ok () ->
-               Printf.printf "deleted conntrack entries for %s -> %s\n" s d;
-               exit 0
-           | Error error ->
-               prerr_endline (Lpf.Conntrack.string_of_run_error error);
-               exit 1)
+            match Lpf.Conntrack.delete ~src:s ~dst:d with
+            | Ok () ->
+                Printf.printf "deleted conntrack entries for %s -> %s\n" s d;
+                exit 0
+            | Error error ->
+                prerr_endline (Lpf.Conntrack.string_of_run_error error);
+                exit Lpf.Exit_codes.host_tool_failed)
        | _ ->
            prerr_endline "state kill: specify --src and --dst addresses";
            exit 64)
@@ -731,7 +735,7 @@ let handle_state args =
           exit 0
       | Error error ->
           prerr_endline (Lpf.Conntrack.string_of_run_error error);
-          exit 1)
+          exit Lpf.Exit_codes.host_tool_failed)
   | _ ->
       prerr_endline "usage: lpf state [--json] <list|show|flush|kill>";
       exit 64
@@ -747,7 +751,7 @@ let handle_table args =
           exit 0
       | Error error ->
           prerr_endline (Lpf.Nft.string_of_run_error error);
-          exit 1)
+          exit Lpf.Exit_codes.host_tool_failed)
   | name :: "delete" :: element :: _ -> (
       match Lpf.Table.delete name element with
       | Ok () ->
@@ -755,16 +759,16 @@ let handle_table args =
           exit 0
       | Error error ->
           prerr_endline (Lpf.Nft.string_of_run_error error);
-          exit 1)
+          exit Lpf.Exit_codes.host_tool_failed)
   | name :: "replace" :: rest ->
       let elements = List.filter (fun s -> String.length s > 0 && not (String.starts_with ~prefix:"-" s)) rest in
       (match Lpf.Table.replace name elements with
        | Ok () ->
-           Printf.printf "replaced table %s with %d elements\n" name (List.length elements);
-           exit 0
+            Printf.printf "replaced table %s with %d elements\n" name (List.length elements);
+            exit 0
        | Error error ->
-           prerr_endline (Lpf.Nft.string_of_run_error error);
-           exit 1)
+            prerr_endline (Lpf.Nft.string_of_run_error error);
+            exit Lpf.Exit_codes.host_tool_failed)
   | name :: "show" :: _ -> (
       match Lpf.Table.counters name with
       | Ok output ->
@@ -773,7 +777,7 @@ let handle_table args =
           exit 0
       | Error error ->
           prerr_endline (Lpf.Nft.string_of_run_error error);
-          exit 1)
+          exit Lpf.Exit_codes.host_tool_failed)
   | name :: "counters" :: _ -> (
       match Lpf.Table.counters name with
       | Ok output ->
@@ -782,7 +786,7 @@ let handle_table args =
           exit 0
       | Error error ->
           prerr_endline (Lpf.Nft.string_of_run_error error);
-          exit 1)
+          exit Lpf.Exit_codes.host_tool_failed)
   | name :: "flush" :: _ -> (
       match Lpf.Table.flush name with
       | Ok () ->
@@ -790,10 +794,89 @@ let handle_table args =
           exit 0
       | Error error ->
           prerr_endline (Lpf.Nft.string_of_run_error error);
-          exit 1)
+          exit Lpf.Exit_codes.host_tool_failed)
   | _ ->
       prerr_endline "usage: lpf table <name> <add|delete|replace|show|flush|counters> [...]";
       exit 64
+
+let handle_prove args =
+  let all_mode = List.mem "--all" args in
+  let clean_args = List.filter (fun a -> a <> "--all" && not (String.starts_with ~prefix:"-" a)) args in
+  let rec find_policy inv = function
+    | [] -> (String.concat " " (List.rev inv), None)
+    | a :: _rest when String.ends_with ~suffix:".lpf" a -> (String.concat " " (List.rev inv), Some a)
+    | a :: rest -> find_policy (a :: inv) rest
+  in
+  let invariant_text, policy_opt = find_policy [] clean_args in
+  match policy_opt with
+  | None ->
+      prerr_endline "usage: lpf prove [--all] <invariant> <policy>";
+      exit 64
+  | Some policy_path ->
+      if String.trim invariant_text = "" && not all_mode then (
+        prerr_endline "usage: lpf prove [--all] <invariant> <policy>";
+        exit 64)
+      else
+        let input = read_file policy_path in
+        match Lpf.check_policy_text ~file:policy_path input with
+        | { Lpf.Policy.policy = None; _ } ->
+            prerr_endline "policy validation failed; run lpf check first";
+            exit 1
+        | { Lpf.Policy.policy = Some policy; _ } -> (
+            match Lpf.Ir.of_policy policy with
+            | Error diagnostics ->
+                print_diagnostics diagnostics;
+                exit 1
+            | Ok ir ->
+                if all_mode then
+                  let invariants =
+                    if Sys.file_exists invariant_text then
+                      let lines = String.split_on_char '\n' (read_file invariant_text) in
+                      List.filter (fun l -> String.trim l <> "" && not (String.starts_with ~prefix:"#" (String.trim l))) lines
+                    else
+                      String.split_on_char '\n' invariant_text |> List.filter (fun l -> String.trim l <> "")
+                  in
+                  let results = List.map (fun inv_line ->
+                    let inv = String.trim inv_line in
+                    let result = Lpf.Prove.prove ir inv in
+                    Printf.printf "Invariant: %s\n" inv;
+                    print_endline (Lpf.Prove.format_proof result);
+                    Printf.printf "\n";
+                    result) invariants
+                  in
+                  let all_proved = List.for_all (fun r -> r.Lpf.Prove.proved) results in
+                  Printf.printf "Summary: %d proved, %d failed, %d total\n"
+                    (List.length (List.filter (fun r -> r.Lpf.Prove.proved) results))
+                    (List.length (List.filter (fun r -> not r.Lpf.Prove.proved) results))
+                    (List.length results);
+                  if all_proved then exit 0 else exit 1
+                else
+                  let result = Lpf.Prove.prove ir invariant_text in
+                  print_endline (Lpf.Prove.format_proof result);
+                  if result.Lpf.Prove.proved then exit 0 else exit 1)
+
+let handle_ebpf args =
+  let policy_opt = List.find_opt (fun a -> String.ends_with ~suffix:".lpf" a || String.equal a "/etc/lpf.conf") args in
+  match policy_opt with
+  | None ->
+      prerr_endline "usage: lpf ebpf <policy>";
+      exit 64
+  | Some path -> (
+      let input = read_file path in
+      let result = Lpf.check_policy_text ~file:path input in
+      match result.policy with
+      | None ->
+          print_diagnostics result.diagnostics;
+          exit 1
+      | Some policy -> (
+          match Lpf.ir_of_policy policy with
+          | Error diagnostics ->
+              print_diagnostics (result.diagnostics @ diagnostics);
+              exit 1
+          | Ok ir ->
+              print_diagnostics result.diagnostics;
+              print_string (Lpf.Ebpf.compile_to_c ir);
+              exit 0))
 
 let parse_e2e_args args =
   let rec loop mode scenario_count junit_path allure_dir evidence_dir kernel_id dry_run = function
@@ -1009,6 +1092,8 @@ let () =
   | _ :: "rules" :: args -> handle_rules args
   | _ :: "state" :: args -> handle_state args
   | _ :: "e2e" :: args -> handle_e2e args
+  | _ :: "prove" :: args -> handle_prove args
+  | _ :: "ebpf" :: args -> handle_ebpf args
   | _ :: "table" :: args -> handle_table args
   | _ :: "man" :: args -> handle_man args
   | _ :: "tools" :: args -> handle_tools args

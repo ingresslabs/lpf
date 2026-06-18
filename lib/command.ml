@@ -13,6 +13,7 @@ type command =
   | Rules
   | History
   | E2e
+  | Prove
   | Man
   | Tools
   | Version
@@ -48,6 +49,7 @@ let all_commands =
     ("rules", Rules, "show or diff generated backend rules");
     ("history", History, "show policy apply history and rollback points");
     ("e2e", E2e, "run Firecracker guest end-to-end networking scenarios");
+    ("prove", Prove, "formally verify policy invariants via SMT solving");
     ("man", Man, "generate, check, or install man pages");
     ("tools", Tools, "emit tool-calling schemas for AI agents");
     ("version", Version, "print lpf version");
@@ -69,6 +71,8 @@ let command_name = function
   | Rules -> "rules"
   | History -> "history"
   | E2e -> "e2e"
+  | Prove -> "prove"
+
   | Man -> "man"
   | Tools -> "tools"
   | Version -> "version"
@@ -395,6 +399,32 @@ let command_docs =
       see_also = [ "lpf-test(8)"; "lpf-diff(8)" ];
     };
     {
+      command = Prove;
+      section = 8;
+      synopsis = "lpf prove [--all] <invariant> <policy>";
+      description =
+        [
+          "Formally verify a security invariant against a policy using SMT solving.";
+          "The invariant is expressed as: block|pass|reject [in|out] [from <addr>] [to <addr>] [proto <proto>] [port <port>] [unless ...]";
+          "The unless clause supports from <addr>, to <addr>, proto <proto>, and port <port> exceptions.";
+          "With --all, read multiple invariants (one per line) from the file specified as the invariant argument.";
+          "If the solver proves the invariant holds, no packet can violate it.";
+          "If a counterexample is found, the packet fields are printed in human-readable form.";
+          "Requires the z3 solver binary in PATH.";
+        ];
+      options = [ ("--all", "treat the invariant argument as a file with one invariant per line") ];
+      examples =
+        [
+          "lpf prove \"block in from any to <db_subnet> port 5432 unless from <api_servers>\" fixtures/policies/basic.lpf";
+          "lpf prove \"pass out proto tcp from any to any port 443\" /etc/lpf.conf";
+          "lpf prove \"reject in proto tcp from any to any port 22\" fixtures/policies/reject.lpf";
+          "lpf prove --all invariants.txt /etc/lpf.conf";
+        ];
+      files = shared_files;
+      safety_notes = [ "This command is read-only and does not change host state." ];
+      see_also = [ "lpf-check(8)"; "lpf-explain(8)"; "lpf-test(8)" ];
+    };
+    {
       command = Man;
       section = 8;
       synopsis = "lpf man <generate|check|install>";
@@ -453,7 +483,7 @@ let help () =
 
 let command_status = function
   | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules
-  | History | E2e | Man | Tools ->
+  | History | E2e | Prove | Man | Tools ->
       "implemented"
   | Version | Help -> "implemented"
 

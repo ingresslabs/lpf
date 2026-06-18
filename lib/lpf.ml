@@ -13,6 +13,7 @@ type command = Command.command =
   | Rules
   | History
   | E2e
+  | Prove
   | Man
   | Tools
   | Version
@@ -53,6 +54,11 @@ module Apply_guard = Apply_guard
 module Conntrack = Conntrack
 module Table = Table
 module Ip = Ip
+module Sysctl = Sysctl
+module Observability = Observability
+module Exit_codes = Exit_codes
+module Prove = Prove
+module Ebpf = Ebpf
 module E2e = E2e
 module Process = Process
 module File_util = File_util
@@ -80,6 +86,9 @@ let diff_nftables_policy_text = Pipeline.diff_nftables_policy_text
 let diff_nftables_policy = Pipeline.diff_nftables_policy
 let diff_tc_policy = Pipeline.diff_tc_policy
 let diff_routing_policy = Pipeline.diff_routing_policy
+let render_sysctl_policy_text = Pipeline.render_sysctl_policy_text
+let diff_sysctl_policy = Pipeline.diff_sysctl_policy
+let diff_conntrack_policy = Pipeline.diff_conntrack_policy
 let explain_policy_text = Pipeline.explain_policy_text
 let run_policy_tests = Pipeline.run_policy_tests
 let apply_policy_text = Apply_guard.apply_policy_text

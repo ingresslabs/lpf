@@ -13,6 +13,7 @@ type command = Command.command =
   | Rules
   | History
   | E2e
+  | Prove
   | Man
   | Tools
   | Version
@@ -53,6 +54,11 @@ module Apply_guard : module type of Apply_guard
 module Conntrack : module type of Conntrack
 module Table : module type of Table
 module Ip : module type of Ip
+module Sysctl : module type of Sysctl
+module Observability : module type of Observability
+module Exit_codes : module type of Exit_codes
+module Prove : module type of Prove
+module Ebpf : module type of Ebpf
 module E2e : module type of E2e
 module Process : module type of Process
 module File_util : module type of File_util
@@ -101,6 +107,18 @@ val diff_routing_policy :
   observed_routes:Ip.observed_route list ->
   string ->
   (Routing.diff_result * Policy.diagnostic list, Policy.diagnostic list) result
+val render_sysctl_policy_text :
+  ?file:string -> string -> (string * Policy.diagnostic list, Policy.diagnostic list) result
+val diff_sysctl_policy :
+  ?file:string ->
+  observed:string ->
+  string ->
+  (Sysctl.diff_result * Policy.diagnostic list, Policy.diagnostic list) result
+val diff_conntrack_policy :
+  ?file:string ->
+  observed:string ->
+  string ->
+  (Conntrack.diff_result * Policy.diagnostic list, Policy.diagnostic list) result
 val explain_policy_text :
   ?file:string ->
   packet:Explain.packet ->
