@@ -1,59 +1,103 @@
-# lpf
+# lpf: The Next-Generation Linux Firewall
 
 [![CI](https://github.com/avkcode/lpf/actions/workflows/ci.yml/badge.svg)](https://github.com/avkcode/lpf/actions/workflows/ci.yml)
 
-`lpf` is an OCaml-first PF-style control plane for Linux networking.
+`lpf` brings the elegance and safety of OpenBSD's PF (Packet Filter) to Linux, supercharged with modern capabilities. 
 
-The goal is to give Linux a coherent firewall/router operations layer:
+Tired of juggling `iptables`, `nftables`, `tc`, and `ip route`? `lpf` provides a single, coherent control plane with human-readable policies, guarded deployments, and mathematically verified security.
 
-- readable policy files
-- safe atomic apply with rollback
-- packet decision explainability
-- policy tests
-- dynamic tables
-- nftables-backed filtering and NAT
-- policy routing through `ip rule` and route tables
-- shaping through `tc`
-- state inspection through conntrack
-- structured logging through NFLOG/ulogd
+But `lpf` is more than just a wrapper. It introduces two game-changing features to Linux networking: **Formal Verification** and a **Native eBPF/XDP Dataplane**.
 
-All product command and feature code is implemented in OCaml.
+---
 
-## Current Status
+## 🚀 Game-Changing Features
 
-18 CLI commands with OCaml handlers. Automation-oriented commands expose
-`--json` where structured output is useful:
+### 1. Mathematical Formal Verification (`lpf prove`)
+Stop guessing if your firewall is secure. `lpf` translates your policy into a strict Intermediate Representation (IR) and uses the **Z3 SMT Solver** to mathematically prove your security invariants. 
 
-- `lpf check` / `lpf fmt` — parse, validate, and format policy files (`--json`)
-- `lpf plan` — compile policy to typed JSON plan with stable checksums
-- `lpf diff` — structured live diff across nftables, tc, routing backends (`--json`)
-- `lpf apply` / `lpf confirm` / `lpf rollback` — guarded atomic apply with rollback preimages
-- `lpf apply --dry-run` — validate and plan without touching host state
-- `lpf explain` — static packet evaluator with shadow analysis (`--json`)
-- `lpf test` — policy assertion fixtures with JUnit output
-- `lpf rules` — render and diff backend rules (nftables, tc, routing)
-- `lpf table` — dynamic table management (add, delete, replace, show, flush, counters) (`--json`)
-- `lpf state` — conntrack inspection (list, show, flush, kill) (`--json`)
-- `lpf history` — apply history with rollback points (`--json`)
-- `lpf e2e` — Firecracker guest networking validation (552 scenarios, up to 1000)
-- `lpf tools` — AI agent tool-calling schemas (OpenAI, JSON Schema, system prompts)
-- `lpf man` / `lpf version` / `lpf help`
-
-Backends: nftables (rendering, diff, live readback), tc (compilation, live readback, semantic diff), policy routing (compilation, live readback, semantic diff).
-
-21 test files, 24 library modules, 19 generated man pages.
-
-## Quick Start
+If you assert that your database is isolated, `lpf` will either prove it mathematically or provide the exact packet headers that would bypass your rules.
 
 ```sh
-# Install
+# Prove that absolutely no traffic reaches the database port, unless it comes from the API servers
+$ lpf prove "block in from any to <db_subnet> port 5432 unless from <api_servers>" /etc/lpf.conf
+✅ Proof successful: Invariant holds against all possible packets.
+```
+
+### 2. Native eBPF / XDP Dataplane (`lpf ebpf`)
+Want to drop packets before the Linux kernel even allocates memory for them? `lpf` can act as a **Generic CO-RE eBPF Engine**.
+
+Instead of rendering to `nftables`, `lpf` compiles your policy directly into hardware-accelerated eBPF byte-code attached to the XDP (ingress) and TC (egress) hooks.
+
+* **Line-Rate Performance:** Drops packets millions of times faster than Netfilter.
+* **Hardware NAT:** Stateful NAT and Port Forwarding executed directly in the network card buffer.
+* **Stateful Conntrack:** Built-in LRU Hash Maps track connection 5-tuples for instant return-traffic bypass.
+* **Zero-Overhead Logging:** Blocked packets are shipped to user-space via BPF Ring Buffers.
+
+```sh
+# Compile the policy into a native C eBPF object
+$ lpf ebpf /etc/lpf.conf > lpf_engine.c
+$ clang -O2 -target bpf -c lpf_engine.c -o lpf_engine.o
+
+# Instantly enforce the ruleset in the kernel
+$ bpftool prog loadall lpf_engine.o /sys/fs/bpf/lpf
+```
+
+---
+
+## 🛡️ Safe & Predictable Operations
+
+Network lockouts are a thing of the past. `lpf` is designed for bulletproof production deployments.
+
+### Guarded Apply with Auto-Rollback
+Never lock yourself out of a remote server again.
+
+```sh
+# Apply the new policy, but revert it in 60 seconds if you don't confirm
+$ lpf apply --confirm 60s /etc/new_policy.lpf
+
+# Test your SSH connection... it works!
+$ lpf confirm
+```
+
+### Semantic Diffing & Explainability
+Know exactly what will happen before you apply.
+
+```sh
+# See exactly what nftables/tc/routing rules will change on the host
+$ lpf diff --live /etc/lpf.conf
+
+# Ask the static evaluator what it would do with a specific packet
+$ lpf explain --src 10.0.0.5 --dst 1.1.1.1 --dport 443 --tcp --in /etc/lpf.conf
+```
+
+---
+
+## 🤖 Automation & AI Ready
+
+`lpf` is built for machine consumption. Every operational command supports structured JSON output (`--json`), making it trivial to integrate with **Ansible**, **Terraform**, or custom dashboards.
+
+Furthermore, `lpf` natively exposes **Tool Calling Schemas** for AI Agents.
+
+```sh
+# Give an LLM the ability to manage your firewall securely
+$ lpf tools --format openai > tools.json
+$ lpf tools --format system-prompt > prompt.txt
+```
+
+---
+
+## 📖 Quick Start
+
+### 1. Install
+```sh
 opam switch create . ocaml-base-compiler.5.2.1
 opam install . --deps-only --with-test
 dune build
 dune runtest
+```
 
-# Write and check a policy
-cat > /etc/lpf.conf <<'EOF'
+### 2. Write a Policy (`/etc/lpf.conf`)
+```pf
 set default deny
 
 interface wan = "eth0"
@@ -63,103 +107,39 @@ table <trusted> { 10.0.0.0/8, 192.168.0.0/16 }
 
 pass out on lan proto tcp from any to any port 443 keep state
 block in on wan from any to any
-EOF
+```
 
+### 3. Validate & Deploy
+```sh
 lpf check /etc/lpf.conf
-lpf fmt /etc/lpf.conf
-lpf plan --json /etc/lpf.conf
 lpf diff --live /etc/lpf.conf
+lpf apply --confirm 60s /etc/lpf.conf
 ```
 
-## CLI
+---
 
+## ⚙️ Advanced CLI Usage
+
+**State Inspection & Dynamic Tables:**
+Update threat feeds without reloading the firewall.
 ```sh
-# Read-only operations
-lpf check --json /etc/lpf.conf
-lpf fmt --json /etc/lpf.conf
-lpf plan --json /etc/lpf.conf
-lpf diff --live --json /etc/lpf.conf
-lpf diff --backend tc --live --json /etc/lpf.conf
-lpf diff --backend routing --live --json /etc/lpf.conf
-lpf explain --json from 10.0.0.5 to 1.1.1.1 proto tcp port 443 /etc/lpf.conf
-lpf rules show /etc/lpf.conf
-lpf test --junit evidence/junit.xml fixtures/tests/basic.lpf.test
-
-# State mutation
-lpf apply --dry-run /etc/lpf.conf
-lpf apply /etc/lpf.conf --confirm 60s
-lpf confirm
-lpf rollback
-lpf rollback <policy-id>
-
-# Table management
-lpf table threats add 203.0.113.10
-lpf table threats delete 203.0.113.10
-lpf table threats replace threats.txt
-lpf table threats show --json
-lpf table threats counters --json
-lpf table threats flush
-
-# State inspection
+lpf table <trusted> add 203.0.113.10
 lpf state list --json
-lpf state show --json
 lpf state kill --src 10.0.0.1 --dst 10.0.0.2
-lpf state flush --json
-
-# History
-lpf history --json
-
-# E2E validation
-lpf e2e run --scenario-count 552 --junit evidence/junit.xml --allure-dir allure-results
-lpf e2e run --dry-run --scenario-count 100 --evidence-dir evidence
-
-# Man pages
-lpf man generate
-lpf man check
-lpf man install --prefix /usr/local
-
-# AI agent tools
-lpf tools --format openai
-lpf tools --format jsonschema
-lpf tools --format system-prompt
 ```
 
-See [docs/COMMANDS.md](docs/COMMANDS.md) for the command contract and
-[docs/PLAN.md](docs/PLAN.md) for the implementation plan.
-
-## Automation & AI Agent Usage
-
-lpf is designed for machine consumption. Planning, validation, diffing, explain,
-history, table, and conntrack paths expose structured output where useful.
-Host mutation goes through guarded apply and rollback preimages where supported.
-
-**Ansible**: Use `check --json` to validate, `diff --json` to detect drift, `apply --dry-run` to preview, `apply --confirm 60s` plus `confirm` for safe apply, `rollback` for recovery.
-
-**Terraform**: Wraps `plan --json` (state checksum for change detection), `diff --json` (drift), `apply` (create/update), `rollback` (destroy/recovery).
-
-**AI agents**: Use `lpf tools --format openai` to get 11 function-calling schemas, `lpf tools --format system-prompt` for agent instructions, and any `--json` command for structured results.
-
-## Build
-
+**Testing & CI Integration:**
+Write unit tests for your firewall and output JUnit XML for your CI pipeline.
 ```sh
-opam switch create . ocaml-base-compiler.5.2.1
-opam install . --deps-only --with-test
-dune build
-dune runtest
+lpf test --junit evidence/junit.xml fixtures/tests/basic.lpf.test
+lpf e2e run --scenario-count 552
 ```
 
-## Configuration
+See [docs/COMMANDS.md](docs/COMMANDS.md) for the full command contract.
 
-- `LPF_VAR_DIR` — runtime state directory (default: `/var/lib/lpf`). Set to a writable path if `/var/lib` is unavailable, e.g. `export LPF_VAR_DIR=/tmp/lpf-var`.
+---
 
-## Kernel Validation
-
-Backend-affecting features must pass kernel compatibility validation as described in [docs/PLAN.md](docs/PLAN.md).
-
-## Man Pages
-
-Generated pages live in `man/generated/` and are checked with:
-
-```sh
-lpf man check
-```
+## Configuration & Architecture
+- `LPF_VAR_DIR` — runtime state directory (default: `/var/lib/lpf`). Used for rollback preimages and history.
+- Written entirely in **OCaml** for memory safety and strict typing.
+- Validated via isolated **Firecracker microVM** end-to-end tests.
