@@ -1,11 +1,17 @@
 let var_dir = try Sys.getenv "LPF_VAR_DIR" with _ -> "/var/lib/lpf"
 let rollback_dir = Filename.concat var_dir "rollback"
-let preimage_for_id id = Filename.concat rollback_dir ("preimage.nft." ^ id)
+
+let preimage_nft_for_id id = Filename.concat rollback_dir ("preimage.nft." ^ id)
+let preimage_tc_devices_for_id id = Filename.concat rollback_dir ("preimage.tc.devices." ^ id)
+let preimage_routing_tables_for_id id = Filename.concat rollback_dir ("preimage.routing.tables." ^ id)
+let preimage_sysctl_for_id id = Filename.concat rollback_dir ("preimage.sysctl." ^ id)
+
 let preimage_path = Filename.concat rollback_dir "preimage.nft"
 let preimage_tc_path = Filename.concat rollback_dir "preimage.tc"
 let preimage_tc_devices_path = Filename.concat rollback_dir "preimage.tc.devices"
 let preimage_routing_path = Filename.concat rollback_dir "preimage.routing"
 let preimage_routing_tables_path = Filename.concat rollback_dir "preimage.routing.tables"
+let preimage_sysctl_path = Filename.concat rollback_dir "preimage.sysctl"
 let watchdog_pid_path = Filename.concat rollback_dir "watchdog.pid"
 
 let ensure_dir = File_util.ensure_dir ~strict:false
@@ -54,12 +60,22 @@ let default_runners = {
     | Error error -> Error error);
 }
 
-let cleanup_rollback_files () =
-  let paths = [ preimage_path; preimage_tc_path; preimage_tc_devices_path;
-                preimage_routing_path; preimage_routing_tables_path; watchdog_pid_path ] in
-  List.iter (fun path -> if Sys.file_exists path then Sys.remove path) paths
+let all_rollback_files () =
+  [ preimage_path; preimage_tc_path; preimage_tc_devices_path;
+    preimage_routing_path; preimage_routing_tables_path;
+    preimage_sysctl_path; watchdog_pid_path ]
 
-let restore_tc runner _path devices_path =
+let all_rollback_files_for_id id =
+  [ preimage_nft_for_id id; preimage_tc_devices_for_id id;
+    preimage_routing_tables_for_id id; preimage_sysctl_for_id id ]
+
+let cleanup_rollback_files () =
+  List.iter (fun path -> if Sys.file_exists path then Sys.remove path) (all_rollback_files ())
+
+let cleanup_rollback_files_for_id id =
+  List.iter (fun path -> if Sys.file_exists path then Sys.remove path) (all_rollback_files_for_id id)
+
+let restore_tc runner devices_path =
   let devices =
     if Sys.file_exists devices_path then
       let ic = open_in devices_path in
@@ -102,6 +118,16 @@ let restore_routing runner tables_path =
       in
       loop tables
 
+let restore_sysctl path =
+  if not (Sys.file_exists path) then Ok ()
+  else
+    let json =
+      let ic = open_in path in
+      Fun.protect ~finally:(fun () -> close_in ic) (fun () -> really_input_string ic (in_channel_length ic))
+    in
+    let entries = Sysctl.of_json json in
+    Sysctl.restore entries
+
 let rollback_now_with_runner apply_runner tc_runner routing_runner () =
   if not (Sys.file_exists preimage_path) then Error [ error_diagnostic "no preimage found" ]
   else
@@ -109,21 +135,31 @@ let rollback_now_with_runner apply_runner tc_runner routing_runner () =
       let ic = open_in preimage_path in
       Fun.protect ~finally:(fun () -> close_in ic) (fun () -> really_input_string ic (in_channel_length ic))
     in
-    let tc_result = restore_tc tc_runner preimage_tc_path preimage_tc_devices_path in
+    let tc_result = restore_tc tc_runner preimage_tc_devices_path in
     let routing_result = restore_routing routing_runner preimage_routing_tables_path in
+    let sysctl_result = restore_sysctl preimage_sysctl_path in
     match apply_runner preimage with
     | Ok () ->
         cleanup_rollback_files ();
-        (match tc_result with
-         | Error error -> Error [ error_diagnostic ("tc rollback failed: " ^ Nft.string_of_run_error error) ]
-         | Ok () ->
-             (match routing_result with
-              | Error error -> Error [ error_diagnostic ("routing rollback failed: " ^ Nft.string_of_run_error error) ]
-              | Ok () -> Ok ((), [])))
+        begin match tc_result, routing_result, sysctl_result with
+        | Ok (), Ok (), Ok () -> Ok ((), [])
+        | _ ->
+            let diags = [] in
+            let diags = match tc_result with
+              | Ok () -> diags
+              | Error e -> error_diagnostic ("tc rollback failed: " ^ Nft.string_of_run_error e) :: diags
+            in
+            let diags = match routing_result with
+              | Ok () -> diags
+              | Error e -> error_diagnostic ("routing rollback failed: " ^ Nft.string_of_run_error e) :: diags
+            in
+            let diags = match sysctl_result with
+              | Ok () -> diags
+              | Error e -> error_diagnostic ("sysctl rollback failed: " ^ e) :: diags
+            in
+            Ok ((), diags)
+        end
     | Error error ->
-        (match tc_result, routing_result with
-         | Ok (), Ok () -> ()
-         | _ -> ());
         cleanup_rollback_files ();
         Error [ error_diagnostic (Nft.string_of_run_error error) ]
 
@@ -152,21 +188,87 @@ let get_history () =
   | Ok h -> Ok (h, [])
   | Error message -> Error [ error_diagnostic message ]
 
-let rollback_by_id_with_runner runner id =
-  let path = preimage_for_id id in
-  if not (Sys.file_exists path) then Error [ error_diagnostic ("no preimage found for policy " ^ id) ]
+let rollback_by_id_with_runner apply_runner tc_runner routing_runner id =
+  let nft_path = preimage_nft_for_id id in
+  if not (Sys.file_exists nft_path) then Error [ error_diagnostic ("no preimage found for policy " ^ id) ]
   else
     let preimage =
-      let ic = open_in path in
+      let ic = open_in nft_path in
       Fun.protect ~finally:(fun () -> close_in ic) (fun () -> really_input_string ic (in_channel_length ic))
     in
-    match runner preimage with
+    let tc_result = restore_tc tc_runner (preimage_tc_devices_for_id id) in
+    let routing_result = restore_routing routing_runner (preimage_routing_tables_for_id id) in
+    let sysctl_result = restore_sysctl (preimage_sysctl_for_id id) in
+    match apply_runner preimage with
     | Ok () ->
-        Sys.remove path;
-        Ok ((), [])
-    | Error error -> Error [ error_diagnostic (Nft.string_of_run_error error) ]
+        cleanup_rollback_files_for_id id;
+        begin match tc_result, routing_result, sysctl_result with
+        | Ok (), Ok (), Ok () -> Ok ((), [])
+        | _ ->
+            let diags = [] in
+            let diags = match tc_result with
+              | Ok () -> diags
+              | Error e -> error_diagnostic ("tc rollback failed: " ^ Nft.string_of_run_error e) :: diags
+            in
+            let diags = match routing_result with
+              | Ok () -> diags
+              | Error e -> error_diagnostic ("routing rollback failed: " ^ Nft.string_of_run_error e) :: diags
+            in
+            let diags = match sysctl_result with
+              | Ok () -> diags
+              | Error e -> error_diagnostic ("sysctl rollback failed: " ^ e) :: diags
+            in
+            Ok ((), diags)
+        end
+    | Error error ->
+        cleanup_rollback_files_for_id id;
+        Error [ error_diagnostic (Nft.string_of_run_error error) ]
 
-let rollback_by_id id = rollback_by_id_with_runner default_runners.apply id
+let rollback_by_id id = rollback_by_id_with_runner default_runners.apply default_runners.tc_delete default_runners.routing_flush_table id
+
+let save_preimage_files history_entry nft_preimage text plan =
+  write_file preimage_path nft_preimage;
+  write_file (preimage_nft_for_id history_entry.History.id) nft_preimage;
+  (match Pipeline.render_tc_policy_text text with
+   | Ok (tc_rendered, _) ->
+       write_file preimage_tc_path ("# preimage tc\n" ^ tc_rendered);
+       let tc_plan = Tc.compile plan in
+       let devices =
+         List.fold_left (fun acc cmd ->
+           match cmd with
+           | Tc.Qdisc_add q -> q.device :: acc
+           | Tc.Class_add c -> c.device :: acc)
+         [] tc_plan
+         |> List.sort_uniq String.compare
+       in
+       let device_lines = String.concat "\n" devices ^ "\n" in
+       write_file preimage_tc_devices_path device_lines;
+       write_file (preimage_tc_devices_for_id history_entry.History.id) device_lines
+   | Error _ -> ());
+  (match Pipeline.render_routing_policy_text text with
+   | Ok (routing_rendered, _) ->
+       write_file preimage_routing_path ("# preimage routing\n" ^ routing_rendered);
+       let routing_plan = Routing.compile plan in
+       let tables =
+         List.filter_map (fun cmd ->
+           match cmd with
+           | Routing.Ip_rule_add r -> Some r.table
+           | Routing.Ip_route_add_default r -> Some r.table)
+         routing_plan
+         |> List.sort_uniq Int.compare
+       in
+       let table_lines = String.concat "\n" (List.map string_of_int tables) ^ "\n" in
+       write_file preimage_routing_tables_path table_lines;
+       write_file (preimage_routing_tables_for_id history_entry.History.id) table_lines
+   | Error _ -> ());
+  (try
+     let snapshot = Sysctl.snapshot () in
+     if snapshot <> [] then (
+       let sysctl_json = Sysctl.to_json snapshot in
+       write_file preimage_sysctl_path sysctl_json;
+       write_file (preimage_sysctl_for_id history_entry.History.id) sysctl_json
+     )
+   with _ -> ())
 
 let apply_policy_text_with_runners runners ?file ?confirm text =
   match Pipeline.render_nftables_policy_text ?file text with
@@ -212,59 +314,36 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
                    Error (diagnostics @ [ error_diagnostic ?file "invalid confirmation duration" ])
                | Some seconds ->
                    ensure_rollback_dir ();
-                   write_file preimage_path nft_preimage;
-                   write_file (preimage_for_id history_entry.History.id) nft_preimage;
-                   (match Pipeline.render_tc_policy_text ?file text with
-                    | Ok (tc_rendered, _) ->
-                        write_file preimage_tc_path ("# preimage tc\n" ^ tc_rendered);
-                        (match Pipeline.plan_policy_text ?file text with
-                         | Ok (plan, _) ->
-                             let tc_plan = Tc.compile plan.policy in
-                             let devices =
-                               List.fold_left (fun acc cmd ->
-                                 match cmd with
-                                 | Tc.Qdisc_add q -> q.device :: acc
-                                 | Tc.Class_add c -> c.device :: acc)
-                               [] tc_plan
-                               |> List.sort_uniq String.compare
-                             in
-                             write_file preimage_tc_devices_path (String.concat "\n" devices ^ "\n")
-                         | Error _ -> ())
-                    | Error _ -> ());
-                   (match Pipeline.render_routing_policy_text ?file text with
-                    | Ok (routing_rendered, _) ->
-                        write_file preimage_routing_path ("# preimage routing\n" ^ routing_rendered);
-                        (match Pipeline.plan_policy_text ?file text with
-                         | Ok (plan, _) ->
-                             let routing_plan = Routing.compile plan.policy in
-                             let tables =
-                               List.filter_map (fun cmd ->
-                                 match cmd with
-                                 | Routing.Ip_rule_add r -> Some r.table
-                                 | Routing.Ip_route_add_default r -> Some r.table)
-                               routing_plan
-                               |> List.sort_uniq Int.compare
-                             in
-                             write_file preimage_routing_tables_path (String.concat "\n" (List.map string_of_int tables) ^ "\n")
-                         | Error _ -> ())
-                    | Error _ -> ());
+                   (match Pipeline.plan_policy_text ?file text with
+                    | Ok (plan, _) -> save_preimage_files history_entry nft_preimage text plan.policy
+                    | Error _ ->
+                        write_file preimage_path nft_preimage;
+                        write_file (preimage_nft_for_id history_entry.History.id) nft_preimage);
                    let lpf_exe =
                      let arg0 = Sys.argv.(0) in
                      if Filename.is_relative arg0 then
-                       let cwd = Sys.getcwd () in
-                       Filename.concat cwd arg0
+                       Filename.concat (Sys.getcwd ()) arg0
                      else arg0
                    in
                    let watchdog_command =
                      Printf.sprintf "sleep %d && %s rollback --now" seconds lpf_exe
                    in
                    let pid =
-                     Unix.create_process "/bin/sh"
-                       [| "/bin/sh"; "-c"; watchdog_command |]
-                       Unix.stdin Unix.stdout Unix.stderr
+                     try
+                       Some (Unix.create_process "/bin/sh"
+                         [| "/bin/sh"; "-c"; watchdog_command |]
+                         Unix.stdin Unix.stdout Unix.stderr)
+                     with Unix.Unix_error (_error, _, _) ->
+                       cleanup_rollback_files ();
+                       None
                    in
-                   write_file watchdog_pid_path (string_of_int pid);
-                   Ok ((), diagnostics)
+                   match pid with
+                   | None ->
+                       Error (diagnostics @ [ error_diagnostic ?file
+                         ("watchdog process failed to start") ])
+                   | Some pid ->
+                       write_file watchdog_pid_path (string_of_int pid);
+                       Ok ((), diagnostics)
            end)
 
 let apply_policy_text = apply_policy_text_with_runners default_runners

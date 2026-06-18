@@ -59,6 +59,17 @@ let restore (entries : t) =
   in
   loop [] entries
 
+let of_json_line line =
+  let key = History.find_json_value line "key" in
+  let value = History.find_json_value line "value" in
+  if key = "" then None else Some { key; value }
+
+let of_json text =
+  String.split_on_char '\n' text
+  |> List.filter_map (fun line ->
+    let line = String.trim line in
+    if String.length line = 0 then None else of_json_line line)
+
 let to_string (entries : t) =
   String.concat "\n"
     (List.map (fun e -> Printf.sprintf "%s = %s" e.key e.value) entries)

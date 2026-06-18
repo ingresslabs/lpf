@@ -709,7 +709,7 @@ let handle_state args =
       let src, dst = parse_src_dst None None rest in
       (match (src, dst) with
        | Some s, Some d -> (
-           match Lpf.Conntrack.delete ~src:s ~dst:d with
+            match Lpf.Conntrack.delete ~src:s ~dst:d () with
            | Ok () ->
                Printf.printf "deleted conntrack entries for %s -> %s\n" s d;
                exit 0

@@ -26,7 +26,11 @@ type conntrack_entry = {
 }
 
 let list_invocation () = { program = "conntrack"; argv = [ "conntrack"; "-L"; "-o"; "extended" ] }
-let delete_invocation ~src ~dst = { program = "conntrack"; argv = [ "conntrack"; "-D"; "-s"; src; "-d"; dst ] }
+let delete_invocation ~src ~dst ?sport ?dport () =
+  let args = [ "conntrack"; "-D"; "-s"; src; "-d"; dst ] in
+  let args = match sport with Some sp -> args @ [ "-p"; "tcp"; "--orig-port-src"; sp ] | None -> args in
+  let args = match dport with Some dp -> args @ [ "-p"; "tcp"; "--orig-port-dst"; dp ] | None -> args in
+  { program = "conntrack"; argv = args }
 let flush_invocation () = { program = "conntrack"; argv = [ "conntrack"; "-F" ] }
 
 let run invocation = Process.run ~temp_prefix:"lpf-conntrack" invocation
@@ -34,8 +38,8 @@ let run invocation = Process.run ~temp_prefix:"lpf-conntrack" invocation
 let list_with_runner runner = runner (list_invocation ())
 let list () = list_with_runner run
 
-let delete_with_runner runner ~src ~dst = runner (delete_invocation ~src ~dst) |> Result.map ignore
-let delete ~src ~dst = delete_with_runner run ~src ~dst
+let delete_with_runner runner ~src ~dst ?sport ?dport () = runner (delete_invocation ~src ~dst ?sport ?dport ()) |> Result.map ignore
+let delete ~src ~dst ?sport ?dport () = delete_with_runner run ~src ~dst ?sport ?dport ()
 
 let flush_with_runner runner = runner (flush_invocation ()) |> Result.map ignore
 let flush () = flush_with_runner run

@@ -18,7 +18,7 @@ let () =
   let entries = Lpf.Conntrack.parse_list "" in
   assert (entries = []);
 
-  let result = Lpf.Conntrack.delete_with_runner runner ~src:"10.0.0.1" ~dst:"10.0.0.2" in
+  let result = Lpf.Conntrack.delete_with_runner runner ~src:"10.0.0.1" ~dst:"10.0.0.2" () in
   assert (result = Ok ());
 
   let result = Lpf.Conntrack.flush_with_runner (fun _ -> Ok "flushed") in

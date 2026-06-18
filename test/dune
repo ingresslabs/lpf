@@ -1,5 +1,5 @@
 (tests
- (names test_policy test_ir test_nftables test_plan test_policy_unit test_ir_unit test_explain_unit test_nftables_unit test_apply_guard_unit test_history_unit test_runner_unit test_tc_unit test_routing_unit test_nft_unit test_conntrack_unit test_table_unit test_pipeline_unit test_process_unit test_json_util_unit test_file_util_unit test_command_unit test_policy_examples_unit)
+ (names test_policy test_ir test_nftables test_plan test_policy_unit test_ir_unit test_explain_unit test_nftables_unit test_apply_guard_unit test_history_unit test_runner_unit test_tc_unit test_routing_unit test_nft_unit test_conntrack_unit test_table_unit test_pipeline_unit test_process_unit test_json_util_unit test_file_util_unit test_command_unit test_policy_examples_unit test_integration_unit)
  (deps
   (source_tree ../configs)
   (source_tree ../fixtures)

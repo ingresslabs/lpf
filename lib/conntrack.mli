@@ -27,8 +27,8 @@ type conntrack_entry = {
 
 val list : unit -> (string, run_error) result
 val list_with_runner : (invocation -> (string, run_error) result) -> (string, run_error) result
-val delete : src:string -> dst:string -> (unit, run_error) result
-val delete_with_runner : (invocation -> (string, run_error) result) -> src:string -> dst:string -> (unit, run_error) result
+val delete : src:string -> dst:string -> ?sport:string -> ?dport:string -> unit -> (unit, run_error) result
+val delete_with_runner : (invocation -> (string, run_error) result) -> src:string -> dst:string -> ?sport:string -> ?dport:string -> unit -> (unit, run_error) result
 val flush : unit -> (unit, run_error) result
 val flush_with_runner : (invocation -> (string, run_error) result) -> (unit, run_error) result
 val string_of_run_error : run_error -> string

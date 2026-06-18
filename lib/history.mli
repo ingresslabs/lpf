@@ -15,3 +15,4 @@ val save : t -> (unit, string) result
 val add : entry -> t -> t
 val to_string : t -> string
 val to_json : t -> string
+val find_json_value : string -> string -> string
