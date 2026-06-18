@@ -6,7 +6,7 @@ let () =
   require (Lpf.command_of_string "apply" = Some Lpf.Apply) "apply command";
   require (Lpf.command_of_string "nonexistent" = None) "unknown command is None";
 
-  require (String.equal Lpf.version "0.1.2") "version string";
+  require (String.equal Lpf.version "0.1.3") "version string";
   require (String.length (Lpf.help ()) > 100) "help should be non-trivial";
 
   let all = Lpf.all_commands in

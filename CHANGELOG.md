@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.1.3 - 2026-06-18
+
+### Added
+
+- Sysctl module (`lib/sysctl.ml`) with read/write/snapshot/restore/diff/JSON.
+  Captures kernel parameters before guarded apply, restores on rollback.
+- Multi-backend rollback: nftables, TC, routing, and sysctl preimages now
+  tracked per-policy-ID and restored during `lpf rollback`.
+- Integration test suite (34 tests) for ip, sysctl, and conntrack parsing
+  against realistic command output.
+- Runner injection tests covering all 8 previously untested `_with_runner`
+  functions.
+- Man page freshness check in GitHub CI.
+- OCamlformat (v0.26.2) integration.
+
+### Changed
+
+- `lpf apply --confirm` watchdog failure now returns diagnostic error instead
+  of crashing the process.
+- `conntrack delete` now accepts optional `sport` and `dport` filter arguments.
+- `ip delete_rules` uses `ip rule flush` instead of no-op `ip rule delete`.
+- Route parsing now handles subnet routes in addition to default routes.
+- conntrack parser uses keyword-based field extraction, robust across kernel
+  versions.
+- Watchdog path resolved to absolute via CWD when `Sys.argv.(0)` is relative.
+- Help text updated to reflect current feature set.
+
+### Removed
+
+- Experimental eBPF/XDP compiler (PoC stub with static C template).
+- Firecracker E2E scenario runner (extracted to separate repository).
+- 27 disposable files: diagnostic logs, Jenkins job configs, build artifacts,
+  credential-containing scripts.
+- Unused exports from 6 `.mli` files.
+- Redundant `lpf state show` and `lpf table show` subcommands.
+
 ## 0.1.2 - 2026-06-18
 
 ### Removed
