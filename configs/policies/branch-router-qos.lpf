@@ -1,0 +1,20 @@
+set default deny
+
+interface backup = "eth2"
+interface lan = "eth1"
+interface wan = "eth0"
+
+table <branch_lan> { 10.70.0.0/24 }
+table <voice_hosts> { 10.70.0.20, 10.70.0.21 }
+
+queue bulk on wan bandwidth 50mbit
+queue voice on wan bandwidth 5mbit parent bulk
+
+nat on wan from <branch_lan> to any -> wan
+
+pass in on lan proto udp from <voice_hosts> to any port 5060 queue voice
+pass in on lan proto udp from <voice_hosts> to any port 10000 queue voice
+pass in on lan proto tcp from <branch_lan> to any port 80 queue bulk route-to 192.0.2.1 (wan) keep state
+pass in on lan proto tcp from <branch_lan> to any port 443 queue bulk route-to 192.0.2.1 (wan) keep state
+pass in on lan proto tcp from <branch_lan> to any port 22 queue bulk route-to 198.51.100.1 (backup) keep state
+block in log (all) on wan from any to any

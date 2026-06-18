@@ -1,0 +1,14 @@
+set default deny
+
+interface uplink = "wlan0"
+
+table <dns> { 1.1.1.1, 9.9.9.9 }
+table <update_mirrors> { 198.51.100.20, 203.0.113.20 }
+
+pass out on uplink proto udp from any to <dns> port 53 keep state
+pass out on uplink proto tcp from any to any port 80 keep state
+pass out on uplink proto tcp from any to any port 443 keep state
+pass out on uplink proto udp from any to any port 123 keep state
+pass out on uplink proto tcp from any to <update_mirrors> port 22 keep state
+block in log (all) on uplink from any to any
+block out log (user) on uplink from any to any

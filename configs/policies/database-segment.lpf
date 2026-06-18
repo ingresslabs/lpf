@@ -1,0 +1,14 @@
+set default deny
+
+interface app = "eth1"
+interface mgmt = "eth2"
+
+table <app_servers> { 10.40.0.10, 10.40.0.11, 10.40.0.12 }
+table <db_hosts> { 10.50.0.10, 10.50.0.11 }
+table <dba_hosts> { 10.60.0.10, 10.60.0.11 }
+
+pass in log on app proto tcp from <app_servers> to <db_hosts> port 5432 keep state
+pass in log (user) on mgmt proto tcp from <dba_hosts> to <db_hosts> port 22 keep state
+pass out on app proto tcp from <db_hosts> to <app_servers> port 443 keep state
+block in log (all) from any to <db_hosts>
+block out log (user) from <db_hosts> to any

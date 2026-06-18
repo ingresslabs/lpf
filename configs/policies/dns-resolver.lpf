@@ -1,0 +1,17 @@
+set default deny
+
+interface lan = "eth1"
+interface wan = "eth0"
+
+table <admin> { 10.0.0.10, 10.0.0.11 }
+table <clients> { 10.0.0.0/24, 192.168.10.0/24 }
+table <upstream_dns> { 1.1.1.1, 9.9.9.9 }
+
+pass in log on lan proto udp from <clients> to any port 53
+pass in log on lan proto tcp from <clients> to any port 53
+pass out on wan proto udp from any to <upstream_dns> port 53 keep state
+pass out on wan proto tcp from any to <upstream_dns> port 53 keep state
+pass in on lan proto tcp from <admin> to any port 22 keep state
+block in log (user) on wan proto udp from any to any port 53
+block in log (user) on wan proto tcp from any to any port 53
+block in log from any to any

@@ -1,0 +1,17 @@
+set default deny
+
+interface lan = "eth1"
+interface wan = "eth0"
+
+table <blocked> { 10.0.0.66, 10.0.0.67 }
+table <lan_hosts> { 10.0.0.0/24 }
+
+nat on wan from <lan_hosts> to any -> wan
+
+block in log (user) on lan from <blocked> to any
+pass in on lan from <lan_hosts> to any
+pass out on wan proto udp from <lan_hosts> to any port 53 keep state
+pass out on wan proto tcp from <lan_hosts> to any port 80 keep state
+pass out on wan proto tcp from <lan_hosts> to any port 443 keep state
+pass out on wan proto icmp from <lan_hosts> to any keep state
+block out log (all) on wan from any to any

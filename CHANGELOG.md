@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-No unreleased changes.
+### Added
+
+- Added `configs/policies` use-case examples for web servers, reverse proxies,
+  NAT gateways, workstations, DNS resolvers, bastions, database segments, and
+  branch routers with QoS.
 
 ## 0.1.1 - 2026-06-18
 

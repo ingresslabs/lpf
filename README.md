@@ -1,7 +1,5 @@
 # lpf: The Next-Generation Linux Firewall
 
-[![CI](https://github.com/avkcode/lpf/actions/workflows/ci.yml/badge.svg)](https://github.com/avkcode/lpf/actions/workflows/ci.yml)
-
 `lpf` brings the elegance and safety of OpenBSD's PF (Packet Filter) to Linux, supercharged with modern capabilities.
 
 Tired of juggling `iptables`, `nftables`, `tc`, and `ip route`? `lpf` provides a single, coherent control plane with human-readable policies, guarded deployments, and explainable decisions.
@@ -48,7 +46,7 @@ together.
 
 ---
 
-## 🛡️ Safe & Predictable Operations
+## Safe & Predictable Operations
 
 Network lockouts are a thing of the past. `lpf` is designed for bulletproof production deployments.
 
@@ -76,7 +74,7 @@ $ lpf explain --src 10.0.0.5 --dst 1.1.1.1 --dport 443 --tcp --in /etc/lpf.conf
 
 ---
 
-## 🤖 Automation & AI Ready
+## Automation & AI Ready
 
 `lpf` is built for machine consumption. Every operational command supports structured JSON output (`--json`), making it trivial to integrate with **Ansible**, **Terraform**, or custom dashboards.
 
@@ -90,7 +88,7 @@ $ lpf tools --format system-prompt > prompt.txt
 
 ---
 
-## 📖 Quick Start
+## Quick Start
 
 ### 1. Install
 ```sh
@@ -122,7 +120,7 @@ lpf apply --confirm 60s /etc/lpf.conf
 
 ---
 
-## ⚙️ Advanced CLI Usage
+## Advanced CLI Usage
 
 **State Inspection & Dynamic Tables:**
 Update threat feeds without reloading the firewall.
@@ -143,7 +141,28 @@ See [docs/COMMANDS.md](docs/COMMANDS.md) for the full command contract.
 
 ---
 
+## Policy Examples
+
+Full policy examples live under [configs/policies](configs/policies). They are
+kept behind this collapsed section so the README stays short.
+
+<details>
+<summary>Show policy examples</summary>
+
+- [Web server](configs/policies/web-server.lpf): public HTTP/HTTPS, restricted SSH, outbound DNS and updates.
+- [Reverse proxy](configs/policies/reverse-proxy.lpf): public port redirects to an internal application listener.
+- [NAT gateway](configs/policies/nat-gateway.lpf): LAN masquerade, blocked hosts, and controlled egress.
+- [Workstation egress](configs/policies/workstation-egress.lpf): default-deny client outbound policy.
+- [DNS resolver](configs/policies/dns-resolver.lpf): LAN resolver with restricted upstream DNS.
+- [Bastion host](configs/policies/bastion-host.lpf): operator-only SSH and managed-host access.
+- [Database segment](configs/policies/database-segment.lpf): app-to-database access and DBA management.
+- [Branch router QoS](configs/policies/branch-router-qos.lpf): NAT, policy routing, and traffic shaping queues.
+
+</details>
+
+---
+
 ## Configuration & Architecture
-- `LPF_VAR_DIR` — runtime state directory (default: `/var/lib/lpf`). Used for rollback preimages and history.
+- `LPF_VAR_DIR` - runtime state directory (default: `/var/lib/lpf`). Used for rollback preimages and history.
 - Written entirely in **OCaml** for memory safety and strict typing.
 - Validated via isolated **Firecracker microVM** end-to-end tests.

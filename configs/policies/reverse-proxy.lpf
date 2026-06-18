@@ -1,0 +1,18 @@
+set default deny
+
+interface app = "eth1"
+interface wan = "eth0"
+
+table <admin> { 198.51.100.10, 203.0.113.0/24 }
+table <apps> { 10.20.0.10, 10.20.0.11 }
+
+rdr on wan proto tcp from any to any port 80 -> 10.20.0.10 port 8080
+rdr on wan proto tcp from any to any port 443 -> 10.20.0.10 port 8443
+
+pass in log on wan proto tcp from any to any port 80
+pass in log on wan proto tcp from any to any port 443
+pass in on app proto tcp from <apps> to any port 8080 keep state
+pass in on app proto tcp from <apps> to any port 8443 keep state
+pass in log (user) on wan proto tcp from <admin> to any port 22 keep state
+pass out on wan proto tcp from any to any port 443 keep state
+block in log from any to any

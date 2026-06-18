@@ -1,0 +1,14 @@
+set default deny
+
+interface wan = "eth0"
+
+table <admin> { 198.51.100.10, 203.0.113.0/24 }
+
+pass in log on wan proto tcp from any to any port 80
+pass in log on wan proto tcp from any to any port 443
+pass in log (user) on wan proto tcp from <admin> to any port 22 keep state
+block in log (all) on wan proto tcp from any to any port 22
+pass out on wan proto udp from any to any port 53 keep state
+pass out on wan proto tcp from any to any port 80 keep state
+pass out on wan proto tcp from any to any port 443 keep state
+block in log from any to any

@@ -1,0 +1,15 @@
+set default deny
+
+interface mgmt = "eth1"
+interface wan = "eth0"
+
+table <managed_hosts> { 10.30.0.0/24 }
+table <operators> { 198.51.100.10, 198.51.100.11 }
+
+pass in log (user) on wan proto tcp from <operators> to any port 22 keep state
+reject in log on wan proto tcp from any to any port 22
+pass out on mgmt proto tcp from any to <managed_hosts> port 22 keep state
+pass out on wan proto udp from any to any port 53 keep state
+pass out on wan proto tcp from any to any port 443 keep state
+block in log (all) on wan from any to any
+block out log (user) from any to any
