@@ -3,24 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="dark">
   <meta name="description" content="lpf is a next-generation Linux firewall.">
   <title>lpf</title>
   <style>
     :root {
-      --bg: #f4f7fc;
-      --panel: #ffffff;
-      --panel-2: #eef3fb;
-      --line: #c9d6ea;
-      --line-bright: #276df5;
-      --blue: #1f63e8;
-      --cyan: #0078c8;
-      --text: #08111f;
-      --muted: #445064;
-      --dim: #6e7787;
-      --amber: #9d6a00;
-      --red: #b64444;
-      --green: #177245;
+      --bg: #030407;
+      --panel: #070a10;
+      --panel-2: #0c1018;
+      --line: #263044;
+      --line-bright: #3a8dff;
+      --blue: #1f6fff;
+      --cyan: #5ed7ff;
+      --text: #f4f7ff;
+      --muted: #b4bdcc;
+      --dim: #748096;
+      --amber: #d6b162;
+      --red: #d26060;
+      --green: #69cc8d;
       --max: 1120px;
     }
 
@@ -39,9 +39,12 @@
       margin: 0;
       overflow-x: hidden;
       background: var(--bg);
-      font-family: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-family: "Inter", "SF Pro Text", "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
       letter-spacing: 0;
-      text-rendering: geometricPrecision;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
     }
 
     body::before {
@@ -51,10 +54,10 @@
       pointer-events: none;
       content: "";
       background:
-        repeating-linear-gradient(90deg, rgba(31, 99, 232, 0.11) 0 1px, transparent 1px 104px),
-        repeating-linear-gradient(0deg, rgba(0, 120, 200, 0.075) 0 1px, transparent 1px 84px),
-        #f4f7fc;
-      opacity: 0.62;
+        repeating-linear-gradient(90deg, rgba(58, 141, 255, 0.09) 0 1px, transparent 1px 104px),
+        repeating-linear-gradient(0deg, rgba(94, 215, 255, 0.055) 0 1px, transparent 1px 84px),
+        #030407;
+      opacity: 0.44;
     }
 
     a {
@@ -82,7 +85,7 @@
       justify-content: space-between;
       gap: 16px;
       padding: 18px clamp(18px, 4vw, 48px);
-      background: rgba(244, 247, 252, 0.84);
+      background: rgba(3, 4, 7, 0.82);
       border-bottom: 1px solid rgba(58, 141, 255, 0.22);
       backdrop-filter: blur(16px);
     }
@@ -92,8 +95,8 @@
       align-items: center;
       gap: 11px;
       min-width: 0;
-      font-size: 15px;
-      font-weight: 700;
+      font-size: 14px;
+      font-weight: 750;
       line-height: 1;
       text-transform: uppercase;
     }
@@ -113,7 +116,7 @@
       gap: clamp(12px, 2.4vw, 28px);
       color: var(--muted);
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 750;
       line-height: 1.2;
       text-transform: uppercase;
     }
@@ -178,19 +181,22 @@
       max-width: 780px;
       margin: 22px 0 18px;
       font-size: clamp(64px, 14vw, 154px);
-      font-weight: 300;
-      line-height: 0.82;
+      font-family: "SF Pro Display", "Helvetica Neue", "Inter", system-ui, sans-serif;
+      font-weight: 200;
+      line-height: 0.86;
       letter-spacing: 0;
       text-transform: lowercase;
+      text-wrap: balance;
     }
 
     .lede {
       max-width: 680px;
       margin: 0;
       color: var(--text);
-      font-size: clamp(18px, 2.6vw, 27px);
-      font-weight: 300;
-      line-height: 1.24;
+      font-size: clamp(18px, 2.6vw, 28px);
+      font-weight: 350;
+      line-height: 1.28;
+      text-wrap: balance;
     }
 
     .hero-meta {
@@ -208,10 +214,10 @@
       min-height: 50px;
       align-content: center;
       padding: 13px 15px;
-      background: rgba(255, 255, 255, 0.78);
+      background: rgba(3, 4, 7, 0.78);
       color: var(--muted);
       font-size: 11px;
-      font-weight: 800;
+      font-weight: 750;
       line-height: 1.4;
       text-transform: uppercase;
     }
@@ -251,18 +257,20 @@
 
     h2 {
       margin: 0;
-      font-size: clamp(31px, 5vw, 62px);
-      font-weight: 300;
-      line-height: 1.02;
+      font-size: clamp(30px, 4.4vw, 54px);
+      font-family: "SF Pro Display", "Helvetica Neue", "Inter", system-ui, sans-serif;
+      font-weight: 400;
+      line-height: 1.08;
       letter-spacing: 0;
+      text-wrap: balance;
     }
 
     .copy {
-      max-width: 690px;
+      max-width: 720px;
       margin: 14px 0 0;
       color: var(--muted);
-      font-size: 16px;
-      line-height: 1.66;
+      font-size: 17px;
+      line-height: 1.72;
     }
 
     .command-grid {
@@ -277,7 +285,7 @@
       min-width: 0;
       padding: clamp(18px, 3vw, 30px);
       overflow: hidden;
-      background: rgba(255, 255, 255, 0.96);
+      background: rgba(7, 10, 16, 0.96);
     }
 
     .terminal.wide {
@@ -292,7 +300,7 @@
       margin-bottom: 18px;
       color: var(--muted);
       font-size: 11px;
-      font-weight: 800;
+      font-weight: 750;
       line-height: 1.35;
       text-transform: uppercase;
     }
@@ -313,10 +321,10 @@
       max-width: 100%;
       margin: 0;
       overflow: auto;
-      color: #111a2a;
-      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-      font-size: 13px;
-      line-height: 1.65;
+      color: #e9f0ff;
+      font-family: "SFMono-Regular", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+      font-size: 12.5px;
+      line-height: 1.72;
       tab-size: 2;
       white-space: pre;
       scrollbar-color: var(--line-bright) transparent;
@@ -344,11 +352,11 @@
 
     details {
       min-width: 0;
-      background: rgba(255, 255, 255, 0.96);
+      background: rgba(7, 10, 16, 0.96);
     }
 
     details[open] {
-      background: rgba(239, 244, 252, 0.98);
+      background: rgba(10, 15, 25, 0.98);
     }
 
     summary {
@@ -370,9 +378,9 @@
     summary strong {
       display: block;
       min-width: 0;
-      font-size: clamp(17px, 2vw, 22px);
-      font-weight: 400;
-      line-height: 1.25;
+      font-size: clamp(17px, 2vw, 21px);
+      font-weight: 450;
+      line-height: 1.3;
     }
 
     .summary-copy {
@@ -424,7 +432,7 @@
     .loop-zone {
       min-height: 120vh;
       background:
-        linear-gradient(90deg, rgba(182, 68, 68, 0.07), transparent 22%, transparent 78%, rgba(31, 99, 232, 0.08)),
+        linear-gradient(90deg, rgba(210, 96, 96, 0.08), transparent 22%, transparent 78%, rgba(94, 215, 255, 0.08)),
         var(--bg);
     }
 
@@ -453,13 +461,13 @@
       min-width: 0;
       min-height: 116px;
       padding: 21px clamp(18px, 3vw, 30px);
-      background: rgba(255, 255, 255, 0.96);
+      background: rgba(5, 8, 13, 0.96);
     }
 
     .loop-card b {
       color: var(--cyan);
       font-size: 11px;
-      font-weight: 800;
+      font-weight: 750;
       line-height: 1.45;
       text-transform: uppercase;
     }
@@ -854,7 +862,7 @@ block in log from any to any</code></pre>
 
       const draw = () => {
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = "#f4f7fc";
+        ctx.fillStyle = "#030407";
         ctx.fillRect(0, 0, width, height);
 
         const horizon = height * 0.72;
@@ -863,12 +871,12 @@ block in log from any to any</code></pre>
 
         for (let i = 0; i < 34; i += 1) {
           const y = horizon + Math.pow(i / 33, 2.35) * height * 0.58;
-          line(0, y, width, y, "#1f63e8", 0.13 + i * 0.005, 0);
+          line(0, y, width, y, "#1f6fff", 0.12 + i * 0.006, 0);
         }
 
         for (let i = -18; i <= 18; i += 1) {
           const x = vanishing + i * 62 + (speed % 62);
-          line(vanishing, horizon, x, height, "#276df5", 0.16, 0);
+          line(vanishing, horizon, x, height, "#3a8dff", 0.16, 0);
         }
 
         blocks.forEach((block, i) => {
@@ -880,7 +888,7 @@ block in log from any to any</code></pre>
           const alpha = 0.18 + (i % 4) * 0.05;
           ctx.save();
           ctx.globalAlpha = alpha;
-          ctx.strokeStyle = i % 6 === 0 ? "#b64444" : "#276df5";
+          ctx.strokeStyle = i % 6 === 0 ? "#d26060" : "#3a8dff";
           ctx.shadowColor = ctx.strokeStyle;
           ctx.shadowBlur = 20;
           ctx.strokeRect(x, y, w, h);
@@ -891,12 +899,12 @@ block in log from any to any</code></pre>
           const p = (i * 97) % 100;
           const x = ((p / 100) * width + (speed * (0.35 + (i % 5) * 0.03))) % width;
           const y = 80 + (((i * 53) % 100) / 100) * (height * 0.68);
-          ctx.fillStyle = i % 9 === 0 ? "rgba(157,106,0,.56)" : "rgba(0,120,200,.45)";
+          ctx.fillStyle = i % 9 === 0 ? "rgba(214,177,98,.62)" : "rgba(94,215,255,.45)";
           ctx.fillRect(x, y, 2, 2);
         }
 
-        line(width * 0.08, height * 0.25, width * 0.92, height * 0.25, "#0078c8", 0.24, 10);
-        line(width * 0.14, height * 0.39, width * 0.62, height * 0.39, "#276df5", 0.18, 8);
+        line(width * 0.08, height * 0.25, width * 0.92, height * 0.25, "#5ed7ff", 0.22, 12);
+        line(width * 0.14, height * 0.39, width * 0.62, height * 0.39, "#3a8dff", 0.16, 8);
 
         tick += 1;
         if (!reduced) {
