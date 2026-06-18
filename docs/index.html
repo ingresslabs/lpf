@@ -587,14 +587,39 @@
         <p class="lede">Next-generation Linux firewall</p>
         <div class="hero-meta" aria-label="Project traits">
           <span>PF-style syntax</span>
-          <span>nftables first</span>
+          <span>eBPF/XDP output</span>
+          <span>Z3 prove roadmap</span>
           <span>safe remote apply</span>
-          <span>JSON ready</span>
         </div>
       </div>
     </section>
 
     <main>
+      <section class="section" id="core">
+        <div class="section-inner">
+          <div class="section-head">
+            <div class="eyebrow">Core path</div>
+            <div>
+              <h2>eBPF now. Z3 proofs next.</h2>
+              <p class="copy">Compile checked policy IR to native eBPF/XDP C today. Z3-backed <code>lpf prove</code> is shown as the proof target, and remains marked roadmap until the OCaml command, tests, fixtures, and man pages land.</p>
+            </div>
+          </div>
+          <div class="command-grid">
+            <article class="terminal">
+              <div class="terminal-title">eBPF/XDP usage</div>
+              <pre><code><span class="prompt">$</span> lpf ebpf /etc/lpf.conf &gt; lpf_xdp.c
+<span class="prompt">$</span> clang -O2 -target bpf -c lpf_xdp.c -o lpf_xdp.o</code></pre>
+            </article>
+            <article class="terminal">
+              <div class="terminal-title">Z3 prove target</div>
+              <pre><code><span class="muted"># roadmap command; not current CLI</span>
+<span class="prompt">$</span> lpf prove --solver z3 /etc/lpf.conf
+<span class="muted"># prove reachability and deny/public invariants</span></code></pre>
+            </article>
+          </div>
+        </div>
+      </section>
+
       <section class="section" id="install">
         <div class="section-inner">
           <div class="section-head">
