@@ -143,7 +143,7 @@ e2e-list:
 
 # Packaging
 deb:
-	dpkg-buildpackage -b -us -uc -d
+	set -eu; rm -rf debian; cp -a packaging/deb debian; trap 'rm -rf debian' EXIT; dpkg-buildpackage -b -us -uc -d
 
 rpm:
 	rpmbuild -bb packaging/rpm/lpf.spec --define "_topdir $$(pwd)/_rpmbuild"

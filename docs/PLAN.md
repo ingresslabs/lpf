@@ -279,7 +279,7 @@ Initial implementation status:
   intended-vs-observed readback, and invalid-update rejection families.
 - Evidence includes `summary.jsonl` for compact per-scenario status and
   checksums in addition to the full `scenario-log.jsonl` command log.
-- The advanced Jenkins matrix archives requested, available, covered, and
+- The advanced external lab matrix archives requested, available, covered, and
   missing kernel artifacts separately.
 - The tracked kernel matrix contains requested kernel metadata only; real
   Firecracker image inventory is supplied outside the repository.

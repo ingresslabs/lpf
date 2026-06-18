@@ -2,8 +2,20 @@
 
 ## Unreleased
 
+No unreleased changes.
+
+## 0.1.1 - 2026-06-18
+
 ### Added
 
+- Hardened GitHub CI into focused workflow jobs for OCaml checks, repository
+  hygiene, generated eBPF compilation, dry-run E2E catalog coverage, Linux
+  namespace smoke coverage, and OCaml coverage artifacts.
+- Hardened the release workflow to build and upload the static binary tarball,
+  generated man pages, SBOM, checksums, Debian package, and RPM/SRPM artifacts.
+- Added repository hygiene checks that reject tracked lab host literals,
+  private key markers, stale generated man pages, malformed kernel matrix rows,
+  and private lab helper artifacts.
 - Created the initial `lpf` OCaml project skeleton with project plan, command contract, and agent rules.
 - Implemented `lpf man generate`, `lpf man check`, and `lpf man install` using OCaml command metadata with generated man pages for all commands.
 - Implemented `lpf check` and `lpf fmt` with policy language parsing, formatting, validation, and fixtures for rules, NAT, redirects, queues, route-to, logging, and anchors.
@@ -32,6 +44,8 @@
 
 ### Refactored
 
+- Removed tracked private lab job templates from the repository and moved
+  runner configuration artifacts behind ignore rules.
 - Split monolithic `lpf.ml` (780 lines) into 6 modules: `command.ml`, `manpage.ml`, `pipeline.ml`, `apply_guard.ml`, `history.ml`, `nft.ml`.
 - Split monolithic test suite into 21 focused test files.
 - Removed ui, kernel-matrix, import, and support-bundle stubs with no handlers.

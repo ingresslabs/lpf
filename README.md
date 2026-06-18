@@ -2,45 +2,33 @@
 
 [![CI](https://github.com/avkcode/lpf/actions/workflows/ci.yml/badge.svg)](https://github.com/avkcode/lpf/actions/workflows/ci.yml)
 
-`lpf` brings the elegance and safety of OpenBSD's PF (Packet Filter) to Linux, supercharged with modern capabilities. 
+`lpf` brings the elegance and safety of OpenBSD's PF (Packet Filter) to Linux, supercharged with modern capabilities.
 
-Tired of juggling `iptables`, `nftables`, `tc`, and `ip route`? `lpf` provides a single, coherent control plane with human-readable policies, guarded deployments, and mathematically verified security.
+Tired of juggling `iptables`, `nftables`, `tc`, and `ip route`? `lpf` provides a single, coherent control plane with human-readable policies, guarded deployments, and explainable decisions.
 
-But `lpf` is more than just a wrapper. It introduces two game-changing features to Linux networking: **Formal Verification** and a **Native eBPF/XDP Dataplane**.
+But `lpf` is more than just a wrapper. It already includes a native eBPF/XDP C backend and keeps formal verification on the roadmap.
 
 ---
 
-## 🚀 Game-Changing Features
+## Core Features
 
-### 1. Mathematical Formal Verification (`lpf prove`)
-Stop guessing if your firewall is secure. `lpf` translates your policy into a strict Intermediate Representation (IR) and uses the **Z3 SMT Solver** to mathematically prove your security invariants. 
+### Native eBPF / XDP Dataplane (`lpf ebpf`)
+Want to drop packets before the Linux kernel even allocates memory for them? `lpf` can generate native eBPF/XDP C source from checked policy IR.
 
-If you assert that your database is isolated, `lpf` will either prove it mathematically or provide the exact packet headers that would bypass your rules.
-
-```sh
-# Prove that absolutely no traffic reaches the database port, unless it comes from the API servers
-$ lpf prove "block in from any to <db_subnet> port 5432 unless from <api_servers>" /etc/lpf.conf
-✅ Proof successful: Invariant holds against all possible packets.
-```
-
-### 2. Native eBPF / XDP Dataplane (`lpf ebpf`)
-Want to drop packets before the Linux kernel even allocates memory for them? `lpf` can act as a **Generic CO-RE eBPF Engine**.
-
-Instead of rendering to `nftables`, `lpf` compiles your policy directly into hardware-accelerated eBPF byte-code attached to the XDP (ingress) and TC (egress) hooks.
-
-* **Line-Rate Performance:** Drops packets millions of times faster than Netfilter.
-* **Hardware NAT:** Stateful NAT and Port Forwarding executed directly in the network card buffer.
-* **Stateful Conntrack:** Built-in LRU Hash Maps track connection 5-tuples for instant return-traffic bypass.
-* **Zero-Overhead Logging:** Blocked packets are shipped to user-space via BPF Ring Buffers.
+Instead of rendering only to `nftables`, `lpf` can compile policy logic into C that is suitable for `clang -target bpf` and kernel verifier testing.
 
 ```sh
-# Compile the policy into a native C eBPF object
-$ lpf ebpf /etc/lpf.conf > lpf_engine.c
-$ clang -O2 -target bpf -c lpf_engine.c -o lpf_engine.o
-
-# Instantly enforce the ruleset in the kernel
-$ bpftool prog loadall lpf_engine.o /sys/fs/bpf/lpf
+# Compile the policy into eBPF C source
+$ lpf ebpf /etc/lpf.conf > lpf_xdp.c
+$ clang -O2 -target bpf -c lpf_xdp.c -o lpf_xdp.o
 ```
+
+### Formal Verification Roadmap
+
+`lpf prove` and Z3-backed invariant checks are planned, but they are not part
+of the current CLI. Until that command lands with OCaml implementation, tests,
+fixtures, and man pages, release CI does not label Z3 proof coverage as
+available.
 
 ---
 

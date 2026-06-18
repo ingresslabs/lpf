@@ -183,6 +183,16 @@ networking state.
 Show applied policy versions, operator, timestamp, checksum, test result, and
 rollback availability.
 
+### `lpf ebpf <policy>`
+
+Compile checked policy IR to native eBPF/XDP C source. The command is read-only:
+it emits C that can be compiled by `clang -target bpf`, but it does not attach
+programs, pin maps, mutate bpffs, or change host network state.
+
+CI must compile generated eBPF source to an object file and keep kernel verifier
+loading in external Firecracker lab evidence rather than claiming GitHub runner
+coverage as kernel-matrix coverage.
+
 ### `lpf tools [--format openai|jsonschema|system-prompt]`
 
 Emit JSON tool-calling schemas or a compact automation prompt from the same
@@ -216,7 +226,7 @@ family coverage. The catalog is split across:
 
 Supported report outputs:
 
-- `--junit <path>` for Jenkins trend reporting
+- `--junit <path>` for CI trend reporting
 - `--allure-dir <dir>` for Allure result JSON files
 - `--evidence-dir <dir>` for a sanitized run manifest, `summary.jsonl`, and
   `scenario-log.jsonl`

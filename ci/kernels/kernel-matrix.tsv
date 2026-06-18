@@ -2,7 +2,7 @@
 # Refreshed from https://www.kernel.org/ on 2026-06-18.
 # This file intentionally does not contain lab ids, real hostnames, IP
 # addresses, or registered Firecracker image inventory. Supply image mappings
-# to Jenkins with AVAILABLE_KERNELS or controller-side configuration.
+# to private lab runners with AVAILABLE_KERNELS or controller-side configuration.
 7.1	7.1	mainline	ubuntu	7.1.0-070100-generic	ubuntu-mainline	requested
 7.0.12	7.0.12	stable	ubuntu	7.0.12-070012-generic	ubuntu-mainline	requested
 6.18.35	6.18.35	longterm	ubuntu	6.18.35-061835-generic	ubuntu-mainline	requested

@@ -5,54 +5,121 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build and attach release artifacts
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
+
+      - name: Verify clean checkout
+        run: test -z "$(git status --short)"
 
       - uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: 5.2.1
 
+      - name: Install packaging toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends debhelper devscripts dpkg-dev rpm
+
       - run: opam install . --deps-only --with-test
-
       - run: opam exec -- dune build
-
       - run: opam exec -- dune runtest
-
       - run: opam exec -- dune exec -- lpf man check
-
       - run: opam lint lpf.opam
-
       - run: opam exec -- dune build --profile=static
 
       - name: Build release binary
         run: |
+          set -euo pipefail
           mkdir -p release
           cp _build/default/bin/main.exe release/lpf
           strip release/lpf
 
-      - name: Generate checksums
+      - name: Smoke release binary
         run: |
-          cd release
-          sha256sum lpf > SHA256SUMS
+          set -euo pipefail
+          release/lpf version
+          release/lpf help >/tmp/lpf-release-help.txt
+          release/lpf man check --dir man/generated
 
       - name: Generate man pages
         run: |
+          set -euo pipefail
           opam exec -- dune exec -- lpf man generate --dir man/generated
           mkdir -p release/man
           cp man/generated/*.8 man/generated/*.5 release/man/
 
+      - name: Generate SBOM
+        run: |
+          set -euo pipefail
+          {
+            echo "lpf release SBOM"
+            echo "git_sha=${GITHUB_SHA}"
+            echo "version=$(release/lpf version)"
+            echo "ocaml=$(opam exec -- ocamlc -version)"
+            echo "dune=$(opam exec -- dune --version)"
+            echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > release/SBOM.txt
+
+      - name: Build Debian package
+        run: |
+          set -euo pipefail
+          rm -rf debian
+          cp -a packaging/deb debian
+          trap 'rm -rf debian' EXIT
+          dpkg-buildpackage -b -us -uc -d
+          mkdir -p release/packages/deb
+          mv ../lpf_*.deb ../lpf_*.buildinfo ../lpf_*.changes release/packages/deb/
+
+      - name: Build RPM package
+        run: |
+          set -euo pipefail
+          VERSION=$(release/lpf version)
+          mkdir -p _rpmbuild/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS} release/packages/rpm
+          git archive --prefix="lpf-${VERSION}/" -o "_rpmbuild/SOURCES/lpf-${VERSION}.tar.gz" HEAD
+          rpmbuild -ba packaging/rpm/lpf.spec --define "_topdir $PWD/_rpmbuild"
+          find _rpmbuild/RPMS _rpmbuild/SRPMS -type f \( -name '*.rpm' -o -name '*.src.rpm' \) -exec cp {} release/packages/rpm/ \;
+
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          (cd release && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+
       - name: Create tarball
         run: |
-          VERSION=$(opam exec -- dune exec -- lpf version)
+          set -euo pipefail
+          VERSION=$(release/lpf version)
           cd release
-          tar czf "../lpf-${VERSION}-linux-x86_64.tar.gz" lpf man/ SHA256SUMS
+          tar czf "../lpf-${VERSION}-linux-x86_64.tar.gz" lpf man/ packages/ SHA256SUMS SBOM.txt
+
+      - name: Upload release build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-x86_64
+          path: |
+            release/lpf
+            release/SHA256SUMS
+            release/SBOM.txt
+            release/man/**
+            release/packages/**
+            lpf-*-linux-x86_64.tar.gz
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
         with:
-          files: lpf-*.tar.gz
+          files: |
+            lpf-*.tar.gz
+            release/packages/deb/*
+            release/packages/rpm/*
           generate_release_notes: true

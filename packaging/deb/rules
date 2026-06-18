@@ -9,7 +9,8 @@ override_dh_auto_build:
 	opam exec -- dune build @install
 
 override_dh_auto_install:
-	opam exec -- dune install --prefix=debian/lpf/usr
+	opam exec -- dune install --prefix=/usr --destdir=debian/tmp
+	opam exec -- dune exec -- lpf man install --prefix debian/tmp/usr
 
 override_dh_auto_clean:
 	dune clean

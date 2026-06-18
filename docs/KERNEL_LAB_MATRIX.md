@@ -1,12 +1,13 @@
 # Kernel Lab Matrix
 
 `ci/kernels/kernel-matrix.tsv` is the tracked source of truth for the generic
-Firecracker kernel matrix. Jenkins reads this file for requested labels unless
-explicit matrix parameters are supplied.
+Firecracker kernel matrix. External lab runners read this file for requested
+labels unless explicit matrix parameters are supplied.
 
 The tracked matrix intentionally does not contain lab ids, real hostnames, IP
 addresses, or registered Firecracker image inventory. Supply environment-local
-image mappings through Jenkins parameters or controller-side configuration.
+image mappings through private runner parameters or controller-side
+configuration.
 
 The matrix keeps these states separate:
 

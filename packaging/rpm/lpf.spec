@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           lpf
-Version:        0.1.0
+Version:        0.1.1
 Release:        1%{?dist}
 Summary:        PF-style control plane for Linux networking
 License:        Apache-2.0
@@ -28,7 +28,8 @@ and multi-backend diff/live readback.
 opam exec -- dune build --profile=release @install
 
 %install
-opam exec -- dune install --prefix=%{buildroot}/usr
+opam exec -- dune install --prefix=/usr --destdir=%{buildroot}
+opam exec -- dune exec -- lpf man install --prefix %{buildroot}/usr
 
 %files
 %{_bindir}/lpf
@@ -37,5 +38,8 @@ opam exec -- dune install --prefix=%{buildroot}/usr
 %doc README.md CHANGELOG.md
 
 %changelog
+* Thu Jun 18 2026 avkcode - 0.1.1-1
+- CI hardening, eBPF release coverage, and external lab documentation cleanup
+
 * Sun Jun 22 2026 avkcode - 0.1.0-1
 - Initial release

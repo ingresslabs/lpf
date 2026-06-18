@@ -31,7 +31,7 @@ type command_doc = {
   see_also : string list;
 }
 
-let version = "0.1.0-dev"
+let version = "0.1.1"
 
 let all_commands =
   [
@@ -375,7 +375,7 @@ let command_docs =
       options =
         [
           ("--scenario-count <n>", "number of scenarios to run; must be between 1 and 1000, default 552");
-          ("--junit <path>", "write JUnit XML for Jenkins trend reporting");
+          ("--junit <path>", "write JUnit XML for CI trend reporting");
           ("--allure-dir <dir>", "write Allure result JSON files");
           ("--evidence-dir <dir>", "write a sanitized evidence manifest and per-scenario JSONL command log");
           ("--kernel-id <id>", "attach a CI kernel label to reports");
