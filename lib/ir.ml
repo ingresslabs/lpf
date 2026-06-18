@@ -1,25 +1,9 @@
 open Policy
 
-type interface_ref = {
-  name : string option;
-  device : string;
-  span : span;
-}
-
-type address =
-  | Any
-  | Literal of string
-  | Table of string
-
-type port_range =
-  | Port_any
-  | Range of int * int
-
-type table = {
-  name : string;
-  entries : string list;
-  span : span;
-}
+type interface_ref = { name : string option; device : string; span : span }
+type address = Any | Literal of string | Table of string
+type port_range = Port_any | Range of int * int
+type table = { name : string; entries : string list; span : span }
 
 type queue = {
   name : string;
@@ -64,11 +48,7 @@ type rdr = {
   span : span;
 }
 
-type anchor = {
-  name : string;
-  rules : rule list;
-  span : span;
-}
+type anchor = { name : string; rules : rule list; span : span }
 
 type t = {
   default_action : default_action;
@@ -89,17 +69,28 @@ let find_interface (policy : Policy.policy) name =
     policy.interfaces
 
 let interface_ref_of_decl (interface : interface_decl) =
-  { name = Some interface.name; device = interface.device; span = interface.span }
+  {
+    name = Some interface.name;
+    device = interface.device;
+    span = interface.span;
+  }
 
 let resolve_reference (policy : Policy.policy) span = function
   | Policy.Any -> Ok Any
   | Policy.Literal value -> Ok (Literal value)
   | Policy.Table_ref name ->
-      if List.exists (fun (table : Policy.table) -> String.equal table.name name) policy.tables then
-        Ok (Table name)
+      if
+        List.exists
+          (fun (table : Policy.table) -> String.equal table.name name)
+          policy.tables
+      then Ok (Table name)
       else Error [ diag span ("unknown table `<" ^ name ^ ">`") ]
   | Policy.Macro_ref name -> (
-      match List.find_opt (fun (macro : macro) -> String.equal macro.name name) policy.macros with
+      match
+        List.find_opt
+          (fun (macro : macro) -> String.equal macro.name name)
+          policy.macros
+      with
       | Some macro -> Ok (Literal macro.value)
       | None -> Error [ diag span ("unknown macro `$" ^ name ^ "`") ])
 
@@ -113,7 +104,10 @@ let resolve_interface (policy : Policy.policy) span = function
           | Some interface -> Ok (Some (interface_ref_of_decl interface))
           | None -> Ok (Some { name = None; device = name; span }))
       | Ok (Table name) ->
-          Error [ diag span ("interface matcher cannot use table `<" ^ name ^ ">`") ]
+          Error
+            [
+              diag span ("interface matcher cannot use table `<" ^ name ^ ">`");
+            ]
       | Error diagnostics -> Error diagnostics)
 
 let require_interface (policy : Policy.policy) span reference context =
@@ -126,13 +120,22 @@ let resolve_port (policy : Policy.policy) span = function
   | Policy.Port_any -> Ok Port_any
   | Policy.Port_number number -> Ok (Range (number, number))
   | Policy.Port_macro name -> (
-      match List.find_opt (fun (macro : macro) -> String.equal macro.name name) policy.macros with
+      match
+        List.find_opt
+          (fun (macro : macro) -> String.equal macro.name name)
+          policy.macros
+      with
       | Some macro -> (
           match int_of_string_opt macro.value with
-          | Some number when number >= 1 && number <= 65535 -> Ok (Range (number, number))
+          | Some number when number >= 1 && number <= 65535 ->
+              Ok (Range (number, number))
           | _ ->
               Error
-                [ diag span ("port macro `$" ^ name ^ "` has invalid value `" ^ macro.value ^ "`") ])
+                [
+                  diag span
+                    ("port macro `$" ^ name ^ "` has invalid value `"
+                   ^ macro.value ^ "`");
+                ])
       | None -> Error [ diag span ("unknown port macro `$" ^ name ^ "`") ])
 
 let collect_results results =
@@ -154,7 +157,9 @@ let of_table (table : Policy.table) =
 
 let of_queue (policy : Policy.policy) (queue : Policy.queue) =
   let ( let* ) = Result.bind in
-  let* interface = require_interface policy queue.interface_span queue.interface "queue" in
+  let* interface =
+    require_interface policy queue.interface_span queue.interface "queue"
+  in
   Ok
     {
       name = queue.name;
@@ -167,11 +172,19 @@ let of_queue (policy : Policy.policy) (queue : Policy.queue) =
 let of_rule (policy : Policy.policy) (rule : Policy.rule) =
   let ( let* ) = Result.bind in
   let* interface =
-    resolve_interface policy (Option.value rule.interface_span ~default:rule.span) rule.interface
+    resolve_interface policy
+      (Option.value rule.interface_span ~default:rule.span)
+      rule.interface
   in
   let* source = resolve_reference policy rule.source_span rule.source in
-  let* destination = resolve_reference policy rule.destination_span rule.destination in
-  let* port = resolve_port policy (Option.value rule.port_span ~default:rule.span) rule.port in
+  let* destination =
+    resolve_reference policy rule.destination_span rule.destination
+  in
+  let* port =
+    resolve_port policy
+      (Option.value rule.port_span ~default:rule.span)
+      rule.port
+  in
   let* route_to =
     match rule.route_to with
     | None -> Ok None
@@ -184,8 +197,15 @@ let of_rule (policy : Policy.policy) (rule : Policy.rule) =
         let* () =
           match gateway with
           | Literal _ -> Ok ()
-          | Any -> Error [ diag rule.span "route-to gateway must be a literal IP address, not `any`" ]
-          | Table _ -> Error [ diag rule.span "route-to gateway cannot reference a table" ]
+          | Any ->
+              Error
+                [
+                  diag rule.span
+                    "route-to gateway must be a literal IP address, not `any`";
+                ]
+          | Table _ ->
+              Error
+                [ diag rule.span "route-to gateway cannot reference a table" ]
         in
         let* interface =
           resolve_interface policy
@@ -212,19 +232,41 @@ let of_rule (policy : Policy.policy) (rule : Policy.rule) =
 
 let of_nat (policy : Policy.policy) (nat : Policy.nat) =
   let ( let* ) = Result.bind in
-  let* interface = require_interface policy nat.interface_span nat.interface "nat" in
+  let* interface =
+    require_interface policy nat.interface_span nat.interface "nat"
+  in
   let* source = resolve_reference policy nat.source_span nat.source in
-  let* destination = resolve_reference policy nat.destination_span nat.destination in
-  let* translation = resolve_reference policy nat.translation_span nat.translation in
-  Ok { interface; protocol = nat.protocol; source; destination; translation; span = nat.span }
+  let* destination =
+    resolve_reference policy nat.destination_span nat.destination
+  in
+  let* translation =
+    resolve_reference policy nat.translation_span nat.translation
+  in
+  Ok
+    {
+      interface;
+      protocol = nat.protocol;
+      source;
+      destination;
+      translation;
+      span = nat.span;
+    }
 
 let of_rdr (policy : Policy.policy) (rdr : Policy.rdr) =
   let ( let* ) = Result.bind in
-  let* interface = require_interface policy rdr.interface_span rdr.interface "rdr" in
+  let* interface =
+    require_interface policy rdr.interface_span rdr.interface "rdr"
+  in
   let* source = resolve_reference policy rdr.source_span rdr.source in
-  let* destination = resolve_reference policy rdr.destination_span rdr.destination in
-  let* port = resolve_port policy (Option.value rdr.port_span ~default:rdr.span) rdr.port in
-  let* translation = resolve_reference policy rdr.translation_span rdr.translation in
+  let* destination =
+    resolve_reference policy rdr.destination_span rdr.destination
+  in
+  let* port =
+    resolve_port policy (Option.value rdr.port_span ~default:rdr.span) rdr.port
+  in
+  let* translation =
+    resolve_reference policy rdr.translation_span rdr.translation
+  in
   let* translation_port =
     resolve_port policy
       (Option.value rdr.translation_port_span ~default:rdr.span)
@@ -249,7 +291,9 @@ let of_anchor (policy : Policy.policy) (anchor : Policy.anchor) =
 
 let of_policy (policy : Policy.policy) =
   let ( let* ) = Result.bind in
-  let default_action = Option.value policy.default_action ~default:Default_deny in
+  let default_action =
+    Option.value policy.default_action ~default:Default_deny
+  in
   let interfaces = List.map of_interface policy.interfaces in
   let tables = List.map of_table policy.tables in
   let* queues = collect_results (List.map (of_queue policy) policy.queues) in
@@ -310,7 +354,8 @@ let shadow_diagnostics_rules rules =
                 severity = Diag_warning;
                 span = rule.span;
                 message =
-                  Printf.sprintf "rule is completely shadowed by rule at line %d"
+                  Printf.sprintf
+                    "rule is completely shadowed by rule at line %d"
                     earlier.span.line;
               }
             in
@@ -321,6 +366,8 @@ let shadow_diagnostics_rules rules =
 
 let shadow_diagnostics ir =
   let anchor_diagnostics =
-    List.concat_map (fun (anchor : anchor) -> shadow_diagnostics_rules anchor.rules) ir.anchors
+    List.concat_map
+      (fun (anchor : anchor) -> shadow_diagnostics_rules anchor.rules)
+      ir.anchors
   in
   shadow_diagnostics_rules ir.rules @ anchor_diagnostics

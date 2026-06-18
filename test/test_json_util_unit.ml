@@ -28,7 +28,9 @@ let () =
   let o = Lpf.Json_util.option Lpf.Json_util.int None in
   require (o = "null") "option none should be null";
 
-  let obj = Lpf.Json_util.field_object [ ("key", Lpf.Json_util.string "val") ] in
+  let obj =
+    Lpf.Json_util.field_object [ ("key", Lpf.Json_util.string "val") ]
+  in
   require (String.contains obj '"') "object should contain braces";
   require (String.contains obj ':') "object should contain colon";
 

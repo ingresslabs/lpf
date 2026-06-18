@@ -17,16 +17,28 @@ let () =
   let result = Lpf.Nft.apply_with_runner (fun _ -> Ok "ok") "test ruleset" in
   assert (result = Ok ());
 
-  let result = Lpf.Nft.apply_with_runner (fun _ -> Error {
-    Lpf.Nft.invocation = { Lpf.Nft.program = "nft"; argv = [ "nft"; "-f"; "x" ] };
-    status = Lpf.Nft.Exited 1; stderr = "failed";
-  }) "test ruleset" in
+  let result =
+    Lpf.Nft.apply_with_runner
+      (fun _ ->
+        Error
+          {
+            Lpf.Nft.invocation =
+              { Lpf.Nft.program = "nft"; argv = [ "nft"; "-f"; "x" ] };
+            status = Lpf.Nft.Exited 1;
+            stderr = "failed";
+          })
+      "test ruleset"
+  in
   (match result with Error _ -> () | _ -> assert false);
 
-  let error = {
-    Lpf.Nft.invocation = { Lpf.Nft.program = "nft"; argv = [ "nft"; "list"; "ruleset" ] };
-    status = Lpf.Nft.Exited 1; stderr = "permission denied";
-  } in
+  let error =
+    {
+      Lpf.Nft.invocation =
+        { Lpf.Nft.program = "nft"; argv = [ "nft"; "list"; "ruleset" ] };
+      status = Lpf.Nft.Exited 1;
+      stderr = "permission denied";
+    }
+  in
   let msg = Lpf.Nft.string_of_run_error error in
   assert (String.length msg > 0);
   assert (String.contains msg 'n');

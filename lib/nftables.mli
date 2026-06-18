@@ -2,11 +2,7 @@ type family = Inet | Ip
 type chain_type = Filter | Nat
 type hook = Input | Forward | Output | Prerouting | Postrouting
 type policy = Policy_accept | Policy_drop
-
-type table = {
-  family : family;
-  name : string;
-}
+type table = { family : family; name : string }
 
 type chain = {
   table : string;
@@ -29,6 +25,7 @@ type expression =
   | Meta of string * string
   | Payload of string * string * string
   | Ct_state of string list
+
 type statement =
   | Accept
   | Drop
@@ -56,10 +53,9 @@ type t = {
 }
 
 val owned_ruleset_text : string -> string
-type diff_result = {
-  changes_required : bool;
-  text : string;
-}
+
+type diff_result = { changes_required : bool; text : string }
+
 val diff : intended:string -> observed:string -> diff_result
 val diff_text : intended:string -> observed:string -> string
 val render_plan : Plan.t -> string

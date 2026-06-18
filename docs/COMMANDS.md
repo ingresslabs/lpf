@@ -183,6 +183,21 @@ networking state.
 Show applied policy versions, operator, timestamp, checksum, test result, and
 rollback availability.
 
+### `lpf sysctl [--json] <check|diff>`
+
+Check or diff kernel sysctl parameters required by `lpf` before policy
+operations depend on them.
+
+Operations:
+
+- `check` reads required keys from `/proc/sys` and reports current key/value
+  state
+- `diff` compares observed kernel values with the required set and reports
+  drift
+
+`lpf sysctl` is read-only. `--json` emits machine-readable check or diff
+results for automation and CI preflight use.
+
 ### `lpf tools [--format openai|jsonschema|system-prompt]`
 
 Emit JSON tool-calling schemas or a compact automation prompt from the same
@@ -190,6 +205,14 @@ OCaml command metadata used for generated man pages.
 
 This command is read-only and must not emit host inventory, credentials, or lab
 identifiers.
+
+### `lpf completion [bash|zsh|fish]`
+
+Emit shell completion scripts generated from the same OCaml command metadata
+used for command help and man pages.
+
+`lpf completion` is read-only. The output is suitable for sourcing in an
+interactive shell or installing into the host shell-completion directory.
 
 ### `lpf e2e <run|list>`
 

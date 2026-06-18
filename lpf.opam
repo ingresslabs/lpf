@@ -16,6 +16,7 @@ tags: ["firewall" "nftables" "networking" "pf" "linux" "tc" "routing" "conntrack
 depends: [
   "ocaml" {>= "5.1"}
   "dune" {>= "3.11"}
+  "ocamlformat" {= "0.26.2" & with-test}
 ]
 available: os = "linux"
 depexts: [

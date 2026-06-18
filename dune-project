@@ -8,5 +8,5 @@
  (description "OCaml-first firewall policy control plane targeting nftables, policy routing, tc, conntrack, and NFLOG.")
  (depends
   (ocaml (>= 5.1))
-  (dune (>= 3.11))))
-
+  (dune (>= 3.11))
+  (ocamlformat (and (= 0.26.2) :with-test))))

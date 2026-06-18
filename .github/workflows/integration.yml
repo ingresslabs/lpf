@@ -80,7 +80,7 @@ jobs:
       - name: conntrack snapshot smoke test
         run: |
           set -euo pipefail
-          sudo conntrack -L -o extended > /tmp/lpf-integration-conntrack.txt 2>/dev/null || true
+          sudo conntrack -L -o extended 2>/dev/null | tee /tmp/lpf-integration-conntrack.txt >/dev/null || true
           echo "conntrack entries captured ($(wc -l < /tmp/lpf-integration-conntrack.txt) lines)"
 
       - name: lpf fixture check (policy validation)

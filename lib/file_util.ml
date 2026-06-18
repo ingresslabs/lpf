@@ -3,8 +3,8 @@ let read_file path =
   Fun.protect
     ~finally:(fun () -> close_in channel)
     (fun () ->
-       let length = in_channel_length channel in
-       really_input_string channel length)
+      let length = in_channel_length channel in
+      really_input_string channel length)
 
 let write_file path content =
   let channel = open_out path in
@@ -22,8 +22,11 @@ let rec ensure_dir ?(strict = true) dir =
     ensure_dir ~strict (Filename.dirname dir);
     try Unix.mkdir dir 0o755
     with Unix.Unix_error (error, _, _) ->
-      if strict then failwith ("could not create " ^ dir ^ ": " ^ Unix.error_message error)
-      else prerr_endline ("warning: could not create " ^ dir ^ ": " ^ Unix.error_message error))
+      if strict then
+        failwith ("could not create " ^ dir ^ ": " ^ Unix.error_message error)
+      else
+        prerr_endline
+          ("warning: could not create " ^ dir ^ ": " ^ Unix.error_message error))
 
 let read_stdin () =
   let buffer = Buffer.create 4096 in

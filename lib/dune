@@ -1,18 +1,20 @@
 (library
  (name lpf)
+ (instrumentation
+  (backend bisect_ppx))
  (modules
-   policy_types
-   json_util
-   policy_fmt
-   policy
-   ir
-   plan
-   tc
-   routing
-   nftables
-   nft
-   explain
-   ir_json
+  policy_types
+  json_util
+  policy_fmt
+  policy
+  ir
+  plan
+  tc
+  routing
+  nftables
+  nft
+  explain
+  ir_json
   test_engine
   test_parser
   history
@@ -26,6 +28,6 @@
   sysctl
   lpf
   process
-   file_util
-   lpf_conf)
+  file_util
+  lpf_conf)
  (libraries unix))

@@ -1,8 +1,4 @@
-type entry = {
-  key : string;
-  value : string;
-}
-
+type entry = { key : string; value : string }
 type t = entry list
 
 val read : string -> (string, string) result

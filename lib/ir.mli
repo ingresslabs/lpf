@@ -1,25 +1,9 @@
 open Policy
 
-type interface_ref = {
-  name : string option;
-  device : string;
-  span : span;
-}
-
-type address =
-  | Any
-  | Literal of string
-  | Table of string
-
-type port_range =
-  | Port_any
-  | Range of int * int
-
-type table = {
-  name : string;
-  entries : string list;
-  span : span;
-}
+type interface_ref = { name : string option; device : string; span : span }
+type address = Any | Literal of string | Table of string
+type port_range = Port_any | Range of int * int
+type table = { name : string; entries : string list; span : span }
 
 type queue = {
   name : string;
@@ -64,11 +48,7 @@ type rdr = {
   span : span;
 }
 
-type anchor = {
-  name : string;
-  rules : rule list;
-  span : span;
-}
+type anchor = { name : string; rules : rule list; span : span }
 
 type t = {
   default_action : default_action;

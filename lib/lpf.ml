@@ -69,7 +69,6 @@ let help = Command.help
 let command_help = Command.command_help
 let man_pages = Manpage.man_pages
 let man_page_content = Manpage.man_page_content
-
 let ir_of_policy = Pipeline.ir_of_policy
 let plan_of_policy = Pipeline.plan_of_policy
 let check_policy_text = Pipeline.check_policy_text

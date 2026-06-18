@@ -88,7 +88,8 @@ jobs:
           set -euo pipefail
           VERSION=$(release/lpf version)
           RPM_TOPDIR="${RUNNER_TEMP:-/tmp}/lpf-rpmbuild"
-          export OPAMSWITCH="$(opam switch show)"
+          OPAMSWITCH="$(opam switch show)"
+          export OPAMSWITCH
           rm -rf "$RPM_TOPDIR"
           mkdir -p "$RPM_TOPDIR"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS} release/packages/rpm
           git archive --prefix="lpf-${VERSION}/" -o "$RPM_TOPDIR/SOURCES/lpf-${VERSION}.tar.gz" HEAD
@@ -104,7 +105,9 @@ jobs:
       - name: Generate checksums
         run: |
           set -euo pipefail
-          (cd release && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+          checksum_file="${RUNNER_TEMP:-/tmp}/lpf-SHA256SUMS"
+          (cd release && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > "$checksum_file")
+          mv "$checksum_file" release/SHA256SUMS
 
       - name: Create tarball
         run: |

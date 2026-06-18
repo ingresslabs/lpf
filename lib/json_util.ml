@@ -12,7 +12,8 @@ let string text =
       | '\t' -> Buffer.add_string buffer "\\t"
       | character ->
           let code = Char.code character in
-          if code < 0x20 then Buffer.add_string buffer (Printf.sprintf "\\u%04x" code)
+          if code < 0x20 then
+            Buffer.add_string buffer (Printf.sprintf "\\u%04x" code)
           else Buffer.add_char buffer character)
     text;
   Buffer.add_char buffer '"';
@@ -20,10 +21,7 @@ let string text =
 
 let int value = string_of_int value
 let list render values = "[" ^ String.concat "," (List.map render values) ^ "]"
-
-let option render = function
-  | None -> "null"
-  | Some value -> render value
+let option render = function None -> "null" | Some value -> render value
 
 let field_object fields =
   "{"

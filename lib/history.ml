@@ -21,14 +21,18 @@ let entry_json (e : entry) =
       ("policy_checksum", Json_util.string e.policy_checksum);
       ("policy_path", Json_util.string e.policy_path);
       ("test_result", Json_util.string e.test_result);
-      ("rollback_available", (if e.rollback_available then "true" else "false"));
+      ("rollback_available", if e.rollback_available then "true" else "false");
     ]
 
 let to_json (h : t) = String.concat "\n" (List.map (fun e -> entry_json e) h)
 
 let parse_json_string text =
   let text = String.trim text in
-  if String.length text >= 2 && text.[0] = '"' && text.[String.length text - 1] = '"' then
+  if
+    String.length text >= 2
+    && text.[0] = '"'
+    && text.[String.length text - 1] = '"'
+  then (
     let buf = Buffer.create (String.length text) in
     let rec unescape i =
       if i >= String.length text - 1 then ()
@@ -36,19 +40,33 @@ let parse_json_string text =
         let c = text.[i] in
         if c = '\\' && i + 1 < String.length text then (
           match text.[i + 1] with
-          | '"' -> Buffer.add_char buf '"'; unescape (i + 2)
-          | '\\' -> Buffer.add_char buf '\\'; unescape (i + 2)
-          | '/' -> Buffer.add_char buf '/'; unescape (i + 2)
-          | 'n' -> Buffer.add_char buf '\n'; unescape (i + 2)
-          | 'r' -> Buffer.add_char buf '\r'; unescape (i + 2)
-          | 't' -> Buffer.add_char buf '\t'; unescape (i + 2)
-          | _ -> Buffer.add_char buf c; unescape (i + 1))
+          | '"' ->
+              Buffer.add_char buf '"';
+              unescape (i + 2)
+          | '\\' ->
+              Buffer.add_char buf '\\';
+              unescape (i + 2)
+          | '/' ->
+              Buffer.add_char buf '/';
+              unescape (i + 2)
+          | 'n' ->
+              Buffer.add_char buf '\n';
+              unescape (i + 2)
+          | 'r' ->
+              Buffer.add_char buf '\r';
+              unescape (i + 2)
+          | 't' ->
+              Buffer.add_char buf '\t';
+              unescape (i + 2)
+          | _ ->
+              Buffer.add_char buf c;
+              unescape (i + 1))
         else (
           Buffer.add_char buf c;
           unescape (i + 1))
     in
     unescape 1;
-    Buffer.contents buf
+    Buffer.contents buf)
   else text
 
 let rec skip_whitespace line pos =
@@ -109,9 +127,11 @@ let find_json_value line key =
     else
       let pos = skip_whitespace line pos in
       if pos >= String.length line then ""
-      else if line.[pos] = '"'
-           && pos + String.length key_pattern <= String.length line
-           && String.sub line pos (String.length key_pattern) = key_pattern then
+      else if
+        line.[pos] = '"'
+        && pos + String.length key_pattern <= String.length line
+        && String.sub line pos (String.length key_pattern) = key_pattern
+      then
         let after_key = pos + String.length key_pattern in
         let colon_pos = skip_whitespace line after_key in
         if colon_pos >= String.length line || line.[colon_pos] <> ':' then ""
@@ -126,7 +146,8 @@ let find_json_value line key =
             in
             let end_idx = find_string_end (val_start + 1) in
             if end_idx < String.length line then
-              parse_json_string (String.sub line val_start (end_idx - val_start + 1))
+              parse_json_string
+                (String.sub line val_start (end_idx - val_start + 1))
             else ""
           else if line.[val_start] = '{' || line.[val_start] = '[' then
             let end_idx = find_value_end line val_start in
@@ -151,15 +172,18 @@ let load () =
             let line = String.trim line in
             if line = "" then read_lines acc
             else
-              let entry = {
-                id = find_json_value line "id";
-                timestamp = find_json_value line "timestamp";
-                operator = find_json_value line "operator";
-                policy_checksum = find_json_value line "policy_checksum";
-                policy_path = find_json_value line "policy_path";
-                test_result = find_json_value line "test_result";
-                rollback_available = (find_json_value line "rollback_available" = "true");
-              } in
+              let entry =
+                {
+                  id = find_json_value line "id";
+                  timestamp = find_json_value line "timestamp";
+                  operator = find_json_value line "operator";
+                  policy_checksum = find_json_value line "policy_checksum";
+                  policy_path = find_json_value line "policy_path";
+                  test_result = find_json_value line "test_result";
+                  rollback_available =
+                    find_json_value line "rollback_available" = "true";
+                }
+              in
               read_lines (entry :: acc)
         | exception End_of_file ->
             close_in ic;
@@ -182,18 +206,26 @@ let save (h : t) =
   let json = to_json h in
   try
     let out = open_out (history_file ()) in
-    Fun.protect ~finally:(fun () -> close_out out) (fun () -> output_string out (json ^ "\n"));
+    Fun.protect
+      ~finally:(fun () -> close_out out)
+      (fun () -> output_string out (json ^ "\n"));
     Ok ()
   with e -> Error (Printexc.to_string e)
 
 let add entry h = entry :: h
 
 let to_string (h : t) =
-  let header = Printf.sprintf "%-20s %-20s %-15s %-10s %s" "ID" "TIMESTAMP" "OPERATOR" "RESULT" "POLICY" in
-  let rows = List.map (fun e ->
-    Printf.sprintf "%-20s %-20s %-15s %-10s %s"
-      (String.sub e.id 0 (min (String.length e.id) 20))
-      (String.sub e.timestamp 0 (min (String.length e.timestamp) 20))
-      e.operator e.test_result e.policy_path
-  ) h in
+  let header =
+    Printf.sprintf "%-20s %-20s %-15s %-10s %s" "ID" "TIMESTAMP" "OPERATOR"
+      "RESULT" "POLICY"
+  in
+  let rows =
+    List.map
+      (fun e ->
+        Printf.sprintf "%-20s %-20s %-15s %-10s %s"
+          (String.sub e.id 0 (min (String.length e.id) 20))
+          (String.sub e.timestamp 0 (min (String.length e.timestamp) 20))
+          e.operator e.test_result e.policy_path)
+      h
+  in
   String.concat "\n" (header :: rows)

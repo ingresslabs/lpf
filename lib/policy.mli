@@ -1,18 +1,6 @@
-type span = {
-  file : string option;
-  line : int;
-  column : int;
-  end_column : int;
-}
-
+type span = { file : string option; line : int; column : int; end_column : int }
 type severity = Diag_error | Diag_warning
-
-type diagnostic = {
-  severity : severity;
-  span : span;
-  message : string;
-}
-
+type diagnostic = { severity : severity; span : span; message : string }
 type default_action = Default_pass | Default_deny
 type direction = In | Out
 type action = Pass | Block | Reject
@@ -24,29 +12,10 @@ type reference =
   | Table_ref of string
   | Macro_ref of string
 
-type port =
-  | Port_any
-  | Port_number of int
-  | Port_macro of string
-
-type interface_decl = {
-  name : string;
-  device : string;
-  span : span;
-}
-
-type macro = {
-  name : string;
-  value : string;
-  span : span;
-}
-
-type table = {
-  name : string;
-  entries : string list;
-  span : span;
-}
-
+type port = Port_any | Port_number of int | Port_macro of string
+type interface_decl = { name : string; device : string; span : span }
+type macro = { name : string; value : string; span : span }
+type table = { name : string; entries : string list; span : span }
 type log_option = Log_all | Log_matches | Log_user
 
 type rule = {
@@ -137,12 +106,11 @@ type policy = {
   rules : rule list;
 }
 
-type check_result = {
-  policy : policy option;
-  diagnostics : diagnostic list;
-}
+type check_result = { policy : policy option; diagnostics : diagnostic list }
 
-val parse : ?file:string -> ?max_lines:int -> ?max_tokens:int -> string -> check_result
+val parse :
+  ?file:string -> ?max_lines:int -> ?max_tokens:int -> string -> check_result
+
 val validate : policy -> diagnostic list
 val check : ?file:string -> string -> check_result
 val format : policy -> string

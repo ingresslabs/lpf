@@ -15,7 +15,8 @@ let contains_substring text needle =
   else
     let rec loop index =
       index + needle_length <= text_length
-      && (String.equal (String.sub text index needle_length) needle || loop (index + 1))
+      && (String.equal (String.sub text index needle_length) needle
+         || loop (index + 1))
     in
     loop 0
 
@@ -32,10 +33,13 @@ let checksum_of_text ~file text =
                diagnostic.severity = Diag_error)
       in
       if errors <> [] then
-        failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string errors));
+        failwith
+          (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string errors));
       Lpf.Plan.checksum plan
   | Error diagnostics ->
-      failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics))
+      failwith
+        (String.concat "\n"
+           (List.map Lpf.Policy.diagnostic_to_string diagnostics))
 
 let plan_of_fixture path =
   let path = fixture path in
@@ -47,10 +51,13 @@ let plan_of_fixture path =
                diagnostic.severity = Diag_error)
       in
       if errors <> [] then
-        failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string errors));
+        failwith
+          (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string errors));
       (plan, diagnostics)
   | Error diagnostics ->
-      failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics))
+      failwith
+        (String.concat "\n"
+           (List.map Lpf.Policy.diagnostic_to_string diagnostics))
 
 let () =
   assert (String.equal Lpf.version "0.2.1");
@@ -76,13 +83,16 @@ let () =
   let plan_again, _ = plan_of_fixture "queue-route.lpf" in
   assert (String.equal (Lpf.Plan.checksum plan) (Lpf.Plan.checksum plan_again));
   assert (String.equal json (Lpf.Plan.to_json plan_again));
-  let warning_plan, warning_diagnostics = plan_of_fixture "warning-shadowed-rule.lpf" in
+  let warning_plan, warning_diagnostics =
+    plan_of_fixture "warning-shadowed-rule.lpf"
+  in
   assert (String.length (Lpf.Plan.checksum warning_plan) > 4);
   assert (
     List.exists
       (fun (diagnostic : Lpf.Policy.diagnostic) ->
         diagnostic.severity = Diag_warning
-        && String.equal diagnostic.message "rule is completely shadowed by rule at line 3")
+        && String.equal diagnostic.message
+             "rule is completely shadowed by rule at line 3")
       warning_diagnostics);
   let messy_path = fixture "messy-full.lpf" in
   let messy = read_file messy_path in
@@ -90,7 +100,9 @@ let () =
     match Lpf.format_policy_text ~file:messy_path messy with
     | Ok formatted -> formatted
     | Error diagnostics ->
-        failwith (String.concat "\n" (List.map Lpf.Policy.diagnostic_to_string diagnostics))
+        failwith
+          (String.concat "\n"
+             (List.map Lpf.Policy.diagnostic_to_string diagnostics))
   in
   assert (
     String.equal

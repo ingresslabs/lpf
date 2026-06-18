@@ -42,9 +42,13 @@ let interface_json ~include_spans (interface : Ir.interface_ref) =
 let address_json = function
   | Ir.Any -> Json_util.field_object [ ("kind", Json_util.string "any") ]
   | Ir.Literal value ->
-      Json_util.field_object [ ("kind", Json_util.string "literal"); ("value", Json_util.string value) ]
+      Json_util.field_object
+        [
+          ("kind", Json_util.string "literal"); ("value", Json_util.string value);
+        ]
   | Ir.Table name ->
-      Json_util.field_object [ ("kind", Json_util.string "table"); ("name", Json_util.string name) ]
+      Json_util.field_object
+        [ ("kind", Json_util.string "table"); ("name", Json_util.string name) ]
 
 let port_json = function
   | Ir.Port_any -> Json_util.field_object [ ("kind", Json_util.string "any") ]
@@ -58,7 +62,8 @@ let port_json = function
 
 let table_json ~include_spans ~for_checksum (table : Ir.table) =
   let entries =
-    if for_checksum then List.sort String.compare table.entries else table.entries
+    if for_checksum then List.sort String.compare table.entries
+    else table.entries
   in
   add_span ~include_spans table.span
     [
@@ -89,7 +94,8 @@ let rule_json ~include_spans (rule : Ir.rule) =
     [
       ("action", action_json rule.action);
       ("direction", Json_util.option direction_json rule.direction);
-      ("interface", Json_util.option (interface_json ~include_spans) rule.interface);
+      ( "interface",
+        Json_util.option (interface_json ~include_spans) rule.interface );
       ("protocol", protocol_json rule.protocol);
       ("source", address_json rule.source);
       ("destination", address_json rule.destination);
@@ -137,20 +143,21 @@ let sort_by key values =
   List.sort (fun left right -> String.compare (key left) (key right)) values
 
 let interface_key (interface : Ir.interface_ref) =
-  match interface.name with
-  | Some name -> name
-  | None -> interface.device
+  match interface.name with Some name -> name | None -> interface.device
 
 let policy_json ~include_spans ~for_checksum (policy : Ir.t) =
   let interfaces =
-    if for_checksum then sort_by interface_key policy.interfaces else policy.interfaces
+    if for_checksum then sort_by interface_key policy.interfaces
+    else policy.interfaces
   in
   let tables =
-    if for_checksum then sort_by (fun (table : Ir.table) -> table.name) policy.tables
+    if for_checksum then
+      sort_by (fun (table : Ir.table) -> table.name) policy.tables
     else policy.tables
   in
   let queues =
-    if for_checksum then sort_by (fun (queue : Ir.queue) -> queue.name) policy.queues
+    if for_checksum then
+      sort_by (fun (queue : Ir.queue) -> queue.name) policy.queues
     else policy.queues
   in
   Json_util.field_object
@@ -165,7 +172,8 @@ let policy_json ~include_spans ~for_checksum (policy : Ir.t) =
       ("rules", Json_util.list (rule_json ~include_spans) policy.rules);
     ]
 
-let checksum_body policy = policy_json ~include_spans:false ~for_checksum:true policy
+let checksum_body policy =
+  policy_json ~include_spans:false ~for_checksum:true policy
 
 let checksum_of_ir schema policy =
   "md5:" ^ Digest.to_hex (Digest.string (schema ^ "\n" ^ checksum_body policy))

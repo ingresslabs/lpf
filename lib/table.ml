@@ -1,19 +1,57 @@
 let add_element_invocation table_name element =
-  { Nft.program = "nft"; argv = [ "nft"; "add"; "element"; "inet"; "lpf_filter"; "tbl_" ^ table_name; "{"; element; "}" ] }
+  {
+    Nft.program = "nft";
+    argv =
+      [
+        "nft";
+        "add";
+        "element";
+        "inet";
+        "lpf_filter";
+        "tbl_" ^ table_name;
+        "{";
+        element;
+        "}";
+      ];
+  }
 
 let delete_element_invocation table_name element =
-  { Nft.program = "nft"; argv = [ "nft"; "delete"; "element"; "inet"; "lpf_filter"; "tbl_" ^ table_name; "{"; element; "}" ] }
+  {
+    Nft.program = "nft";
+    argv =
+      [
+        "nft";
+        "delete";
+        "element";
+        "inet";
+        "lpf_filter";
+        "tbl_" ^ table_name;
+        "{";
+        element;
+        "}";
+      ];
+  }
 
 let flush_invocation table_name =
-  { Nft.program = "nft"; argv = [ "nft"; "flush"; "set"; "inet"; "lpf_filter"; "tbl_" ^ table_name ] }
+  {
+    Nft.program = "nft";
+    argv = [ "nft"; "flush"; "set"; "inet"; "lpf_filter"; "tbl_" ^ table_name ];
+  }
 
 let counters_invocation table_name =
-  { Nft.program = "nft"; argv = [ "nft"; "list"; "set"; "inet"; "lpf_filter"; "tbl_" ^ table_name ] }
+  {
+    Nft.program = "nft";
+    argv = [ "nft"; "list"; "set"; "inet"; "lpf_filter"; "tbl_" ^ table_name ];
+  }
 
-let counters_with_runner runner table_name = runner (counters_invocation table_name)
+let counters_with_runner runner table_name =
+  runner (counters_invocation table_name)
+
 let counters table_name = counters_with_runner Nft.run table_name
 
-let flush_with_runner runner table_name = runner (flush_invocation table_name) |> Result.map ignore
+let flush_with_runner runner table_name =
+  runner (flush_invocation table_name) |> Result.map ignore
+
 let flush table_name = flush_with_runner Nft.run table_name
 
 let add_with_runner runner table_name element =
@@ -31,17 +69,19 @@ let replace_with_runner runner table_name elements =
   | Ok _ ->
       let rec add_all = function
         | [] -> Ok ()
-        | e :: rest ->
-            (match runner (add_element_invocation table_name e) with
-             | Ok _ -> add_all rest
-             | Error error -> Error error)
+        | e :: rest -> (
+            match runner (add_element_invocation table_name e) with
+            | Ok _ -> add_all rest
+            | Error error -> Error error)
       in
       add_all elements
   | Error error -> Error error
 
 let add table_name element = add_with_runner Nft.run table_name element
 let delete table_name element = delete_with_runner Nft.run table_name element
-let replace table_name elements = replace_with_runner Nft.run table_name elements
+
+let replace table_name elements =
+  replace_with_runner Nft.run table_name elements
 
 type table_element = {
   value : string;
@@ -51,7 +91,8 @@ type table_element = {
 
 let parse_counters_line line =
   let trimmed = String.trim line in
-  if String.length trimmed = 0 || trimmed.[0] = '{' || trimmed.[0] = '}' then None
+  if String.length trimmed = 0 || trimmed.[0] = '{' || trimmed.[0] = '}' then
+    None
   else
     let trim_punctuation value =
       let rec right index =
@@ -68,16 +109,13 @@ let parse_counters_line line =
       |> List.filter (fun s -> String.length s > 0)
       |> List.map trim_punctuation
     in
-    let value =
-      match parts with
-      | v :: _ when v <> "counter" -> v
-      | _ -> ""
-    in
+    let value = match parts with v :: _ when v <> "counter" -> v | _ -> "" in
     if value = "" then None
     else
       let rec int_after name = function
         | [] -> None
-        | key :: value :: _ when String.equal key name -> int_of_string_opt value
+        | key :: value :: _ when String.equal key name ->
+            int_of_string_opt value
         | _ :: rest -> int_after name rest
       in
       let packets = int_after "packets" parts in
@@ -109,8 +147,9 @@ let parse_counters_output output =
 let element_to_json (e : table_element) =
   Json_util.field_object
     ([ ("value", Json_util.string e.value) ]
-     @ (match e.packets with Some p -> [ ("packets", Json_util.int p) ] | None -> [])
-     @ (match e.bytes with Some b -> [ ("bytes", Json_util.int b) ] | None -> []))
+    @ (match e.packets with
+      | Some p -> [ ("packets", Json_util.int p) ]
+      | None -> [])
+    @ match e.bytes with Some b -> [ ("bytes", Json_util.int b) ] | None -> [])
 
-let elements_to_json elements =
-  Json_util.list element_to_json elements ^ "\n"
+let elements_to_json elements = Json_util.list element_to_json elements ^ "\n"

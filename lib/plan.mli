@@ -1,8 +1,4 @@
-type t = {
-  schema : string;
-  checksum : string;
-  policy : Ir.t;
-}
+type t = { schema : string; checksum : string; policy : Ir.t }
 
 val schema : string
 val of_ir : Ir.t -> t

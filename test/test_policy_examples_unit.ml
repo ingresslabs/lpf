@@ -9,8 +9,7 @@ let read_file path =
 let examples_dir = "../configs/policies"
 
 let policy_examples () =
-  Sys.readdir examples_dir
-  |> Array.to_list
+  Sys.readdir examples_dir |> Array.to_list
   |> List.filter (fun path -> Filename.check_suffix path ".lpf")
   |> List.sort String.compare
   |> List.map (Filename.concat examples_dir)

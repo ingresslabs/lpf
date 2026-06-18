@@ -99,20 +99,20 @@ jobs:
         run: BISECT_ENABLE=yes opam exec -- dune runtest --instrument-with bisect_ppx
       - name: Generate coverage reports
         run: |
-          opam exec -- bisect-ppx-report summary > coverage-summary.txt
-          opam exec -- bisect-ppx-report lcov > lcov.info
-          opam exec -- bisect-ppx-report html --dest _coverage_html/
+          opam exec -- bisect-ppx-report summary --coverage-path _build/default/test > coverage-summary.txt
+          opam exec -- bisect-ppx-report cobertura --coverage-path _build/default/test coverage.xml
+          opam exec -- bisect-ppx-report html --coverage-path _build/default/test -o _coverage_html/
           cat coverage-summary.txt
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
           name: ocaml-coverage
           path: |
-            lcov.info
+            coverage.xml
             coverage-summary.txt
             _coverage_html/
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
         with:
-          files: lcov.info
+          files: coverage.xml
           fail_ci_if_error: false
