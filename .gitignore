@@ -1,5 +1,6 @@
 _build/
 *.install
+!packaging/deb/*.install
 *.merlin
 *.opam.locked
 .DS_Store
