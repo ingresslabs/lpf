@@ -15,7 +15,6 @@ REMOTE_DIR ?= /tmp/lpf-remote-check
 .PHONY: policy-check policy-fmt policy-fmt-check fixture-check
 .PHONY: plan rules-show rules-diff remote-check
 .PHONY: release-checksums release-sign release-verify
-.PHONY: e2e-dry-run e2e-list
 .PHONY: static
 .PHONY: deb rpm
 
@@ -129,20 +128,7 @@ release-verify:
 	@if [ -f $(RELEASE_TARBALL).asc ]; then gpg --verify $(RELEASE_TARBALL).asc; fi
 	@printf 'release verified\n'
 
-# E2E validation
-E2E_SCENARIO_COUNT ?= 480
-E2E_JUNIT ?= evidence/junit.xml
-E2E_ALLURE ?= allure-results
-E2E_EVIDENCE ?= evidence
-
-e2e-dry-run:
-	$(LPF) e2e run --dry-run --scenario-count $(E2E_SCENARIO_COUNT) --junit $(E2E_JUNIT) --allure-dir $(E2E_ALLURE) --evidence-dir $(E2E_EVIDENCE)
-
-e2e-list:
-	$(LPF) e2e list --scenario-count 12
-
-# Packaging
-deb:
+.PHONY: deb rpm
 	set -eu; rm -rf debian; cp -a packaging/deb debian; trap 'rm -rf debian' EXIT; dpkg-buildpackage -b -us -uc -d
 
 rpm:

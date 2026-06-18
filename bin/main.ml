@@ -774,10 +774,12 @@ let handle_table args =
       exit 64
 
 let handle_ebpf args =
+  let static = List.mem "--static" args in
+  let map_updates = List.mem "--map-updates" args in
   let policy_opt = List.find_opt (fun a -> String.ends_with ~suffix:".lpf" a || String.equal a "/etc/lpf.conf") args in
   match policy_opt with
   | None ->
-      prerr_endline "usage: lpf ebpf <policy>";
+      prerr_endline "usage: lpf ebpf [--static] [--map-updates] <policy>";
       exit 64
   | Some path -> (
       let input = read_file path in
@@ -793,65 +795,10 @@ let handle_ebpf args =
               exit 1
           | Ok ir ->
               print_diagnostics result.diagnostics;
-              print_string (Lpf.Ebpf.compile_to_c ir);
+              if map_updates then print_string (Lpf.Ebpf.generate_bpftool_commands ir)
+              else if static then print_string (Lpf.Ebpf.compile_to_static_c ir)
+              else print_string (Lpf.Ebpf.compile_to_c ir);
               exit 0))
-
-let parse_e2e_args args =
-  let rec loop mode scenario_count junit_path allure_dir evidence_dir kernel_id dry_run = function
-    | [] -> Ok (mode, scenario_count, junit_path, allure_dir, evidence_dir, kernel_id, dry_run)
-    | "run" :: rest -> loop "run" scenario_count junit_path allure_dir evidence_dir kernel_id dry_run rest
-    | "list" :: rest -> loop "list" scenario_count junit_path allure_dir evidence_dir kernel_id dry_run rest
-    | "--scenario-count" :: value :: rest -> (
-        match int_of_string_opt value with
-        | Some count -> loop mode count junit_path allure_dir evidence_dir kernel_id dry_run rest
-        | None -> Error ("invalid --scenario-count: " ^ value))
-    | "--scenario-count" :: [] -> Error "missing value for --scenario-count"
-    | "--junit" :: path :: rest -> loop mode scenario_count (Some path) allure_dir evidence_dir kernel_id dry_run rest
-    | "--junit" :: [] -> Error "missing value for --junit"
-    | "--allure-dir" :: path :: rest ->
-        loop mode scenario_count junit_path (Some path) evidence_dir kernel_id dry_run rest
-    | "--allure-dir" :: [] -> Error "missing value for --allure-dir"
-    | "--evidence-dir" :: path :: rest ->
-        loop mode scenario_count junit_path allure_dir (Some path) kernel_id dry_run rest
-    | "--evidence-dir" :: [] -> Error "missing value for --evidence-dir"
-    | "--kernel-id" :: value :: rest ->
-        loop mode scenario_count junit_path allure_dir evidence_dir (Some value) dry_run rest
-    | "--kernel-id" :: [] -> Error "missing value for --kernel-id"
-    | "--dry-run" :: rest -> loop mode scenario_count junit_path allure_dir evidence_dir kernel_id true rest
-    | option :: _ when String.length option > 0 && option.[0] = '-' -> Error ("unknown option: " ^ option)
-    | value :: _ -> Error ("unknown lpf e2e argument: " ^ value)
-  in
-  loop "run" Lpf.E2e.default_scenario_count None None None None false args
-
-let handle_e2e args =
-  match parse_e2e_args args with
-  | Error message ->
-      prerr_endline message;
-      prerr_endline
-        "usage: lpf e2e <run|list> [--scenario-count 1..1000] [--junit PATH] [--allure-dir DIR] [--evidence-dir DIR] [--kernel-id ID] [--dry-run]";
-      exit 64
-  | Ok ("list", scenario_count, _, _, _, _, _) ->
-      (try
-         Lpf.E2e.scenario_catalog scenario_count
-         |> List.iter (fun scenario ->
-                Printf.printf "%s\t%s\t%s\n" scenario.Lpf.E2e.id
-                  (Lpf.E2e.family_name scenario.family)
-                  scenario.description);
-         exit 0
-       with Invalid_argument message ->
-         prerr_endline message;
-         exit 1)
-  | Ok (_, scenario_count, junit_path, allure_dir, evidence_dir, kernel_id, dry_run) -> (
-      try
-        let result =
-          Lpf.E2e.run { scenario_count; junit_path; allure_dir; evidence_dir; kernel_id; dry_run }
-        in
-        Printf.printf "lpf e2e: %d passed, %d failed, %d total on %s (%s)\n" result.passed
-          result.failed result.scenario_count result.kernel_id result.kernel_release;
-        if result.failed = 0 then exit 0 else exit 1
-       with Failure message | Invalid_argument message ->
-         prerr_endline message;
-          exit 1)
 
 let tool_property_name option_name =
   let token =
@@ -1009,7 +956,6 @@ let () =
   | _ :: "history" :: args -> handle_history args
   | _ :: "rules" :: args -> handle_rules args
   | _ :: "state" :: args -> handle_state args
-  | _ :: "e2e" :: args -> handle_e2e args
   | _ :: "ebpf" :: args -> handle_ebpf args
   | _ :: "table" :: args -> handle_table args
   | _ :: "man" :: args -> handle_man args

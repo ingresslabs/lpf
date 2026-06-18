@@ -12,7 +12,6 @@ type command = Command.command =
   | State
   | Rules
   | History
-  | E2e
   | Ebpf
   | Man
   | Tools
@@ -55,7 +54,6 @@ module Conntrack = Conntrack
 module Table = Table
 module Ip = Ip
 module Ebpf = Ebpf
-module E2e = E2e
 module Process = Process
 module File_util = File_util
 

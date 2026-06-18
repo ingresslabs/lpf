@@ -2,13 +2,23 @@
 .SH NAME
 lpf\-ebpf \- compile policy to native eBPF/XDP C source
 .SH SYNOPSIS
-lpf ebpf <policy>
+lpf ebpf [\-\-static] [\-\-map\-updates] <policy>
 .SH DESCRIPTION
-Compile a policy to a native eBPF/XDP C source file.
+Compile a policy to a native eBPF/XDP C source file or dynamic map updates.
 This generates an XDP program that unifies routing and firewalling at the lowest level.
-The output is a standalone C file that can be compiled with clang \-target bpf.
+The default mode generates a generic engine C file. Use \-\-static for a specialized unrolled C file.
+Use \-\-map\-updates to generate bpftool commands for populating dynamic maps.
+.SH OPTIONS
+.TP
+\-\-static
+generate specialized C code with rules baked in for maximum performance
+.TP
+\-\-map\-updates
+generate bpftool commands to update dynamic rule maps
 .SH EXAMPLES
-lpf ebpf fixtures/policies/basic.lpf > lpf_xdp.c
+lpf ebpf /etc/lpf.conf > lpf_xdp.c
+lpf ebpf \-\-static /etc/lpf.conf > lpf_xdp_static.c
+lpf ebpf \-\-map\-updates /etc/lpf.conf | sh
 clang \-O2 \-target bpf \-c lpf_xdp.c \-o lpf_xdp.o
 .SH FILES
 /etc/lpf.conf

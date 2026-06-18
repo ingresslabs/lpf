@@ -12,7 +12,6 @@ type command =
   | State
   | Rules
   | History
-  | E2e
   | Ebpf
   | Man
   | Tools
@@ -48,7 +47,6 @@ let all_commands =
     ("state", State, "inspect or modify conntrack state");
     ("rules", Rules, "show or diff generated backend rules");
     ("history", History, "show policy apply history and rollback points");
-    ("e2e", E2e, "run Firecracker guest end-to-end networking scenarios");
     ("ebpf", Ebpf, "compile policy to native eBPF/XDP C source");
     ("man", Man, "generate, check, or install man pages");
     ("tools", Tools, "emit tool-calling schemas for AI agents");
@@ -70,7 +68,6 @@ let command_name = function
   | State -> "state"
   | Rules -> "rules"
   | History -> "history"
-  | E2e -> "e2e"
   | Ebpf -> "ebpf"
   | Man -> "man"
   | Tools -> "tools"
@@ -361,55 +358,26 @@ let command_docs =
       see_also = [ "lpf-rollback(8)"; "lpf-man(8)" ];
     };
     {
-      command = E2e;
+      command = Ebpf;
       section = 8;
-      synopsis =
-        "lpf e2e run [--scenario-count <n>] [--junit <path>] [--allure-dir <dir>] [--evidence-dir <dir>] [--kernel-id <id>]";
+      synopsis = "lpf ebpf [--static] [--map-updates] <policy>";
       description =
         [
-          "Run real end-to-end Linux networking scenarios intended for Firecracker guest validation.";
-          "The runner creates isolated network namespaces, veth links, nftables rules, policy routing entries, tc HTB shaping state, and conntrack evidence.";
-          "The default catalog contains 552 deterministic scenarios and supports up to 1000 scenarios across nftables IPv4 accept/drop/logging/reject, IPv6 accept/drop, policy routing, traffic shaping, conntrack, cleanup, readback, and negative-update families.";
+          "Compile a policy to a native eBPF/XDP C source file or dynamic map updates.";
+          "This generates an XDP program that unifies routing and firewalling at the lowest level.";
+          "The default mode generates a generic engine C file. Use --static for a specialized unrolled C file.";
+          "Use --map-updates to generate bpftool commands for populating dynamic maps.";
         ];
       options =
         [
-          ("--scenario-count <n>", "number of scenarios to run; must be between 1 and 1000, default 552");
-          ("--junit <path>", "write JUnit XML for CI trend reporting");
-          ("--allure-dir <dir>", "write Allure result JSON files");
-          ("--evidence-dir <dir>", "write a sanitized evidence manifest and per-scenario JSONL command log");
-          ("--kernel-id <id>", "attach a CI kernel label to reports");
-          ("--dry-run", "generate catalog reports without changing networking state");
+          ("--static", "generate specialized C code with rules baked in for maximum performance");
+          ("--map-updates", "generate bpftool commands to update dynamic rule maps");
         ];
       examples =
         [
-          "lpf e2e run --scenario-count 552 --junit evidence/junit.xml --allure-dir allure-results";
-          "lpf e2e run --scenario-count 984 --junit evidence/junit.xml --allure-dir allure-results --evidence-dir evidence/matrix --kernel-id kernel-7.1";
-          "lpf e2e run --dry-run --scenario-count 1000 --evidence-dir evidence/dry-run";
-          "lpf e2e list --scenario-count 12";
-        ];
-      files = [ "/run/netns"; "/var/lib/lpf/e2e"; "allure-results"; "evidence/junit.xml"; "evidence/scenario-log.jsonl" ];
-      safety_notes =
-        [
-          "Run inside an isolated Firecracker VM or disposable lab host.";
-          "The runner requires root and CAP_NET_ADMIN.";
-          "Do not run against a production network namespace.";
-        ];
-      see_also = [ "lpf-test(8)"; "lpf-diff(8)" ];
-    };
-    {
-      command = Ebpf;
-      section = 8;
-      synopsis = "lpf ebpf <policy>";
-      description =
-        [
-          "Compile a policy to a native eBPF/XDP C source file.";
-          "This generates an XDP program that unifies routing and firewalling at the lowest level.";
-          "The output is a standalone C file that can be compiled with clang -target bpf.";
-        ];
-      options = [];
-      examples =
-        [
-          "lpf ebpf fixtures/policies/basic.lpf > lpf_xdp.c";
+          "lpf ebpf /etc/lpf.conf > lpf_xdp.c";
+          "lpf ebpf --static /etc/lpf.conf > lpf_xdp_static.c";
+          "lpf ebpf --map-updates /etc/lpf.conf | sh";
           "clang -O2 -target bpf -c lpf_xdp.c -o lpf_xdp.o";
         ];
       files = shared_files;
@@ -475,7 +443,7 @@ let help () =
 
 let command_status = function
   | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules
-  | History | E2e | Ebpf | Man | Tools ->
+  | History | Ebpf | Man | Tools ->
       "implemented"
   | Version | Help -> "implemented"
 

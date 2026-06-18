@@ -12,7 +12,6 @@ type command =
   | State
   | Rules
   | History
-  | E2e
   | Ebpf
   | Man
   | Tools

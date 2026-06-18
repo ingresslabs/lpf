@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Removed
+
+- Removed `lpf e2e` command and E2e module — Firecracker guest networking
+  scenario runner extracted to its own repository.
+- Removed redundant `lpf state show` and `lpf table show` subcommands
+  (duplicates of `lpf state list` and `lpf table counters` respectively).
+- Removed 27 disposable files: diagnostic logs, Jenkins job configs and
+  automation scripts, build artifacts, and credential-containing files.
+- Removed unused exports from `table.mli`, `e2e.mli`, `ir_json.mli`,
+  `nftables.mli`, and `apply_guard.mli`.
+- Removed duplicate type redefinitions in `nft.mli`, `conntrack.mli`,
+  and `ip.mli` — now references `Process` types via manifest aliases.
+
+### Changed
+
+- `tc.ml` uses `Process.program` instead of `Nft.program` for TC invocations.
+- Man page count reduced from 20 to 19 after e2e removal.
+
 ### Added
 
 - Added `configs/policies` use-case examples for web servers, reverse proxies,
