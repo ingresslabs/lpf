@@ -29,3 +29,4 @@ full-e2e.groovy
 security.groovy
 disable_csrf.groovy
 create_job*.py
+AGENTS.md
