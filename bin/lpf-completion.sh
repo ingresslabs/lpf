@@ -148,8 +148,8 @@ _lpf_commands() {
     history)
       COMPREPLY=($(compgen -W "--json" -- "$cur"))
       ;;
-     sysctl)
-      local subs="check diff apply"
+    sysctl)
+      local subs="check diff"
       local sub=""
       for ((i = 1; i < cword; i++)); do
         if [[ " $subs " == *" ${words[i]} "* ]]; then
@@ -158,9 +158,9 @@ _lpf_commands() {
         fi
       done
       if [[ -z "$sub" ]]; then
-        COMPREPLY=($(compgen -W "$subs" -- "$cur"))
+        COMPREPLY=($(compgen -W "--json $subs" -- "$cur"))
       else
-        COMPREPLY=()
+        COMPREPLY=($(compgen -W "--json" -- "$cur"))
       fi
       ;;
     man)
@@ -196,7 +196,7 @@ _lpf_commands() {
       esac
       COMPREPLY=($(compgen -W "--format" -- "$cur"))
       ;;
-     version | help)
+    version | help)
       COMPREPLY=()
       ;;
     completion)

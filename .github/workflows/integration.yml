@@ -1,0 +1,108 @@
+name: Integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-integration:
+    name: Linux ${{ matrix.kernel }} on ${{ matrix.distro }}
+    runs-on: self-hosted
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kernel: "baseline"
+            distro: "ubuntu-24.04"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify kernel and required tools
+        run: |
+          set -euo pipefail
+          uname -r
+          echo "---"
+          nft --version
+          ip -V
+          tc -V
+          conntrack --version 2>/dev/null || true
+          echo "---"
+          lsmod | grep -E '^(nf_tables|nf_conntrack|sch_|cls_|act_)' || true
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.2.1
+
+      - name: Install dependencies
+        run: |
+          opam install . --deps-only --with-test
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends nftables iproute2 conntrack
+
+      - name: Build
+        run: opam exec -- dune build
+
+      - name: Unit tests (parse/IR/compile)
+        run: opam exec -- dune runtest
+
+      - name: nft snapshot smoke test
+        run: |
+          set -euo pipefail
+          nft list ruleset > /tmp/lpf-integration-nft-ruleset.txt
+          echo "ruleset captured ($(wc -l < /tmp/lpf-integration-nft-ruleset.txt) lines)"
+          opam exec -- dune exec -- lpf rules diff \
+            --observed /tmp/lpf-integration-nft-ruleset.txt \
+            fixtures/policies/basic.lpf || true
+
+      - name: ip / routing snapshot smoke test
+        run: |
+          set -euo pipefail
+          ip rule show > /tmp/lpf-integration-ip-rule.txt
+          echo "ip rules captured ($(wc -l < /tmp/lpf-integration-ip-rule.txt) lines)"
+          ip route show table all > /tmp/lpf-integration-ip-route.txt
+          echo "ip routes captured ($(wc -l < /tmp/lpf-integration-ip-route.txt) lines)"
+
+      - name: tc / qdisc snapshot smoke test
+        run: |
+          set -euo pipefail
+          tc qdisc show > /tmp/lpf-integration-tc-qdisc.txt
+          echo "tc qdiscs captured ($(wc -l < /tmp/lpf-integration-tc-qdisc.txt) lines)"
+          tc filter show > /tmp/lpf-integration-tc-filter.txt || true
+          echo "tc filters captured ($(wc -l < /tmp/lpf-integration-tc-filter.txt) lines)"
+
+      - name: conntrack snapshot smoke test
+        run: |
+          set -euo pipefail
+          sudo conntrack -L -o extended > /tmp/lpf-integration-conntrack.txt 2>/dev/null || true
+          echo "conntrack entries captured ($(wc -l < /tmp/lpf-integration-conntrack.txt) lines)"
+
+      - name: lpf fixture check (policy validation)
+        run: opam exec -- dune exec -- lpf check fixtures/policies/basic.lpf
+
+      - name: lpf plan smoke test
+        run: opam exec -- dune exec -- lpf plan --json fixtures/policies/basic.lpf > /tmp/lpf-integration-plan.json
+
+      - name: Upload integration snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-snapshots-${{ matrix.distro }}-${{ matrix.kernel }}
+          path: |
+            /tmp/lpf-integration-*.txt
+            /tmp/lpf-integration-*.json
+          if-no-files-found: ignore
+
+      - name: Upload Dune log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dune-log-integration-${{ matrix.distro }}-${{ matrix.kernel }}
+          path: _build/log
+          if-no-files-found: ignore

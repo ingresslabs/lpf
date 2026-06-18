@@ -844,34 +844,60 @@ let tool_schema_jsonschema (name, _command, summary) =
     (Lpf.Json_util.string name)
     (Lpf.Json_util.string summary)
 
-let handle_sysctl = function
+let handle_sysctl args =
+  let json = List.mem "--json" args in
+  let clean_args = List.filter (fun a -> a <> "--json") args in
+  match clean_args with
   | "check" :: _ ->
       let entries = Lpf.Sysctl.check_required () in
       List.iter (fun (e : Lpf.Sysctl.entry) -> Printf.printf "%s = %s\n" e.key e.value) entries;
       exit 0
   | "diff" :: _ ->
       let observed = Lpf.Sysctl.snapshot () in
-      let required = List.map (fun (e : Lpf.Sysctl.entry) -> e) (Lpf.Sysctl.check_required ()) in
-      print_string (Lpf.Sysctl.diff ~intended:required ~observed);
-      exit 0
+      let required = Lpf.Sysctl.check_required () in
+      if json then begin
+        let required_map = List.fold_left (fun acc (e : Lpf.Sysctl.entry) -> (e.key, e.value) :: acc) [] required in
+        let observed_map = List.fold_left (fun acc (e : Lpf.Sysctl.entry) -> (e.key, e.value) :: acc) [] observed in
+        let keys = List.sort_uniq String.compare (List.map (fun (e : Lpf.Sysctl.entry) -> e.key) (required @ observed)) in
+        List.iter (fun key ->
+          let required_val = List.assoc_opt key required_map in
+          let observed_val = List.assoc_opt key observed_map in
+          let ok = match required_val, observed_val with
+            | Some r, Some o -> String.equal r o
+            | None, _ | _, None -> false
+          in
+          Printf.printf "{\"key\":%s,\"required\":%s,\"observed\":%s,\"ok\":%s}\n"
+            (Lpf.Json_util.string key)
+            (Lpf.Json_util.string (Option.value ~default:"" required_val))
+            (Lpf.Json_util.string (Option.value ~default:"" observed_val))
+            (if ok then "true" else "false")
+        ) keys;
+        exit 0
+      end
+      else begin
+        print_string (Lpf.Sysctl.diff ~intended:required ~observed);
+        exit 0
+      end
   | _ ->
-      prerr_endline "usage: lpf sysctl <check|diff>";
+      prerr_endline "usage: lpf sysctl [--json] <check|diff>";
       exit 64
 
-let handle_completion () =
+let handle_completion args =
+  let shell = match args with [] | "bash" :: _ -> "bash" | "zsh" :: _ -> "zsh" | "fish" :: _ -> "fish" | _ :: _ -> "bash" in
+  let filename = Printf.sprintf "lpf-completion.%s" (if shell = "bash" then "sh" else shell) in
   let exe = Sys.argv.(0) in
   let exe_path = if Filename.is_relative exe then
     Filename.concat (Sys.getcwd ()) exe
   else exe in
-  let completion_path = Filename.concat (Filename.dirname exe_path) "lpf-completion.sh" in
+  let completion_path = Filename.concat (Filename.dirname exe_path) filename in
   if Sys.file_exists completion_path then
     print_string (read_file completion_path)
   else begin
-    let project_path = "bin/lpf-completion.sh" in
+    let project_path = Printf.sprintf "bin/%s" filename in
     if Sys.file_exists project_path then
       print_string (read_file project_path)
     else begin
-      prerr_endline "completion script not found";
+      prerr_endline ("completion script not found: " ^ filename);
       exit 1
     end
   end
@@ -965,7 +991,7 @@ let () =
   | _ :: "man" :: args -> handle_man args
   | _ :: "tools" :: args -> handle_tools args
   | _ :: "sysctl" :: args -> handle_sysctl args
-  | _ :: "completion" :: _ -> handle_completion ()
+  | _ :: "completion" :: args -> handle_completion args
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with
       | Some Lpf.Version -> print_end Lpf.version

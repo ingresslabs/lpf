@@ -398,16 +398,15 @@ let command_docs =
     {
       command = Sysctl;
       section = 8;
-      synopsis = "lpf sysctl <check|diff|apply>";
+      synopsis = "lpf sysctl <check|diff>";
       description =
         [
-          "Check, diff, or apply kernel sysctl parameters required by lpf.";
+          "Check or diff kernel sysctl parameters required by lpf.";
           "check mode reads required sysctls from /proc/sys and prints key=value pairs.";
           "diff mode snapshots observed sysctls and diffs them against the required set.";
-          "apply mode writes required sysctls that are not already set to 1.";
         ];
       options = [];
-      examples = [ "lpf sysctl check"; "lpf sysctl diff"; "lpf sysctl apply" ];
+      examples = [ "lpf sysctl check"; "lpf sysctl diff" ];
       files = [ "/proc/sys" ];
       safety_notes = [ "This command is read-only." ];
       see_also = [ "lpf-apply(8)"; "sysctl(8)" ];

@@ -2,16 +2,14 @@
 .SH NAME
 lpf\-sysctl \- check or diff kernel sysctl parameters
 .SH SYNOPSIS
-lpf sysctl <check|diff|apply>
+lpf sysctl <check|diff>
 .SH DESCRIPTION
-Check, diff, or apply kernel sysctl parameters required by lpf.
+Check or diff kernel sysctl parameters required by lpf.
 check mode reads required sysctls from /proc/sys and prints key=value pairs.
 diff mode snapshots observed sysctls and diffs them against the required set.
-apply mode writes required sysctls that are not already set to 1.
 .SH EXAMPLES
 lpf sysctl check
 lpf sysctl diff
-lpf sysctl apply
 .SH FILES
 /proc/sys
 .SH SAFETY NOTES

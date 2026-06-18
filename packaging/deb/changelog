@@ -5,16 +5,6 @@ lpf (0.2.1-1) unstable; urgency=medium
 
  -- lpf maintainers <lpf@example.com>  Thu, 18 Jun 2026 00:00:00 +0000
 
-lpf (0.2.1-1) unstable; urgency=medium
-
-  * Sysctl pre-flight check before guarded apply.
-  * New lpf sysctl apply subcommand.
-  * lpf completion subcommand emits bash completion script.
-  * Bash completion packaged in deb and rpm.
-  * Docker publish to ghcr.io on git tags.
-
- -- lpf maintainers <lpf@example.com>  Thu, 18 Jun 2026 00:00:00 +0000
-
 lpf (0.2.0-1) unstable; urgency=medium
 
   * Split policy into types, formatter, and parser modules.

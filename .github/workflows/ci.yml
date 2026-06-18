@@ -101,6 +101,7 @@ jobs:
         run: |
           opam exec -- bisect-ppx-report summary > coverage-summary.txt
           opam exec -- bisect-ppx-report lcov > lcov.info
+          opam exec -- bisect-ppx-report html --dest _coverage_html/
           cat coverage-summary.txt
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
@@ -109,6 +110,7 @@ jobs:
           path: |
             lcov.info
             coverage-summary.txt
+            _coverage_html/
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
         with:
