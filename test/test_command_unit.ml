@@ -6,11 +6,11 @@ let () =
   require (Lpf.command_of_string "apply" = Some Lpf.Apply) "apply command";
   require (Lpf.command_of_string "nonexistent" = None) "unknown command is None";
 
-  require (String.equal Lpf.version "0.1.3") "version string";
+  require (String.equal Lpf.version "0.2.0") "version string";
   require (String.length (Lpf.help ()) > 100) "help should be non-trivial";
 
   let all = Lpf.all_commands in
-  require (List.length all = 17) "should be 17 commands";
+  require (List.length all = 18) "should be 18 commands";
 
   List.iter (fun (name, command, _summary) ->
     let n = Lpf.command_name command in
@@ -21,7 +21,7 @@ let () =
     require (String.length help_text > 0) "every command should have help text"
   ) all;
 
-  require (List.length (Lpf.man_pages ()) >= 17) "should have at least 17 man pages";
+  require (List.length (Lpf.man_pages ()) >= 18) "should have at least 18 man pages";
 
   require (List.length Lpf.command_docs >= 15) "should have at least 15 command docs";
 

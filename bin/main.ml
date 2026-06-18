@@ -844,6 +844,20 @@ let tool_schema_jsonschema (name, _command, summary) =
     (Lpf.Json_util.string name)
     (Lpf.Json_util.string summary)
 
+let handle_sysctl = function
+  | "check" :: _ ->
+      let entries = Lpf.Sysctl.check_required () in
+      List.iter (fun (e : Lpf.Sysctl.entry) -> Printf.printf "%s = %s\n" e.key e.value) entries;
+      exit 0
+  | "diff" :: _ ->
+      let observed = Lpf.Sysctl.snapshot () in
+      let required = List.map (fun e : Lpf.Sysctl.entry -> e) (Lpf.Sysctl.check_required ()) in
+      print_string (Lpf.Sysctl.diff ~intended:required ~observed);
+      exit 0
+  | _ ->
+      prerr_endline "usage: lpf sysctl <check|diff>";
+      exit 64
+
 let handle_tools args =
   let rec parse format = function
     | [] -> Ok format
@@ -932,6 +946,7 @@ let () =
   | _ :: "table" :: args -> handle_table args
   | _ :: "man" :: args -> handle_man args
   | _ :: "tools" :: args -> handle_tools args
+  | _ :: "sysctl" :: args -> handle_sysctl args
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with
       | Some Lpf.Version -> print_end Lpf.version

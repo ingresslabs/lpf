@@ -14,6 +14,7 @@ type command =
   | History
   | Man
   | Tools
+  | Sysctl
   | Version
   | Help
 
@@ -29,7 +30,7 @@ type command_doc = {
   see_also : string list;
 }
 
-let version = "0.1.3"
+let version = "0.2.0"
 
 let all_commands =
   [
@@ -48,6 +49,7 @@ let all_commands =
     ("history", History, "show policy apply history and rollback points");
     ("man", Man, "generate, check, or install man pages");
     ("tools", Tools, "emit tool-calling schemas for AI agents");
+    ("sysctl", Sysctl, "check or diff kernel sysctl parameters");
     ("version", Version, "print lpf version");
     ("help", Help, "print general or command-specific help");
   ]
@@ -68,6 +70,7 @@ let command_name = function
   | History -> "history"
   | Man -> "man"
   | Tools -> "tools"
+  | Sysctl -> "sysctl"
   | Version -> "version"
   | Help -> "help"
 
@@ -389,6 +392,22 @@ let command_docs =
       safety_notes = [ "This command is read-only and must not include host inventory or credentials." ];
       see_also = [ "lpf-man(8)"; "lpf-check(8)" ];
     };
+    {
+      command = Sysctl;
+      section = 8;
+      synopsis = "lpf sysctl <check|diff>";
+      description =
+        [
+          "Check or diff kernel sysctl parameters required by lpf.";
+          "check mode reads required sysctls from /proc/sys and prints key=value pairs.";
+          "diff mode snapshots observed sysctls and diffs them against the required set.";
+        ];
+      options = [];
+      examples = [ "lpf sysctl check"; "lpf sysctl diff" ];
+      files = [ "/proc/sys" ];
+      safety_notes = [ "This command is read-only." ];
+      see_also = [ "lpf-apply(8)"; "sysctl(8)" ];
+    };
   ]
 
 let usage_lines () =
@@ -408,12 +427,12 @@ let help () =
     @ usage_lines ()
     @ [
         "";
-        "Read-only flows (check, fmt, plan, diff, explain, rules, man, tools) are implemented. Host mutation (apply, rollback, table, state) and per-backend rollback (nftables, tc, routing) are supported.";
+        "Read-only flows (check, fmt, plan, diff, explain, rules, man, tools, sysctl) are implemented. Host mutation (apply, rollback, table, state) and per-backend rollback (nftables, tc, routing) are supported.";
       ])
 
 let command_status = function
   | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules
-  | History | Man | Tools ->
+  | History | Man | Tools | Sysctl ->
       "implemented"
   | Version | Help -> "implemented"
 

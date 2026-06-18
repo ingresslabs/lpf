@@ -1,4 +1,30 @@
 (library
  (name lpf)
- (modules policy ir plan tc routing nftables nft explain json_util ir_json test_engine test_parser history command manpage pipeline apply_guard conntrack table ip sysctl lpf process file_util)
+ (modules
+   policy_types
+   json_util
+   policy_fmt
+   policy
+   ir
+   plan
+   tc
+   routing
+   nftables
+   nft
+   explain
+   ir_json
+  test_engine
+  test_parser
+  history
+  command
+  manpage
+  pipeline
+  apply_guard
+  conntrack
+  table
+  ip
+  sysctl
+  lpf
+  process
+  file_util)
  (libraries unix))

@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           lpf
-Version:        0.1.3
+Version:        0.2.0
 Release:        1%{?dist}
 Summary:        PF-style control plane for Linux networking
 License:        Apache-2.0

@@ -1,0 +1,21 @@
+.TH LPF-SYSCTL 8 "June 2026" "lpf 0.2.0" "lpf Manual"
+.SH NAME
+lpf\-sysctl \- check or diff kernel sysctl parameters
+.SH SYNOPSIS
+lpf sysctl <check|diff>
+.SH DESCRIPTION
+Check or diff kernel sysctl parameters required by lpf.
+check mode reads required sysctls from /proc/sys and prints key=value pairs.
+diff mode snapshots observed sysctls and diffs them against the required set.
+.SH EXAMPLES
+lpf sysctl check
+lpf sysctl diff
+.SH FILES
+/proc/sys
+.SH SAFETY NOTES
+This command is read\-only.
+.SH EXIT STATUS
+0 on success.
+Non\-zero when validation, planning, or host operations fail.
+.SH SEE ALSO
+lpf\-apply(8), sysctl(8)

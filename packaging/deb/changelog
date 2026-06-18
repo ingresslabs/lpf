@@ -1,3 +1,16 @@
+lpf (0.2.0-1) unstable; urgency=medium
+
+  * Split policy into types, formatter, and parser modules.
+  * New lpf sysctl check|diff subcommand with generated man page.
+  * Expanded sysctl coverage to include rp_filter and bridge-nf parameters.
+  * Pipeline.preimage_info delegates TC/routing extraction from apply_guard.
+  * Bash completion for all 18 subcommands and options.
+  * Docker dev environment with OCaml 5.1, iproute2, nftables, conntrack.
+  * 30 policy round-trip tests and JSON fuzz tests.
+  * OCamlformat normalization for dune files.
+
+ -- lpf maintainers <lpf@example.com>  Thu, 18 Jun 2026 00:00:00 +0000
+
 lpf (0.1.3-1) unstable; urgency=medium
 
   * Multi-backend rollback with nftables, TC, routing, and sysctl restore.

@@ -32,7 +32,11 @@ let write key value =
 let required_sysctls () =
   [
     "net.ipv4.ip_forward";
+    "net.ipv4.conf.all.rp_filter";
+    "net.ipv4.conf.default.rp_filter";
     "net.ipv6.conf.all.forwarding";
+    "net.bridge.bridge-nf-call-iptables";
+    "net.bridge.bridge-nf-call-ip6tables";
   ]
 
 let check_required () =

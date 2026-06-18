@@ -1,3 +1,4 @@
 (env
  (static
-  (ocamlopt_flags (:standard -ccopt -static))))
+  (ocamlopt_flags
+   (:standard -ccopt -static))))

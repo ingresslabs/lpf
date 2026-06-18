@@ -33,4 +33,25 @@ let () =
   let json2 = Lpf.History.to_json [ entry1 ] in
   assert (String.length json2 > 0);
 
+  let result = Lpf.History.find_json_value "{\"key\": \"value\"}" "key" in
+  assert (String.equal result "value");
+  let result = Lpf.History.find_json_value "{\"key\": \"value\", \"nested\": {\"a\": 1}}" "nested" in
+  assert (String.length result > 0);
+  let result = Lpf.History.find_json_value "missing quotes around key: value" "key" in
+  assert (String.equal result "");
+  let result = Lpf.History.find_json_value "{\"\": \"empty key works\"}" "" in
+  assert (String.equal result "empty key works");
+  let result = Lpf.History.find_json_value "{\"key\": " "key" in
+  assert (String.equal result "");
+  let result = Lpf.History.find_json_value "{\"key\": \"unterminated" "key" in
+  assert (String.equal result "");
+  let result = Lpf.History.find_json_value ("{\"key\": \"" ^ String.make 10000 'x' ^ "\"}") "key" in
+  assert (String.length result = 10000);
+  let result = Lpf.History.find_json_value "{\"key\": [1, 2, 3]}" "key" in
+  assert (String.length result > 0);
+  let result = Lpf.History.find_json_value "{\"a\": 1, \"b\": {\"c\": {\"d\": 2}}}" "b" in
+  assert (String.length result > 0);
+  let result = Lpf.History.find_json_value "not json at all" "anything" in
+  assert (String.equal result "");
+
   Printf.printf "history tests passed\n"

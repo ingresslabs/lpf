@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.0 - 2026-06-18
+
+### Added
+
+- `lpf sysctl check|diff` subcommand for kernel parameter inspection.
+- Expanded sysctl required list: `rp_filter` (all/default), bridge-nf-call
+  (iptables/ip6tables).
+- Bash completion (`bin/lpf-completion.sh`) for all 18 subcommands and options.
+- Docker dev environment (`Dockerfile`, `.devcontainer/devcontainer.json`)
+  with OCaml 5.1, iproute2, nftables, conntrack.
+- 30 policy round-trip tests (`parse → format → re-parse`).
+- JSON fuzz tests for History parser with malformed inputs.
+- `Pipeline.preimage_info` delegates TC/routing extraction from apply_guard.
+
+### Changed
+
+- Split `lib/policy.ml` (1413 lines) into `policy_types.ml`, `policy_fmt.ml`,
+  and `policy.ml` — public API unchanged.
+- OCamlformat dune files normalized.
+
 ## 0.1.3 - 2026-06-18
 
 ### Added

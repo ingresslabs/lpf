@@ -14,6 +14,7 @@ type command =
   | History
   | Man
   | Tools
+  | Sysctl
   | Version
   | Help
 
