@@ -13,4 +13,4 @@ override_dh_auto_install:
 	opam exec -- dune exec -- lpf man install --prefix debian/tmp/usr
 
 override_dh_auto_clean:
-	dune clean
+	opam exec -- dune clean
