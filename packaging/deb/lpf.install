@@ -1,3 +1,4 @@
 usr/bin/lpf
 usr/share/man/man8/lpf*.8
 usr/share/man/man5/lpf*.5
+usr/share/bash-completion/completions/lpf

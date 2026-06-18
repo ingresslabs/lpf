@@ -14,6 +14,8 @@ override_dh_auto_test:
 override_dh_auto_install:
 	opam exec -- dune install --prefix=/usr --destdir=debian/tmp --sections=bin
 	opam exec -- dune exec -- lpf man install --prefix debian/tmp/usr
+	mkdir -p debian/tmp/usr/share/bash-completion/completions
+	cp bin/lpf-completion.sh debian/tmp/usr/share/bash-completion/completions/lpf
 
 override_dh_auto_clean:
 	opam exec -- dune clean

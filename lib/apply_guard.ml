@@ -276,7 +276,7 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
   | Ok (rendered, diagnostics) ->
       (match Pipeline.plan_policy_text ?file text with
        | Error e -> Error (diagnostics @ e)
-       | Ok (plan, _) ->
+        | Ok (plan, _) ->
            let preimage =
              match confirm with
              | None -> None

@@ -15,6 +15,7 @@ type command = Command.command =
   | Man
   | Tools
   | Sysctl
+  | Completion
   | Version
   | Help
 

@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           lpf
-Version:        0.2.0
+Version:        0.2.1
 Release:        1%{?dist}
 Summary:        PF-style control plane for Linux networking
 License:        Apache-2.0
@@ -39,11 +39,14 @@ else
   opam exec -- dune install --prefix=/usr --destdir=%{buildroot} --sections=bin
   opam exec -- dune exec -- lpf man install --prefix %{buildroot}/usr
 fi
+mkdir -p %{buildroot}%{_datadir}/bash-completion/completions
+cp bin/lpf-completion.sh %{buildroot}%{_datadir}/bash-completion/completions/lpf
 
 %files
 %{_bindir}/lpf
 %{_mandir}/man8/lpf*.8*
 %{_mandir}/man5/lpf*.5*
+%{_datadir}/bash-completion/completions/lpf
 %doc README.md CHANGELOG.md
 
 %changelog

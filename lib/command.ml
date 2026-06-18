@@ -15,6 +15,7 @@ type command =
   | Man
   | Tools
   | Sysctl
+  | Completion
   | Version
   | Help
 
@@ -30,7 +31,7 @@ type command_doc = {
   see_also : string list;
 }
 
-let version = "0.2.0"
+let version = "0.2.1"
 
 let all_commands =
   [
@@ -50,6 +51,7 @@ let all_commands =
     ("man", Man, "generate, check, or install man pages");
     ("tools", Tools, "emit tool-calling schemas for AI agents");
     ("sysctl", Sysctl, "check or diff kernel sysctl parameters");
+    ("completion", Completion, "emit shell completion script");
     ("version", Version, "print lpf version");
     ("help", Help, "print general or command-specific help");
   ]
@@ -71,6 +73,7 @@ let command_name = function
   | Man -> "man"
   | Tools -> "tools"
   | Sysctl -> "sysctl"
+  | Completion -> "completion"
   | Version -> "version"
   | Help -> "help"
 
@@ -395,18 +398,30 @@ let command_docs =
     {
       command = Sysctl;
       section = 8;
-      synopsis = "lpf sysctl <check|diff>";
+      synopsis = "lpf sysctl <check|diff|apply>";
       description =
         [
-          "Check or diff kernel sysctl parameters required by lpf.";
+          "Check, diff, or apply kernel sysctl parameters required by lpf.";
           "check mode reads required sysctls from /proc/sys and prints key=value pairs.";
           "diff mode snapshots observed sysctls and diffs them against the required set.";
+          "apply mode writes required sysctls that are not already set to 1.";
         ];
       options = [];
-      examples = [ "lpf sysctl check"; "lpf sysctl diff" ];
+      examples = [ "lpf sysctl check"; "lpf sysctl diff"; "lpf sysctl apply" ];
       files = [ "/proc/sys" ];
       safety_notes = [ "This command is read-only." ];
       see_also = [ "lpf-apply(8)"; "sysctl(8)" ];
+    };
+    {
+      command = Completion;
+      section = 8;
+      synopsis = "lpf completion [bash]";
+      description = [ "Emit the bundled bash completion script." ];
+      options = [];
+      examples = [ "lpf completion bash" ];
+      files = [];
+      safety_notes = [];
+      see_also = [ "lpf(8)" ];
     };
   ]
 
@@ -427,12 +442,12 @@ let help () =
     @ usage_lines ()
     @ [
         "";
-        "Read-only flows (check, fmt, plan, diff, explain, rules, man, tools, sysctl) are implemented. Host mutation (apply, rollback, table, state) and per-backend rollback (nftables, tc, routing) are supported.";
+        "Read-only flows (check, fmt, plan, diff, explain, rules, man, tools, sysctl, completion) are implemented. Host mutation (apply, rollback, table, state) and per-backend rollback (nftables, tc, routing) are supported.";
       ])
 
 let command_status = function
   | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules
-  | History | Man | Tools | Sysctl ->
+  | History | Man | Tools | Sysctl | Completion ->
       "implemented"
   | Version | Help -> "implemented"
 

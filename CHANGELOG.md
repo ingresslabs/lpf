@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 - 2026-06-18
+
+### Added
+
+- Debian and RPM packages now install bash completion for `lpf`.
+- Docker image publish workflow for version tags.
+
 ## 0.2.0 - 2026-06-18
 
 ### Added

@@ -15,6 +15,7 @@ type command =
   | Man
   | Tools
   | Sysctl
+  | Completion
   | Version
   | Help
 

@@ -5,7 +5,7 @@ _lpf_commands() {
   local cur prev words cword
   _init_completion || return
 
-  local cmds="check fmt plan diff apply confirm rollback explain test table state rules history sysctl man tools version help"
+  local cmds="check fmt plan diff apply confirm rollback explain test table state rules history sysctl man tools version help completion"
 
   # subcommands that take further completions
   local rules_subs="show diff"
@@ -148,8 +148,20 @@ _lpf_commands() {
     history)
       COMPREPLY=($(compgen -W "--json" -- "$cur"))
       ;;
-    sysctl)
-      COMPREPLY=($(compgen -W "--json" -- "$cur"))
+     sysctl)
+      local subs="check diff apply"
+      local sub=""
+      for ((i = 1; i < cword; i++)); do
+        if [[ " $subs " == *" ${words[i]} "* ]]; then
+          sub="${words[i]}"
+          break
+        fi
+      done
+      if [[ -z "$sub" ]]; then
+        COMPREPLY=($(compgen -W "$subs" -- "$cur"))
+      else
+        COMPREPLY=()
+      fi
       ;;
     man)
       local sub=""
@@ -184,8 +196,11 @@ _lpf_commands() {
       esac
       COMPREPLY=($(compgen -W "--format" -- "$cur"))
       ;;
-    version | help)
+     version | help)
       COMPREPLY=()
+      ;;
+    completion)
+      COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
       ;;
     *)
       COMPREPLY=()

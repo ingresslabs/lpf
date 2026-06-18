@@ -851,12 +851,30 @@ let handle_sysctl = function
       exit 0
   | "diff" :: _ ->
       let observed = Lpf.Sysctl.snapshot () in
-      let required = List.map (fun e : Lpf.Sysctl.entry -> e) (Lpf.Sysctl.check_required ()) in
+      let required = List.map (fun (e : Lpf.Sysctl.entry) -> e) (Lpf.Sysctl.check_required ()) in
       print_string (Lpf.Sysctl.diff ~intended:required ~observed);
       exit 0
   | _ ->
       prerr_endline "usage: lpf sysctl <check|diff>";
       exit 64
+
+let handle_completion () =
+  let exe = Sys.argv.(0) in
+  let exe_path = if Filename.is_relative exe then
+    Filename.concat (Sys.getcwd ()) exe
+  else exe in
+  let completion_path = Filename.concat (Filename.dirname exe_path) "lpf-completion.sh" in
+  if Sys.file_exists completion_path then
+    print_string (read_file completion_path)
+  else begin
+    let project_path = "bin/lpf-completion.sh" in
+    if Sys.file_exists project_path then
+      print_string (read_file project_path)
+    else begin
+      prerr_endline "completion script not found";
+      exit 1
+    end
+  end
 
 let handle_tools args =
   let rec parse format = function
@@ -947,6 +965,7 @@ let () =
   | _ :: "man" :: args -> handle_man args
   | _ :: "tools" :: args -> handle_tools args
   | _ :: "sysctl" :: args -> handle_sysctl args
+  | _ :: "completion" :: _ -> handle_completion ()
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with
       | Some Lpf.Version -> print_end Lpf.version
