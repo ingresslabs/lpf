@@ -23,17 +23,12 @@ $ lpf ebpf /etc/lpf.conf > lpf_xdp.c
 $ clang -O2 -target bpf -c lpf_xdp.c -o lpf_xdp.o
 ```
 
-### Formal Verification (`lpf prove`)
+### Formal Verification Roadmap
 
-Stop guessing if your firewall is secure. `lpf` translates your policy into a strict Intermediate Representation (IR) and uses the **Z3 SMT Solver** to mathematically prove your security invariants. 
-
-If you assert that your database is isolated, `lpf` will either prove it mathematically or provide the exact packet headers that would bypass your rules.
-
-```sh
-# Prove that absolutely no traffic reaches the database port, unless it comes from the API servers
-$ lpf prove "block in from any to <db_subnet> port 5432 unless from <api_servers>" /etc/lpf.conf
-✅ Proof successful: Invariant holds against all possible packets.
-```
+`lpf prove` and Z3-backed invariant checks are planned, but they are not part
+of the current CLI. Until that command lands with OCaml implementation, tests,
+fixtures, and man pages, release CI does not label Z3 proof coverage as
+available.
 
 ### The Market Landscape: Why Mathematical Proofs Matter
 
@@ -46,7 +41,10 @@ Applying mathematical formal verification to networking has recently shifted fro
 **The Unique Position of `lpf`:**
 Historically, formal network verification required either being a massive cloud provider or purchasing six-figure enterprise software. 
 
-`lpf` is one of the only open-source tools that brings **Z3 SMT Formal Verification** directly to the Linux command line, seamlessly integrated with a compiler that generates **eBPF/XDP** bytecode. It empowers individual DevOps engineers to mathematically prove their node-level firewall invariants before deploying them to production.
+`lpf` is aiming to bring Z3-backed formal verification directly to the Linux
+command line, alongside a compiler that generates eBPF/XDP C source. That proof
+feature remains roadmap work until the CLI, tests, fixtures, and man pages land
+together.
 
 ---
 
