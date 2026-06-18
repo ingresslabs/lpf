@@ -3,24 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="light">
   <meta name="description" content="lpf is a next-generation Linux firewall.">
   <title>lpf</title>
   <style>
     :root {
-      --bg: #030407;
-      --panel: #070a10;
-      --panel-2: #0c1018;
-      --line: #263044;
-      --line-bright: #3a8dff;
-      --blue: #1f6fff;
-      --cyan: #5ed7ff;
-      --text: #f4f7ff;
-      --muted: #a4adbd;
-      --dim: #697286;
-      --amber: #d6b162;
-      --red: #d26060;
-      --green: #69cc8d;
+      --bg: #f4f7fc;
+      --panel: #ffffff;
+      --panel-2: #eef3fb;
+      --line: #c9d6ea;
+      --line-bright: #276df5;
+      --blue: #1f63e8;
+      --cyan: #0078c8;
+      --text: #08111f;
+      --muted: #445064;
+      --dim: #6e7787;
+      --amber: #9d6a00;
+      --red: #b64444;
+      --green: #177245;
       --max: 1120px;
     }
 
@@ -51,10 +51,10 @@
       pointer-events: none;
       content: "";
       background:
-        repeating-linear-gradient(90deg, rgba(58, 141, 255, 0.09) 0 1px, transparent 1px 104px),
-        repeating-linear-gradient(0deg, rgba(94, 215, 255, 0.055) 0 1px, transparent 1px 84px),
-        #030407;
-      opacity: 0.44;
+        repeating-linear-gradient(90deg, rgba(31, 99, 232, 0.11) 0 1px, transparent 1px 104px),
+        repeating-linear-gradient(0deg, rgba(0, 120, 200, 0.075) 0 1px, transparent 1px 84px),
+        #f4f7fc;
+      opacity: 0.62;
     }
 
     a {
@@ -82,7 +82,7 @@
       justify-content: space-between;
       gap: 16px;
       padding: 18px clamp(18px, 4vw, 48px);
-      background: rgba(3, 4, 7, 0.78);
+      background: rgba(244, 247, 252, 0.84);
       border-bottom: 1px solid rgba(58, 141, 255, 0.22);
       backdrop-filter: blur(16px);
     }
@@ -208,7 +208,7 @@
       min-height: 50px;
       align-content: center;
       padding: 13px 15px;
-      background: rgba(3, 4, 7, 0.78);
+      background: rgba(255, 255, 255, 0.78);
       color: var(--muted);
       font-size: 11px;
       font-weight: 800;
@@ -277,7 +277,7 @@
       min-width: 0;
       padding: clamp(18px, 3vw, 30px);
       overflow: hidden;
-      background: rgba(7, 10, 16, 0.96);
+      background: rgba(255, 255, 255, 0.96);
     }
 
     .terminal.wide {
@@ -313,7 +313,7 @@
       max-width: 100%;
       margin: 0;
       overflow: auto;
-      color: #e9f0ff;
+      color: #111a2a;
       font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
       font-size: 13px;
       line-height: 1.65;
@@ -344,11 +344,11 @@
 
     details {
       min-width: 0;
-      background: rgba(7, 10, 16, 0.96);
+      background: rgba(255, 255, 255, 0.96);
     }
 
     details[open] {
-      background: rgba(10, 15, 25, 0.98);
+      background: rgba(239, 244, 252, 0.98);
     }
 
     summary {
@@ -424,7 +424,7 @@
     .loop-zone {
       min-height: 120vh;
       background:
-        linear-gradient(90deg, rgba(210, 96, 96, 0.08), transparent 22%, transparent 78%, rgba(94, 215, 255, 0.08)),
+        linear-gradient(90deg, rgba(182, 68, 68, 0.07), transparent 22%, transparent 78%, rgba(31, 99, 232, 0.08)),
         var(--bg);
     }
 
@@ -453,7 +453,7 @@
       min-width: 0;
       min-height: 116px;
       padding: 21px clamp(18px, 3vw, 30px);
-      background: rgba(5, 8, 13, 0.96);
+      background: rgba(255, 255, 255, 0.96);
     }
 
     .loop-card b {
@@ -587,34 +587,35 @@
         <p class="lede">Next-generation Linux firewall</p>
         <div class="hero-meta" aria-label="Project traits">
           <span>PF-style syntax</span>
-          <span>eBPF/XDP output</span>
-          <span>Z3 prove roadmap</span>
+          <span>nftables first</span>
           <span>safe remote apply</span>
+          <span>JSON ready</span>
         </div>
       </div>
     </section>
 
     <main>
-      <section class="section" id="core">
+      <section class="section" id="why">
         <div class="section-inner">
           <div class="section-head">
-            <div class="eyebrow">Core path</div>
+            <div class="eyebrow">Why</div>
             <div>
-              <h2>eBPF now. Z3 proofs next.</h2>
-              <p class="copy">Compile checked policy IR to native eBPF/XDP C today. Z3-backed <code>lpf prove</code> is shown as the proof target, and remains marked roadmap until the OCaml command, tests, fixtures, and man pages land.</p>
+              <h2>Linux firewalling should feel like one system.</h2>
+              <p class="copy">Linux packet policy is powerful, but it is split across nftables, policy routing, tc, conntrack, rollback files, and logging. lpf was created to make that surface readable, reviewable, testable, and safe to apply on remote machines.</p>
             </div>
           </div>
           <div class="command-grid">
             <article class="terminal">
-              <div class="terminal-title">eBPF/XDP usage</div>
-              <pre><code><span class="prompt">$</span> lpf ebpf /etc/lpf.conf &gt; lpf_xdp.c
-<span class="prompt">$</span> clang -O2 -target bpf -c lpf_xdp.c -o lpf_xdp.o</code></pre>
+              <div class="terminal-title">One policy</div>
+              <pre><code>PF-style rules describe filtering, NAT, routing intent, queues, tables, and logging in one file.</code></pre>
             </article>
             <article class="terminal">
-              <div class="terminal-title">Z3 prove target</div>
-              <pre><code><span class="muted"># roadmap command; not current CLI</span>
-<span class="prompt">$</span> lpf prove --solver z3 /etc/lpf.conf
-<span class="muted"># prove reachability and deny/public invariants</span></code></pre>
+              <div class="terminal-title">Safe changes</div>
+              <pre><code>Plans, diffs, guarded apply, confirmation timers, history, and rollback are part of the operating model.</code></pre>
+            </article>
+            <article class="terminal wide">
+              <div class="terminal-title">Explainable operations</div>
+              <pre><code>Operators can ask what would change, why a packet matched, and what state must be restored before touching production networking.</code></pre>
             </article>
           </div>
         </div>
@@ -853,7 +854,7 @@ block in log from any to any</code></pre>
 
       const draw = () => {
         ctx.clearRect(0, 0, width, height);
-        ctx.fillStyle = "#030407";
+        ctx.fillStyle = "#f4f7fc";
         ctx.fillRect(0, 0, width, height);
 
         const horizon = height * 0.72;
@@ -862,12 +863,12 @@ block in log from any to any</code></pre>
 
         for (let i = 0; i < 34; i += 1) {
           const y = horizon + Math.pow(i / 33, 2.35) * height * 0.58;
-          line(0, y, width, y, "#1f6fff", 0.12 + i * 0.006, 0);
+          line(0, y, width, y, "#1f63e8", 0.13 + i * 0.005, 0);
         }
 
         for (let i = -18; i <= 18; i += 1) {
           const x = vanishing + i * 62 + (speed % 62);
-          line(vanishing, horizon, x, height, "#3a8dff", 0.16, 0);
+          line(vanishing, horizon, x, height, "#276df5", 0.16, 0);
         }
 
         blocks.forEach((block, i) => {
@@ -879,7 +880,7 @@ block in log from any to any</code></pre>
           const alpha = 0.18 + (i % 4) * 0.05;
           ctx.save();
           ctx.globalAlpha = alpha;
-          ctx.strokeStyle = i % 6 === 0 ? "#d26060" : "#3a8dff";
+          ctx.strokeStyle = i % 6 === 0 ? "#b64444" : "#276df5";
           ctx.shadowColor = ctx.strokeStyle;
           ctx.shadowBlur = 20;
           ctx.strokeRect(x, y, w, h);
@@ -890,12 +891,12 @@ block in log from any to any</code></pre>
           const p = (i * 97) % 100;
           const x = ((p / 100) * width + (speed * (0.35 + (i % 5) * 0.03))) % width;
           const y = 80 + (((i * 53) % 100) / 100) * (height * 0.68);
-          ctx.fillStyle = i % 9 === 0 ? "rgba(214,177,98,.62)" : "rgba(94,215,255,.45)";
+          ctx.fillStyle = i % 9 === 0 ? "rgba(157,106,0,.56)" : "rgba(0,120,200,.45)";
           ctx.fillRect(x, y, 2, 2);
         }
 
-        line(width * 0.08, height * 0.25, width * 0.92, height * 0.25, "#5ed7ff", 0.22, 12);
-        line(width * 0.14, height * 0.39, width * 0.62, height * 0.39, "#3a8dff", 0.16, 8);
+        line(width * 0.08, height * 0.25, width * 0.92, height * 0.25, "#0078c8", 0.24, 10);
+        line(width * 0.14, height * 0.39, width * 0.62, height * 0.39, "#276df5", 0.18, 8);
 
         tick += 1;
         if (!reduced) {
@@ -929,13 +930,10 @@ block in log from any to any</code></pre>
         ["ssh deny trace", "$ lpf explain --src 203.0.113.99 \\\n  --dst firewall --tcp --dport 22 \\\n  --in configs/policies/web-server.lpf\ndecision: block"],
         ["dynamic table", "$ sudo lpf table <blocked> add 10.0.0.66\n$ sudo lpf table <blocked> show"],
         ["state list", "$ sudo lpf state list --json\n[{\"proto\":\"tcp\",\"state\":\"established\"}]"],
-        ["kill flow", "$ sudo lpf state kill --src 10.0.0.1 --dst 10.0.0.2\nok: matching conntrack entries removed"],
-        ["ebpf source", "$ lpf ebpf configs/policies/basic.lpf > lpf_xdp.c\nok: emitted native eBPF/XDP C"],
-        ["bpf object", "$ clang -O2 -target bpf \\\n  -c lpf_xdp.c -o lpf_xdp.o\nok: object ready for verifier lab"],
-        ["z3 proof target", "# roadmap command; not current CLI\n$ lpf prove --solver z3 \\\n  configs/policies/web-server.lpf\n# prove deny/public reachability invariants"],
+        ["kill flow", "$ sudo lpf state kill --src 10.0.0.1 \\\n  --dst 10.0.0.2\nok: matching conntrack entries removed"],
         ["openai tools", "$ lpf tools --format openai > tools.json\nok: generated tool-calling schema"],
-        ["agent prompt", "$ lpf tools --format system-prompt > lpf-agent.txt\nok: compact operator prompt emitted"],
-        ["policy test", "$ lpf test --junit evidence/basic.xml fixtures/tests/basic.lpf.test\nok: assertions exported for CI"],
+        ["agent prompt", "$ lpf tools --format system-prompt \\\n  > lpf-agent.txt\nok: compact operator prompt emitted"],
+        ["policy test", "$ lpf test --junit evidence/basic.xml \\\n  fixtures/tests/basic.lpf.test\nok: assertions exported for CI"],
         ["e2e dry run", "$ sudo lpf e2e run --dry-run \\\n  --scenario-count 50 \\\n  --junit evidence/e2e.xml\nok: rendered scenario catalog"],
         ["e2e evidence", "$ sudo lpf e2e run \\\n  --scenario-count 552 \\\n  --evidence-dir evidence/lpf\nok: sanitized evidence manifest written"],
         ["history", "$ lpf history\npolicy-id  checksum  confirmed  rollback"],
