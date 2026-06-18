@@ -52,6 +52,7 @@ module Apply_guard = Apply_guard
 module Conntrack = Conntrack
 module Table = Table
 module Ip = Ip
+module Sysctl = Sysctl
 module Process = Process
 module File_util = File_util
 

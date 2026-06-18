@@ -112,3 +112,13 @@ let parse_route_show output =
               let gateway = Option.value gateway ~default:"" in
               Some { gateway; device; table = 0 }
           | None, None -> None)
+
+let delete_rules_invocation () = { program = "ip"; argv = [ "ip"; "rule"; "delete" ] }
+
+let delete_rules_with_runner runner = runner (delete_rules_invocation ()) |> Result.map ignore
+let delete_rules () = delete_rules_with_runner run
+
+let flush_table_invocation table = { program = "ip"; argv = [ "ip"; "route"; "flush"; "table"; string_of_int table ] }
+
+let flush_table_with_runner runner table = runner (flush_table_invocation table) |> Result.map ignore
+let flush_table table = flush_table_with_runner run table
