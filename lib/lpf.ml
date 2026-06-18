@@ -55,6 +55,7 @@ module Conntrack = Conntrack
 module Table = Table
 module Ip = Ip
 module Sysctl = Sysctl
+module Lpf_conf = Lpf_conf
 module Process = Process
 module File_util = File_util
 

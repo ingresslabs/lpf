@@ -26,5 +26,6 @@
   sysctl
   lpf
   process
-  file_util)
+   file_util
+   lpf_conf)
  (libraries unix))

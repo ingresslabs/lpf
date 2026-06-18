@@ -1,6 +1,8 @@
 type runners = {
   list_ruleset : unit -> (string, Nft.run_error) result;
   apply : string -> (unit, Nft.run_error) result;
+  apply_tc : string -> (unit, Nft.run_error) result;
+  apply_routing : string -> (unit, Nft.run_error) result;
   tc_delete : string -> (unit, Nft.run_error) result;
   routing_flush_table : int -> (unit, Nft.run_error) result;
 }

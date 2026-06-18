@@ -142,7 +142,7 @@ type check_result = {
   diagnostics : diagnostic list;
 }
 
-val parse : ?file:string -> string -> check_result
+val parse : ?file:string -> ?max_lines:int -> ?max_tokens:int -> string -> check_result
 val validate : policy -> diagnostic list
 val check : ?file:string -> string -> check_result
 val format : policy -> string

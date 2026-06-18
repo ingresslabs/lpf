@@ -37,12 +37,14 @@ let () =
    | Ok _ -> require false "rollback should fail without preimage file");
 
   (* Result-based runner injection for apply guard *)
-  let mock_runners = {
-    Lpf.Apply_guard.list_ruleset = (fun () -> Ok "mock ruleset");
-    apply = (fun _ruleset -> Ok ());
-    tc_delete = (fun _device -> Ok ());
-    routing_flush_table = (fun _table -> Ok ());
-  } in
+   let mock_runners = {
+     Lpf.Apply_guard.list_ruleset = (fun () -> Ok "mock ruleset");
+     apply = (fun _ruleset -> Ok ());
+     apply_tc = (fun _rendered -> Ok ());
+     apply_routing = (fun _rendered -> Ok ());
+     tc_delete = (fun _device -> Ok ());
+     routing_flush_table = (fun _table -> Ok ());
+   } in
   let result = Lpf.Apply_guard.apply_policy_text_with_runners mock_runners
       ~file:"test.lpf" "set default deny\npass out proto tcp from any to any port 443"
   in

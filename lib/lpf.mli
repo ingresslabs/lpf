@@ -55,6 +55,7 @@ module Conntrack : module type of Conntrack
 module Table : module type of Table
 module Ip : module type of Ip
 module Sysctl : module type of Sysctl
+module Lpf_conf : module type of Lpf_conf
 module Process : module type of Process
 module File_util : module type of File_util
 

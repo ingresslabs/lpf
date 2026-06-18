@@ -797,8 +797,25 @@ let parse_line ?file line policy diagnostics original =
           (syntax_error first.span
              "unrecognized statement; expected set, interface, table, macro, nat, rdr, queue, anchor, pass, block, or reject") )
 
-let parse ?file text =
+let parse ?file ?(max_lines = 10000) ?(max_tokens = 100000) text =
   let lines = String.split_on_char '\n' text in
+  if List.length lines > max_lines then
+    { policy = None;
+      diagnostics = [ diagnostic Diag_error (span ?file 1 1 1)
+          (Printf.sprintf "policy exceeds maximum of %d lines (%d lines found)"
+             max_lines (List.length lines)) ] }
+  else
+    let total_tokens =
+      List.fold_left (fun acc line ->
+        let tokens, _ = lex_line ?file 0 line in
+        acc + List.length tokens) 0 lines
+    in
+    if total_tokens > max_tokens then
+      { policy = None;
+        diagnostics = [ diagnostic Diag_error (span ?file 1 1 1)
+            (Printf.sprintf "policy exceeds maximum of %d tokens (%d tokens found)"
+               max_tokens total_tokens) ] }
+    else
   let collect_multiline ?file start_line first_text first_tokens rest_lines =
     let rec loop line tokens depth collected_text diagnostics rest =
       if depth <= 0 then (tokens, line, collected_text, rest, diagnostics)

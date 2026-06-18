@@ -1,4 +1,4 @@
-let var_dir = try Sys.getenv "LPF_VAR_DIR" with _ -> "/var/lib/lpf"
+let var_dir = Lpf_conf.(load ()).var_dir
 let rollback_dir = Filename.concat var_dir "rollback"
 
 let preimage_nft_for_id id = Filename.concat rollback_dir ("preimage.nft." ^ id)
@@ -40,13 +40,35 @@ let error_diagnostic ?file message =
 type runners = {
   list_ruleset : unit -> (string, Nft.run_error) result;
   apply : string -> (unit, Nft.run_error) result;
+  apply_tc : string -> (unit, Nft.run_error) result;
+  apply_routing : string -> (unit, Nft.run_error) result;
   tc_delete : string -> (unit, Nft.run_error) result;
   routing_flush_table : int -> (unit, Nft.run_error) result;
 }
 
+let apply_tc rendered =
+  Process.with_temp_file "lpf-tc" (fun path ->
+    let out = open_out path in
+    Fun.protect ~finally:(fun () -> close_out out) (fun () -> output_string out rendered);
+    let invocation = { Process.program = "tc"; argv = [ "tc"; "-force"; "-batch"; path ] } in
+    match Nft.run invocation with
+    | Ok _ -> Ok ()
+    | Error error -> Error error)
+
+let apply_routing rendered =
+  Process.with_temp_file "lpf-routing" (fun path ->
+    let out = open_out path in
+    Fun.protect ~finally:(fun () -> close_out out) (fun () -> output_string out rendered);
+    let invocation = { Process.program = "ip"; argv = [ "ip"; "-force"; "-batch"; path ] } in
+    match Nft.run invocation with
+    | Ok _ -> Ok ()
+    | Error error -> Error error)
+
 let default_runners = {
   list_ruleset = Nft.list_ruleset;
   apply = Nft.apply;
+  apply_tc;
+  apply_routing;
   tc_delete = Tc.delete;
   routing_flush_table = (fun table ->
     let invocation = { Process.program = "ip"; argv = [ "ip"; "route"; "flush"; "table"; string_of_int table ] } in
@@ -201,36 +223,34 @@ let get_history () =
   | Ok h -> Ok (h, [])
   | Error message -> Error [ error_diagnostic message ]
 
-let save_preimage_files history_entry nft_preimage text plan =
+let save_preimage_files history_entry nft_preimage has_tc has_routing plan =
   write_file (preimage_nft_for_id history_entry.History.id) nft_preimage;
-  (match Pipeline.render_tc_policy_text text with
-   | Ok (_tc_rendered, _) ->
-        let tc_plan = Tc.compile plan in
-        let devices =
-          List.fold_left (fun acc cmd ->
-            match cmd with
-            | Tc.Qdisc_add q -> q.device :: acc
-            | Tc.Class_add c -> c.device :: acc)
-          [] tc_plan
-          |> List.sort_uniq String.compare
-        in
-        let device_lines = String.concat "\n" devices ^ "\n" in
-        write_file (preimage_tc_devices_for_id history_entry.History.id) device_lines
-   | Error _ -> ());
-  (match Pipeline.render_routing_policy_text text with
-   | Ok (_routing_rendered, _) ->
-        let routing_plan = Routing.compile plan in
-        let tables =
-          List.filter_map (fun cmd ->
-            match cmd with
-            | Routing.Ip_rule_add r -> Some r.table
-            | Routing.Ip_route_add_default r -> Some r.table)
-          routing_plan
-          |> List.sort_uniq Int.compare
-        in
-        let table_lines = String.concat "\n" (List.map string_of_int tables) ^ "\n" in
-        write_file (preimage_routing_tables_for_id history_entry.History.id) table_lines
-   | Error _ -> ());
+  if has_tc then (
+    let tc_plan = Tc.compile plan in
+    let devices =
+      List.fold_left (fun acc cmd ->
+        match cmd with
+        | Tc.Qdisc_add q -> q.device :: acc
+        | Tc.Class_add c -> c.device :: acc)
+      [] tc_plan
+      |> List.sort_uniq String.compare
+    in
+    let device_lines = String.concat "\n" devices ^ "\n" in
+    write_file (preimage_tc_devices_for_id history_entry.History.id) device_lines
+  );
+  if has_routing then (
+    let routing_plan = Routing.compile plan in
+    let tables =
+      List.filter_map (fun cmd ->
+        match cmd with
+        | Routing.Ip_rule_add r -> Some r.table
+        | Routing.Ip_route_add_default r -> Some r.table)
+      routing_plan
+      |> List.sort_uniq Int.compare
+    in
+    let table_lines = String.concat "\n" (List.map string_of_int tables) ^ "\n" in
+    write_file (preimage_routing_tables_for_id history_entry.History.id) table_lines
+  );
   (try
       let snapshot = Sysctl.snapshot () in
       if snapshot <> [] then (
@@ -246,7 +266,7 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
   | Ok (rendered, diagnostics) ->
       (match Pipeline.plan_policy_text ?file text with
        | Error e -> Error (diagnostics @ e)
-        | Ok (plan, _) ->
+       | Ok (plan, _) ->
            let preimage =
              match confirm with
              | None -> None
@@ -256,10 +276,20 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
                  | Error _ -> Some ""
                end
            in
+           let tc_rendered = Pipeline.render_tc_policy_text ?file text in
+           let routing_rendered = Pipeline.render_routing_policy_text ?file text in
            match runners.apply rendered with
            | Error error ->
                Error (diagnostics @ [ error_diagnostic ?file (Nft.string_of_run_error error) ])
            | Ok () ->
+               let tc_result = match tc_rendered with
+                 | Ok (tc_text, _) -> runners.apply_tc tc_text
+                 | Error _ -> Ok ()
+               in
+               let routing_result = match routing_rendered with
+                 | Ok (routing_text, _) -> runners.apply_routing routing_text
+                 | Error _ -> Ok ()
+               in
                let history_entry = {
              History.id = Digest.to_hex (Digest.string (string_of_float (Unix.gettimeofday ())));
              timestamp = (let tm = Unix.gmtime (Unix.gettimeofday ()) in
@@ -276,33 +306,44 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
              | Ok h -> History.save (History.add history_entry h)
              | Error _ -> History.save [history_entry]
            in
+           let diags = diagnostics in
+           let diags = match tc_result with
+             | Ok () -> diags
+             | Error error -> error_diagnostic ?file ("tc apply failed: " ^ Nft.string_of_run_error error) :: diags
+           in
+           let diags = match routing_result with
+             | Ok () -> diags
+             | Error error -> error_diagnostic ?file ("routing apply failed: " ^ Nft.string_of_run_error error) :: diags
+           in
            begin match (confirm, preimage) with
-           | None, _ | _, None -> Ok ((), diagnostics)
+           | None, _ | _, None -> Ok ((), diags)
            | Some duration_text, Some nft_preimage ->
                match parse_duration duration_text with
                | None ->
-                   Error (diagnostics @ [ error_diagnostic ?file "invalid confirmation duration" ])
+                   Error (diags @ [ error_diagnostic ?file "invalid confirmation duration" ])
                | Some seconds ->
                    ensure_rollback_dir ();
-                    (match Pipeline.plan_policy_text ?file text with
-                     | Ok (plan, _) -> save_preimage_files history_entry nft_preimage text plan.policy
-                     | Error _ ->
-                         write_file (preimage_nft_for_id history_entry.History.id) nft_preimage;
-                         write_file preimage_current_id_path history_entry.History.id);
-                   let lpf_exe =
-                     let arg0 = Sys.argv.(0) in
-                     if Filename.is_relative arg0 then
-                       Filename.concat (Sys.getcwd ()) arg0
-                     else arg0
-                   in
-                   let watchdog_command =
-                     Printf.sprintf "sleep %d && %s rollback --now" seconds lpf_exe
-                   in
-                   let pid =
-                     try
-                       Some (Unix.create_process "/bin/sh"
-                         [| "/bin/sh"; "-c"; watchdog_command |]
-                         Unix.stdin Unix.stdout Unix.stderr)
+                   let has_tc = Result.is_ok tc_rendered in
+                   let has_routing = Result.is_ok routing_rendered in
+                   save_preimage_files history_entry nft_preimage has_tc has_routing plan.policy;
+                    let lpf_exe =
+                      let arg0 = try Sys.executable_name with _ -> Sys.argv.(0) in
+                      let arg0 = if Filename.is_relative arg0 then
+                        Filename.concat (Sys.getcwd ()) arg0 else arg0 in
+                      if Sys.file_exists arg0 then arg0
+                      else
+                        let argv0 = Sys.argv.(0) in
+                        if Filename.is_relative argv0 then
+                          Filename.concat (Sys.getcwd ()) argv0 else argv0
+                    in
+                    let watchdog_command =
+                      Printf.sprintf "sleep %d && %s rollback --now" seconds lpf_exe
+                    in
+                    let pid =
+                      try
+                        Some (Unix.create_process "setsid"
+                          [| "setsid"; "/bin/sh"; "-c"; watchdog_command |]
+                          Unix.stdin Unix.stdout Unix.stderr)
                       with Unix.Unix_error (_error, _, _) ->
                         cleanup_rollback_files_for_id history_entry.History.id;
                         let _ = if Sys.file_exists preimage_current_id_path then Sys.remove preimage_current_id_path in
@@ -310,11 +351,11 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
                    in
                    match pid with
                    | None ->
-                       Error (diagnostics @ [ error_diagnostic ?file
+                       Error (diags @ [ error_diagnostic ?file
                          ("watchdog process failed to start") ])
                    | Some pid ->
                        write_file watchdog_pid_path (string_of_int pid);
-                       Ok ((), diagnostics)
+                       Ok ((), diags)
            end)
 
 let apply_policy_text = apply_policy_text_with_runners default_runners

@@ -10,7 +10,7 @@ type entry = {
 
 type t = entry list
 
-let history_file = Filename.concat "/var/lib/lpf" "history"
+let history_file () = Filename.concat Lpf_conf.(load ()).var_dir "history"
 
 let entry_json (e : entry) =
   Json_util.field_object
@@ -141,10 +141,10 @@ let find_json_value line key =
   search 0
 
 let load () =
-  if not (Sys.file_exists history_file) then Ok []
+  if not (Sys.file_exists (history_file ())) then Ok []
   else
     try
-      let ic = open_in history_file in
+      let ic = open_in (history_file ()) in
       let rec read_lines acc =
         match input_line ic with
         | line ->
@@ -169,9 +169,19 @@ let load () =
     with e -> Error (Printexc.to_string e)
 
 let save (h : t) =
+  let conf = Lpf_conf.load () in
+  let h =
+    if List.length h > conf.max_history then
+      let rec take n = function
+        | [] -> []
+        | x :: xs -> if n <= 0 then [] else x :: take (n - 1) xs
+      in
+      take conf.max_history h
+    else h
+  in
   let json = to_json h in
   try
-    let out = open_out history_file in
+    let out = open_out (history_file ()) in
     Fun.protect ~finally:(fun () -> close_out out) (fun () -> output_string out (json ^ "\n"));
     Ok ()
   with e -> Error (Printexc.to_string e)

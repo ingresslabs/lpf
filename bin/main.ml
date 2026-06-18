@@ -340,6 +340,7 @@ let parse_diff_args args =
     | "--backend" :: "nftables" :: rest -> loop { parsed with backend = "nftables" } rest
     | "--backend" :: "tc" :: rest -> loop { parsed with backend = "tc" } rest
     | "--backend" :: "routing" :: rest -> loop { parsed with backend = "routing" } rest
+    | "--backend" :: "sysctl" :: rest -> loop { parsed with backend = "sysctl" } rest
     | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
     | "--observed" :: observed :: rest -> (
         match set_source parsed (Observed_path observed) with
@@ -377,7 +378,7 @@ let handle_diff args =
   | Error message ->
       prerr_endline message;
       prerr_endline
-        "usage: lpf diff [--backend nftables|tc|routing] [--observed <text|->|--live] [--json] <policy>";
+        "usage: lpf diff [--backend nftables|tc|routing|sysctl] [--observed <text|->|--live] [--json] <policy>";
       exit 64
   | Ok { backend; source; policies = [ path ]; json } ->
       let source = Option.value source ~default:Live in
@@ -459,10 +460,27 @@ let handle_diff args =
                       print_diagnostics diagnostics;
                       if json then Printf.printf "{\"backend\":\"routing\",\"changes_required\":%B}\n" diff.Lpf.Routing.changes_required
                       else print_endline diff.Lpf.Routing.text
-                  | Error diagnostics ->
-                      print_diagnostics diagnostics;
-                      exit 1))
-       | _ ->
+                   | Error diagnostics ->
+                       print_diagnostics diagnostics;
+                       exit 1))
+        | "sysctl" ->
+             (match source with
+              | Observed_path p ->
+                  let observed = read_file p in
+                  let required = Lpf.Sysctl.check_required () in
+                  let expected = Lpf.Sysctl.to_string required in
+                  let changes = not (String.equal expected observed) in
+                  let diff_out = if changes then Printf.sprintf "--- expected\n+++ observed\n-%s+%s" expected observed else "sysctl diff: no changes" in
+                  if json then Printf.printf "{\"backend\":\"sysctl\",\"changes_required\":%B}\n" changes
+                  else print_endline diff_out
+              | Live ->
+                  let observed = Lpf.Sysctl.snapshot () in
+                  let required = Lpf.Sysctl.check_required () in
+                  let diff_text = Lpf.Sysctl.diff ~intended:required ~observed in
+                  let changes = not (String.starts_with ~prefix:"sysctl diff: no changes" diff_text) in
+                  if json then Printf.printf "{\"backend\":\"sysctl\",\"changes_required\":%B}\n" changes
+                  else print_string diff_text)
+        | _ ->
            (match read_observed_ruleset source with
             | Error message ->
                 prerr_endline message;
@@ -477,7 +495,7 @@ let handle_diff args =
                      exit 1)))
   | Ok _ ->
       prerr_endline
-        "usage: lpf diff [--backend nftables|tc|routing] [--observed <text|->|--live] [--json] <policy>";
+        "usage: lpf diff [--backend nftables|tc|routing|sysctl] [--observed <text|->|--live] [--json] <policy>";
       exit 64
 
 let handle_apply args =
