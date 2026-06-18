@@ -665,17 +665,40 @@
           <div class="section-head">
             <div class="eyebrow">Install</div>
             <div>
-              <h2>Build from source.</h2>
-              <p class="copy">The current path is source-first: clone, create a local OCaml switch, install test dependencies, then build and run the suite.</p>
+              <h2>Install from GitHub Releases.</h2>
+              <p class="copy">Use the native Debian or RPM package for a host install. Clone the repository only when you want the OCaml build, tests, and fixtures locally.</p>
             </div>
           </div>
           <div class="command-grid">
+            <article class="terminal">
+              <div class="terminal-title">Debian / Ubuntu</div>
+              <pre><code><span class="prompt">$</span> OUT=/tmp/lpf-release
+<span class="prompt">$</span> mkdir -p "$OUT"
+<span class="prompt">$</span> gh release download \
+  --repo ingresslabs/lpf \
+  --pattern 'lpf_*_amd64.deb' \
+  --dir "$OUT"
+<span class="prompt">$</span> sudo apt install "$OUT"/lpf_*_amd64.deb</code></pre>
+            </article>
+            <article class="terminal">
+              <div class="terminal-title">RPM hosts</div>
+              <pre><code><span class="prompt">$</span> OUT=/tmp/lpf-release
+<span class="prompt">$</span> mkdir -p "$OUT"
+<span class="prompt">$</span> gh release download \
+  --repo ingresslabs/lpf \
+  --pattern 'lpf-*.x86_64.rpm' \
+  --dir "$OUT"
+<span class="prompt">$</span> sudo dnf install "$OUT"/lpf-*.x86_64.rpm</code></pre>
+            </article>
             <article class="terminal wide">
               <div class="terminal-title">Source checkout</div>
-              <pre><code><span class="prompt">$</span> git clone https://github.com/ingresslabs/lpf.git
+              <pre><code><span class="prompt">$</span> git clone \
+  https://github.com/ingresslabs/lpf.git
 <span class="prompt">$</span> cd lpf
-<span class="prompt">$</span> opam switch create . ocaml-base-compiler.5.2.1
-<span class="prompt">$</span> opam install . --deps-only --with-test
+<span class="prompt">$</span> opam switch create . \
+  ocaml-base-compiler.5.2.1
+<span class="prompt">$</span> opam install . \
+  --deps-only --with-test
 <span class="prompt">$</span> dune build
 <span class="prompt">$</span> dune runtest</code></pre>
             </article>
