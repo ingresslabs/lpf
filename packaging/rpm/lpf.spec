@@ -25,11 +25,20 @@ and multi-backend diff/live readback.
 %setup -q
 
 %build
-opam exec -- dune build --profile=release @install
+if [ -n "${OPAMSWITCH:-}" ]; then
+  opam exec --switch="$OPAMSWITCH" -- dune build --profile=release @install
+else
+  opam exec -- dune build --profile=release @install
+fi
 
 %install
-opam exec -- dune install --prefix=/usr --destdir=%{buildroot} --sections=bin
-opam exec -- dune exec -- lpf man install --prefix %{buildroot}/usr
+if [ -n "${OPAMSWITCH:-}" ]; then
+  opam exec --switch="$OPAMSWITCH" -- dune install --prefix=/usr --destdir=%{buildroot} --sections=bin
+  opam exec --switch="$OPAMSWITCH" -- dune exec -- lpf man install --prefix %{buildroot}/usr
+else
+  opam exec -- dune install --prefix=/usr --destdir=%{buildroot} --sections=bin
+  opam exec -- dune exec -- lpf man install --prefix %{buildroot}/usr
+fi
 
 %files
 %{_bindir}/lpf

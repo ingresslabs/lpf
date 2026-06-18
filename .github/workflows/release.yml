@@ -88,6 +88,7 @@ jobs:
           set -euo pipefail
           VERSION=$(release/lpf version)
           RPM_TOPDIR="${RUNNER_TEMP:-/tmp}/lpf-rpmbuild"
+          export OPAMSWITCH="$(opam switch show)"
           rm -rf "$RPM_TOPDIR"
           mkdir -p "$RPM_TOPDIR"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS} release/packages/rpm
           git archive --prefix="lpf-${VERSION}/" -o "$RPM_TOPDIR/SOURCES/lpf-${VERSION}.tar.gz" HEAD
