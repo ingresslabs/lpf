@@ -273,6 +273,36 @@
       line-height: 1.72;
     }
 
+    .principles {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: clamp(24px, 4vw, 56px);
+      margin-top: clamp(28px, 5vw, 52px);
+      padding-top: 28px;
+      border-top: 1px solid rgba(58, 141, 255, 0.24);
+    }
+
+    .principle {
+      min-width: 0;
+    }
+
+    .principle h3 {
+      margin: 0 0 10px;
+      color: var(--cyan);
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
+    .principle p {
+      max-width: 28ch;
+      margin: 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.68;
+    }
+
     .command-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -526,6 +556,7 @@
       .hero-meta,
       .command-grid,
       .section-head,
+      .principles,
       .loop-intro,
       .loop-card {
         grid-template-columns: 1fr;
@@ -612,18 +643,18 @@
               <p class="copy">Linux packet policy is powerful, but it is split across nftables, policy routing, tc, conntrack, rollback files, and logging. lpf was created to make that surface readable, reviewable, testable, and safe to apply on remote machines.</p>
             </div>
           </div>
-          <div class="command-grid">
-            <article class="terminal">
-              <div class="terminal-title">One policy</div>
-              <pre><code>PF-style rules describe filtering, NAT, routing intent, queues, tables, and logging in one file.</code></pre>
+          <div class="principles">
+            <article class="principle">
+              <h3>One policy</h3>
+              <p>PF-style rules describe filtering, NAT, routing intent, queues, tables, and logging in one file.</p>
             </article>
-            <article class="terminal">
-              <div class="terminal-title">Safe changes</div>
-              <pre><code>Plans, diffs, guarded apply, confirmation timers, history, and rollback are part of the operating model.</code></pre>
+            <article class="principle">
+              <h3>Safe changes</h3>
+              <p>Plans, diffs, guarded apply, confirmation timers, history, and rollback are part of the operating model.</p>
             </article>
-            <article class="terminal wide">
-              <div class="terminal-title">Explainable operations</div>
-              <pre><code>Operators can ask what would change, why a packet matched, and what state must be restored before touching production networking.</code></pre>
+            <article class="principle">
+              <h3>Explainable operations</h3>
+              <p>Operators can ask what would change, why a packet matched, and what state must be restored before touching production networking.</p>
             </article>
           </div>
         </div>
