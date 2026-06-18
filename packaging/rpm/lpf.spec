@@ -28,7 +28,7 @@ and multi-backend diff/live readback.
 opam exec -- dune build --profile=release @install
 
 %install
-opam exec -- dune install --prefix=/usr --destdir=%{buildroot}
+opam exec -- dune install --prefix=/usr --destdir=%{buildroot} --sections=bin
 opam exec -- dune exec -- lpf man install --prefix %{buildroot}/usr
 
 %files
