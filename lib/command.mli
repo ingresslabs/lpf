@@ -13,6 +13,7 @@ type command =
   | Rules
   | History
   | E2e
+  | Ebpf
   | Man
   | Tools
   | Version

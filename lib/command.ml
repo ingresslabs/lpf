@@ -13,6 +13,7 @@ type command =
   | Rules
   | History
   | E2e
+  | Ebpf
   | Man
   | Tools
   | Version
@@ -48,6 +49,7 @@ let all_commands =
     ("rules", Rules, "show or diff generated backend rules");
     ("history", History, "show policy apply history and rollback points");
     ("e2e", E2e, "run Firecracker guest end-to-end networking scenarios");
+    ("ebpf", Ebpf, "compile policy to native eBPF/XDP C source");
     ("man", Man, "generate, check, or install man pages");
     ("tools", Tools, "emit tool-calling schemas for AI agents");
     ("version", Version, "print lpf version");
@@ -69,6 +71,7 @@ let command_name = function
   | Rules -> "rules"
   | History -> "history"
   | E2e -> "e2e"
+  | Ebpf -> "ebpf"
   | Man -> "man"
   | Tools -> "tools"
   | Version -> "version"
@@ -395,6 +398,26 @@ let command_docs =
       see_also = [ "lpf-test(8)"; "lpf-diff(8)" ];
     };
     {
+      command = Ebpf;
+      section = 8;
+      synopsis = "lpf ebpf <policy>";
+      description =
+        [
+          "Compile a policy to a native eBPF/XDP C source file.";
+          "This generates an XDP program that unifies routing and firewalling at the lowest level.";
+          "The output is a standalone C file that can be compiled with clang -target bpf.";
+        ];
+      options = [];
+      examples =
+        [
+          "lpf ebpf fixtures/policies/basic.lpf > lpf_xdp.c";
+          "clang -O2 -target bpf -c lpf_xdp.c -o lpf_xdp.o";
+        ];
+      files = shared_files;
+      safety_notes = [ "This command is read-only. Compiling and attaching the eBPF object is done separately." ];
+      see_also = [ "lpf-plan(8)"; "lpf-rules(8)" ];
+    };
+    {
       command = Man;
       section = 8;
       synopsis = "lpf man <generate|check|install>";
@@ -453,7 +476,7 @@ let help () =
 
 let command_status = function
   | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test | Table | State | Rules
-  | History | E2e | Man | Tools ->
+  | History | E2e | Ebpf | Man | Tools ->
       "implemented"
   | Version | Help -> "implemented"
 

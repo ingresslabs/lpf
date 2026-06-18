@@ -795,6 +795,29 @@ let handle_table args =
       prerr_endline "usage: lpf table <name> <add|delete|replace|show|flush|counters> [...]";
       exit 64
 
+let handle_ebpf args =
+  let policy_opt = List.find_opt (fun a -> String.ends_with ~suffix:".lpf" a || String.equal a "/etc/lpf.conf") args in
+  match policy_opt with
+  | None ->
+      prerr_endline "usage: lpf ebpf <policy>";
+      exit 64
+  | Some path -> (
+      let input = read_file path in
+      let result = Lpf.check_policy_text ~file:path input in
+      match result.policy with
+      | None ->
+          print_diagnostics result.diagnostics;
+          exit 1
+      | Some policy -> (
+          match Lpf.ir_of_policy policy with
+          | Error diagnostics ->
+              print_diagnostics (result.diagnostics @ diagnostics);
+              exit 1
+          | Ok ir ->
+              print_diagnostics result.diagnostics;
+              print_string (Lpf.Ebpf.compile_to_c ir);
+              exit 0))
+
 let parse_e2e_args args =
   let rec loop mode scenario_count junit_path allure_dir evidence_dir kernel_id dry_run = function
     | [] -> Ok (mode, scenario_count, junit_path, allure_dir, evidence_dir, kernel_id, dry_run)
@@ -1009,6 +1032,7 @@ let () =
   | _ :: "rules" :: args -> handle_rules args
   | _ :: "state" :: args -> handle_state args
   | _ :: "e2e" :: args -> handle_e2e args
+  | _ :: "ebpf" :: args -> handle_ebpf args
   | _ :: "table" :: args -> handle_table args
   | _ :: "man" :: args -> handle_man args
   | _ :: "tools" :: args -> handle_tools args
