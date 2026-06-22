@@ -1,6 +1,11 @@
 name: Pages
 
 on:
+  pull_request:
+    paths:
+      - 'docs/index.html'
+      - 'docs/.nojekyll'
+      - '.github/workflows/pages.yml'
   push:
     branches: [main]
     paths:
