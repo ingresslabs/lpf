@@ -46,6 +46,10 @@ let () =
   let rendered = Lpf.Tc.to_string result in
   assert (String.length rendered > 0);
   assert (String.contains rendered ' ');
+  let batch = Lpf.Tc.to_batch_string result in
+  assert (String.length batch > 0);
+  assert (not (String.starts_with ~prefix:"tc " batch));
+  assert (String.starts_with ~prefix:"qdisc replace" batch);
 
   let ir_with_child =
     {
@@ -95,6 +99,14 @@ let () =
   in
   let result = Lpf.Tc.compile ir_with_child in
   assert (List.length result = 3);
+  (match result with
+  | [
+   Lpf.Tc.Qdisc_add _;
+   Lpf.Tc.Class_add { classid = "1:10"; _ };
+   Lpf.Tc.Class_add { classid = "1:20"; _ };
+  ] ->
+      ()
+  | _ -> assert false);
   let classid = Lpf.Tc.queue_classid ir_with_child.queues "std" in
   assert (classid = Some "1:10");
   let classid = Lpf.Tc.queue_classid ir_with_child.queues "voip" in

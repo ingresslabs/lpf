@@ -70,8 +70,21 @@ let string_of_command = function
       Printf.sprintf "ip route add default via %s%s table %d" gateway dev_str
         table
 
+let batch_string_of_command = function
+  | Ip_rule_add { mark; table } ->
+      Printf.sprintf "rule del fwmark %d table %d\nrule add fwmark %d table %d"
+        mark table mark table
+  | Ip_route_add_default { gateway; device; table } ->
+      let dev_str = match device with Some d -> " dev " ^ d | None -> "" in
+      Printf.sprintf "route replace default via %s%s table %d" gateway dev_str
+        table
+
 let to_string t =
   String.concat "\n" (List.map string_of_command t)
+  ^ if t = [] then "" else "\n"
+
+let to_batch_string t =
+  String.concat "\n" (List.map batch_string_of_command t)
   ^ if t = [] then "" else "\n"
 
 type diff_result = { changes_required : bool; text : string }

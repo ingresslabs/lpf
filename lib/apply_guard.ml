@@ -11,6 +11,9 @@ let preimage_routing_tables_for_id id =
 let preimage_sysctl_for_id id =
   Filename.concat rollback_dir ("preimage.sysctl." ^ id)
 
+let installed_nft_for_id id =
+  Filename.concat rollback_dir ("installed.nft." ^ id)
+
 let preimage_current_id_path =
   Filename.concat rollback_dir "preimage.current_id"
 
@@ -64,15 +67,44 @@ let apply_tc rendered =
       match Nft.run invocation with Ok _ -> Ok () | Error error -> Error error)
 
 let apply_routing rendered =
-  Process.with_temp_file "lpf-routing" (fun path ->
-      let out = open_out path in
-      Fun.protect
-        ~finally:(fun () -> close_out out)
-        (fun () -> output_string out rendered);
-      let invocation =
-        { Process.program = "ip"; argv = [ "ip"; "-force"; "-batch"; path ] }
-      in
-      match Nft.run invocation with Ok _ -> Ok () | Error error -> Error error)
+  let lines =
+    String.split_on_char '\n' rendered
+    |> List.map String.trim
+    |> List.filter (fun line -> not (String.equal line ""))
+  in
+  let rule_delete_lines, batch_lines =
+    List.partition (String.starts_with ~prefix:"rule del ") lines
+  in
+  let run_rule_delete line =
+    let argv =
+      "ip"
+      :: (String.split_on_char ' ' line
+         |> List.filter (fun word -> not (String.equal word "")))
+    in
+    let invocation = { Process.program = "ip"; argv } in
+    let _ = Nft.run invocation in
+    ()
+  in
+  List.iter run_rule_delete rule_delete_lines;
+  match batch_lines with
+  | [] -> Ok ()
+  | _ ->
+      Process.with_temp_file "lpf-routing" (fun path ->
+          let out = open_out path in
+          Fun.protect
+            ~finally:(fun () -> close_out out)
+            (fun () ->
+              output_string out (String.concat "\n" batch_lines);
+              output_char out '\n');
+          let invocation =
+            {
+              Process.program = "ip";
+              argv = [ "ip"; "-force"; "-batch"; path ];
+            }
+          in
+          match Nft.run invocation with
+          | Ok _ -> Ok ()
+          | Error error -> Error error)
 
 let default_runners =
   {
@@ -100,6 +132,7 @@ let all_rollback_files_for_id id =
     preimage_tc_devices_for_id id;
     preimage_routing_tables_for_id id;
     preimage_sysctl_for_id id;
+    installed_nft_for_id id;
   ]
 
 let cleanup_rollback_files_for_id id =
@@ -196,12 +229,22 @@ let rollback_by_id_with_runner apply_runner tc_runner routing_runner id =
             ~finally:(fun () -> close_in ic)
             (fun () -> really_input_string ic (in_channel_length ic))
         in
+        let current =
+          let installed_path = installed_nft_for_id id in
+          if Sys.file_exists installed_path then
+            let ic = open_in installed_path in
+            Fun.protect
+              ~finally:(fun () -> close_in ic)
+              (fun () -> really_input_string ic (in_channel_length ic))
+          else preimage
+        in
+        let rollback_script = Nftables.rollback_script ~current ~preimage in
         let tc_result = restore_tc tc_runner (preimage_tc_devices_for_id id) in
         let routing_result =
           restore_routing routing_runner (preimage_routing_tables_for_id id)
         in
         let sysctl_result = restore_sysctl (preimage_sysctl_for_id id) in
-        match apply_runner preimage with
+        match apply_runner rollback_script with
         | Ok () -> (
             cleanup_rollback_files_for_id id;
             let _ =
@@ -236,7 +279,6 @@ let rollback_by_id_with_runner apply_runner tc_runner routing_runner id =
                 in
                 Ok ((), diags))
         | Error error ->
-            cleanup_rollback_files_for_id id;
             Error [ error_diagnostic (Nft.string_of_run_error error) ]
 
 let rollback_by_id id =
@@ -302,8 +344,10 @@ let get_history () =
   | Ok h -> Ok (h, [])
   | Error message -> Error [ error_diagnostic message ]
 
-let save_preimage_files history_entry nft_preimage has_tc has_routing plan =
+let save_preimage_files history_entry ~nft_preimage ~installed_nft ~has_tc
+    ~has_routing plan =
   write_file (preimage_nft_for_id history_entry.History.id) nft_preimage;
+  write_file (installed_nft_for_id history_entry.History.id) installed_nft;
   (if has_tc then
      let tc_plan = Tc.compile plan in
      let devices =
@@ -359,9 +403,11 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
                 | Ok ruleset -> Some (Nftables.owned_ruleset_text ruleset)
                 | Error _ -> Some "")
           in
-          let tc_rendered = Pipeline.render_tc_policy_text ?file text in
+          let tc_plan = Tc.compile plan.policy in
+          let routing_plan = Routing.compile plan.policy in
+          let tc_rendered = Ok (Tc.to_batch_string tc_plan, diagnostics) in
           let routing_rendered =
-            Pipeline.render_routing_policy_text ?file text
+            Ok (Routing.to_batch_string routing_plan, diagnostics)
           in
           match runners.apply rendered with
           | Error error ->
@@ -431,10 +477,11 @@ let apply_policy_text_with_runners runners ?file ?confirm text =
                           ])
                   | Some seconds -> (
                       ensure_rollback_dir ();
-                      let has_tc = Result.is_ok tc_rendered in
-                      let has_routing = Result.is_ok routing_rendered in
-                      save_preimage_files history_entry nft_preimage has_tc
-                        has_routing plan.policy;
+                      let has_tc = tc_plan <> [] in
+                      let has_routing = routing_plan <> [] in
+                      save_preimage_files history_entry ~nft_preimage
+                        ~installed_nft:(Nftables.owned_ruleset_text rendered)
+                        ~has_tc ~has_routing plan.policy;
                       let lpf_exe =
                         let arg0 =
                           try Sys.executable_name with _ -> Sys.argv.(0)

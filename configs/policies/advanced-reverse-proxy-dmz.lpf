@@ -1,0 +1,33 @@
+set default deny
+
+interface mgmt = "ens3"
+interface wan = "wan0"
+interface dmz = "dmz0"
+interface app = "app0"
+
+table <admin> { 198.51.100.10, 203.0.113.0/24 }
+table <edge_nodes> { 10.30.0.10, 10.30.0.11 }
+table <app_nodes> { 10.40.0.10, 10.40.0.11 }
+table <blocked_sources> { 192.0.2.66, 192.0.2.67 }
+
+queue public on wan bandwidth 150mbit
+queue admin on wan bandwidth 10mbit parent public
+
+pass in on mgmt proto tcp from any to any port 22 keep state
+pass out on mgmt from any to any keep state
+
+rdr on wan proto tcp from any to any port 80 -> 10.30.0.10 port 8080
+rdr on wan proto tcp from any to any port 443 -> 10.30.0.10 port 8443
+
+block in log (all) on wan from <blocked_sources> to any
+pass in log on wan proto tcp from any to any port 80 queue public keep state
+pass in log on wan proto tcp from any to any port 443 queue public keep state
+pass in log (user) on wan proto tcp from <admin> to any port 22 queue admin keep state
+
+pass in on dmz proto tcp from <edge_nodes> to <app_nodes> port 8080 keep state queue public
+pass in on dmz proto tcp from <edge_nodes> to <app_nodes> port 8443 keep state queue public
+pass out on app proto tcp from <app_nodes> to any port 443 keep state queue public
+
+block in log (all) on wan from any to any
+block in log (all) on dmz from any to any
+block out log (user) on wan from any to any

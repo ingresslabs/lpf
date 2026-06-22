@@ -185,8 +185,8 @@ let () =
   require (String.length json > 0) "sysctl multi-entry to_json";
   let parsed = Lpf.Sysctl.of_json json in
   require
-    (List.length parsed >= 1)
-    "sysctl multi-entry of_json recovers at least first";
+    (List.length parsed = 2)
+    "sysctl multi-entry of_json recovers every entry";
 
   (* snapshot produces real entries on Linux; to_json should always produce valid json *)
   let json = Lpf.Sysctl.to_json (Lpf.Sysctl.snapshot ()) in

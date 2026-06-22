@@ -1,0 +1,46 @@
+set default deny
+
+interface mgmt = "ens3"
+interface wan = "wan0"
+interface lan = "lan0"
+interface wg = "wg0"
+
+table <wg_peers> { 10.8.0.0/24 }
+table <wg_admins> { 10.8.0.10, 10.8.0.11 }
+table <wg_guests> { 10.8.0.100, 10.8.0.101 }
+table <lan_nets> { 10.0.0.0/24, 10.20.0.0/24 }
+table <db_hosts> { 10.20.0.10, 10.20.0.11 }
+table <dns_resolvers> { 10.0.0.53, 1.1.1.1, 9.9.9.9 }
+
+queue bulk on wan bandwidth 200mbit
+queue interactive on wan bandwidth 20mbit parent bulk
+
+pass in on mgmt proto tcp from any to any port 22 keep state
+pass out on mgmt from any to any keep state
+
+pass in log on wan proto udp from any to any port 51820 keep state
+
+nat on wan from <wg_peers> to any -> wan
+
+pass in on wg proto udp from <wg_peers> to <dns_resolvers> port 53 keep state queue interactive
+pass in on wg proto tcp from <wg_peers> to <dns_resolvers> port 53 keep state queue interactive
+
+pass in log (user) on wg proto tcp from <wg_admins> to <lan_nets> port 22 keep state queue interactive
+pass in log (user) on wg proto tcp from <wg_admins> to <lan_nets> port 443 keep state queue interactive
+pass in log on wg proto tcp from <wg_admins> to <db_hosts> port 5432 keep state queue interactive
+block in log (all) on wg from <wg_guests> to <lan_nets>
+pass in on wg proto tcp from <wg_peers> to <lan_nets> port 443 keep state queue bulk
+
+pass in on wg proto tcp from <wg_guests> to any port 80 keep state queue bulk
+pass in on wg proto tcp from <wg_guests> to any port 443 keep state queue bulk
+pass in on wg proto udp from <wg_guests> to <dns_resolvers> port 53 keep state queue interactive
+
+block in log (user) on wg from <wg_peers> to <wg_peers>
+
+pass out on wan proto udp from <wg_peers> to any port 53 keep state
+pass out on wan proto tcp from <wg_peers> to any port 80 keep state queue bulk
+pass out on wan proto tcp from <wg_peers> to any port 443 keep state queue bulk
+
+block in log (all) on wan from any to any
+block in log (all) on wg from any to any
+block out log (user) on wan from any to any

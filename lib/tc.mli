@@ -29,6 +29,7 @@ type observed_class = {
 val queue_classid : Ir.queue list -> string -> string option
 val compile : Ir.t -> t
 val to_string : t -> string
+val to_batch_string : t -> string
 val qdisc_show : string -> (string, Nft.run_error) result
 
 val qdisc_show_with_runner :
