@@ -2,10 +2,7 @@ name: Pages
 
 on:
   pull_request:
-    paths:
-      - 'docs/index.html'
-      - 'docs/.nojekyll'
-      - '.github/workflows/pages.yml'
+    branches: [main]
   push:
     branches: [main]
     paths:
