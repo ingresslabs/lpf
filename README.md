@@ -1,12 +1,30 @@
 # lpf: The Next-Generation Linux Firewall
 
-`lpf` brings the elegance and safety of OpenBSD's PF (Packet Filter) to Linux, supercharged with modern capabilities.
+`lpf` is GitOps for Linux networking: PF-style firewall, NAT, QoS, and routing
+policy with live diff, guarded apply, and automatic rollback for remote changes.
+
+Website: [ingresslabs.github.io/lpf](https://ingresslabs.github.io/lpf/)
 
 Tired of juggling `iptables`, `nftables`, `tc`, and `ip route`? `lpf` provides a single, coherent control plane with human-readable policies, guarded deployments, and explainable decisions.
 
 ---
 
 ## Core Features
+
+## GitOps-Safe Rollouts
+
+Keep policy in Git, review changes as code, diff them against live host state,
+then apply through a confirmation window. If the new policy cuts SSH or fails
+your health checks, the watchdog restores the previous known-good nftables, TC,
+routing, and sysctl state.
+
+```sh
+git diff configs/policies/edge-router.lpf
+lpf diff --live configs/policies/edge-router.lpf
+lpf apply --confirm 60s configs/policies/edge-router.lpf
+ssh edge-router true
+lpf confirm
+```
 
 ## Safe & Predictable Operations
 
