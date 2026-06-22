@@ -60,7 +60,7 @@ let plan_of_fixture path =
            (List.map Lpf.Policy.diagnostic_to_string diagnostics))
 
 let () =
-  assert (String.equal Lpf.version "0.2.1");
+  assert (String.equal Lpf.version "0.2.3");
   assert (Lpf.command_of_string "check" = Some Lpf.Check);
   assert (Lpf.command_of_string "man" = Some Lpf.Man);
   assert (Lpf.command_of_string "does-not-exist" = None);

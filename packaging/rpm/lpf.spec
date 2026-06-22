@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           lpf
-Version:        0.2.1
+Version:        0.2.3
 Release:        1%{?dist}
 Summary:        PF-style control plane for Linux networking
 License:        Apache-2.0
@@ -50,6 +50,10 @@ cp bin/lpf-completion.sh %{buildroot}%{_datadir}/bash-completion/completions/lpf
 %doc README.md CHANGELOG.md
 
 %changelog
+* Mon Jun 22 2026 avkcode - 0.2.3-1
+- Verified rollback-safe advanced policies across Ubuntu and Fedora VMs
+- Fix CIDR explain semantics, NAT/RDR rendering, TC/routing batches, and owned-table rollback
+
 * Thu Jun 18 2026 avkcode - 0.1.2-1
 - Remove the experimental dataplane compiler command and refresh packages
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.3 - 2026-06-22
+
+### Added
+
+- Five advanced policy examples covering WireGuard hubs, dual-WAN routing/QoS,
+  database isolation, reverse-proxy DMZs, and segmented egress.
+- Ubuntu and Fedora QEMU evidence for guarded apply and watchdog rollback.
+
+### Fixed
+
+- CIDR-aware `lpf explain` table matching.
+- nftables NAT/RDR table rendering, including table-local sets and explicit
+  `dnat ip` syntax for `inet` tables.
+- TC and routing batch generation/application.
+- Rollback restoration for owned nftables tables, TC, routing, and sysctl
+  preimages.
+- `lpf apply` now exits nonzero when backend side effects report errors.
+
 ## 0.2.1 - 2026-06-18
 
 ### Added
