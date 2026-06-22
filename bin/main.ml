@@ -96,6 +96,12 @@ let print_diagnostics diagnostics =
   |> List.iter (fun diagnostic ->
          prerr_endline (Lpf.Policy.diagnostic_to_string diagnostic))
 
+let diagnostics_have_errors diagnostics =
+  List.exists
+    (fun (diagnostic : Lpf.Policy.diagnostic) ->
+      diagnostic.severity = Lpf.Policy.Diag_error)
+    diagnostics
+
 let handle_check args =
   let rec parse json path = function
     | [] -> Ok (json, path)
@@ -647,7 +653,7 @@ let handle_apply args =
             Printf.printf
               "guarded apply of %s started; use lpf confirm to promote\n" path
           else Printf.printf "applied %s\n" path;
-          exit 0
+          exit (if diagnostics_have_errors diagnostics then 1 else 0)
       | Error diagnostics ->
           print_diagnostics diagnostics;
           exit 1)

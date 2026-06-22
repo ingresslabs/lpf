@@ -12,6 +12,7 @@ type diff_result = { changes_required : bool; text : string }
 val mark_for_target : Ir.t -> Ir.address * Ir.interface_ref option -> int option
 val compile : Ir.t -> t
 val to_string : t -> string
+val to_batch_string : t -> string
 
 val diff :
   intended:t ->

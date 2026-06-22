@@ -1,0 +1,34 @@
+set default deny
+
+interface mgmt = "ens3"
+interface lan = "lan0"
+interface wan = "wan0"
+interface backup = "backup0"
+
+table <branch_lan> { 10.70.0.0/24 }
+table <voice_hosts> { 10.70.0.20, 10.70.0.21 }
+table <blocked> { 10.70.0.66, 10.70.0.67 }
+table <dns_resolvers> { 1.1.1.1, 9.9.9.9 }
+
+queue bulk on wan bandwidth 100mbit
+queue voice on wan bandwidth 10mbit parent bulk
+queue backup_bulk on backup bandwidth 25mbit
+
+pass in on mgmt proto tcp from any to any port 22 keep state
+pass out on mgmt from any to any keep state
+
+nat on wan from <branch_lan> to any -> wan
+nat on backup from <branch_lan> to any -> backup
+
+block in log (all) on lan from <blocked> to any
+pass in on lan proto udp from <voice_hosts> to any port 5060 queue voice keep state
+pass in on lan proto udp from <voice_hosts> to any port 10000 queue voice keep state
+pass in on lan proto tcp from <branch_lan> to any port 80 queue bulk route-to 198.51.100.1 (wan) keep state
+pass in on lan proto tcp from <branch_lan> to any port 443 queue bulk route-to 198.51.100.1 (wan) keep state
+pass in on lan proto tcp from <branch_lan> to any port 22 queue backup_bulk route-to 203.0.113.1 (backup) keep state
+pass in on lan proto udp from <branch_lan> to <dns_resolvers> port 53 queue bulk keep state
+
+block in log (all) on wan from any to any
+block in log (all) on backup from any to any
+block out log (user) on wan from any to any
+block out log (user) on backup from any to any

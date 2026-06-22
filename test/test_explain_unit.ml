@@ -109,5 +109,19 @@ let () =
   assert (result.decision = Lpf.Policy.Pass);
   assert (result.route_to <> None);
 
+  let ir_cidr =
+    ir_of_text
+      "set default deny\n\
+       table <lan> { 10.0.0.0/24 }\n\
+       block in from any to <lan>\n\
+       pass in from any to any"
+  in
+  let cidr_packet = { packet with destination = "10.0.0.42" } in
+  let result = Lpf.Explain.explain ir_cidr cidr_packet in
+  assert (result.decision = Lpf.Policy.Block);
+  let outside_packet = { packet with destination = "10.0.1.42" } in
+  let result = Lpf.Explain.explain ir_cidr outside_packet in
+  assert (result.decision = Lpf.Policy.Pass);
+
   let json = Lpf.Explain.to_json result in
   assert (String.contains json 'p')

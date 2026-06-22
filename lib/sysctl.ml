@@ -61,9 +61,12 @@ let restore (entries : t) =
         if errors = [] then Ok ()
         else Error (String.concat "; " (List.rev errors))
     | { key; value } :: rest -> (
-        match write key value with
-        | Ok () -> loop errors rest
-        | Error e -> loop (e :: errors) rest)
+        match read key with
+        | Ok current when String.equal current value -> loop errors rest
+        | _ -> (
+            match write key value with
+            | Ok () -> loop errors rest
+            | Error e -> loop (e :: errors) rest))
   in
   loop [] entries
 
@@ -72,11 +75,34 @@ let of_json_line line =
   let value = History.find_json_value line "value" in
   if key = "" then None else Some { key; value }
 
+let json_objects text =
+  let objects = ref [] in
+  let buffer = Buffer.create 128 in
+  let depth = ref 0 in
+  String.iter
+    (fun character ->
+      if !depth > 0 then Buffer.add_char buffer character;
+      match character with
+      | '{' ->
+          if !depth = 0 then Buffer.add_char buffer character;
+          incr depth
+      | '}' when !depth > 0 ->
+          decr depth;
+          if !depth = 0 then (
+            objects := Buffer.contents buffer :: !objects;
+            Buffer.clear buffer)
+      | _ -> ())
+    text;
+  List.rev !objects
+
 let of_json text =
-  String.split_on_char '\n' text
-  |> List.filter_map (fun line ->
-         let line = String.trim line in
-         if String.length line = 0 then None else of_json_line line)
+  match json_objects text with
+  | [] ->
+      String.split_on_char '\n' text
+      |> List.filter_map (fun line ->
+             let line = String.trim line in
+             if String.length line = 0 then None else of_json_line line)
+  | objects -> List.filter_map of_json_line objects
 
 let to_string (entries : t) =
   String.concat "\n"

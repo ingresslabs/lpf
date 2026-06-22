@@ -1,0 +1,42 @@
+set default deny
+
+interface mgmt = "ens3"
+interface wan = "wan0"
+interface corp = "corp0"
+interface iot = "iot0"
+interface guest = "guest0"
+
+table <corp_clients> { 10.10.0.0/24 }
+table <iot_devices> { 10.80.0.0/24 }
+table <guest_clients> { 10.81.0.0/24 }
+table <dns_resolvers> { 10.10.0.53, 1.1.1.1, 9.9.9.9 }
+table <blocked_iot> { 10.80.0.66, 10.80.0.67 }
+
+queue standard on wan bandwidth 120mbit
+queue guest_low on wan bandwidth 20mbit parent standard
+queue iot_low on wan bandwidth 10mbit parent standard
+
+pass in on mgmt proto tcp from any to any port 22 keep state
+pass out on mgmt from any to any keep state
+
+nat on wan from <corp_clients> to any -> wan
+nat on wan from <iot_devices> to any -> wan
+nat on wan from <guest_clients> to any -> wan
+
+block in log (all) on iot from <blocked_iot> to any
+block in log (user) on guest from <guest_clients> to <corp_clients>
+block in log (user) on iot from <iot_devices> to <corp_clients>
+
+pass in on corp proto udp from <corp_clients> to <dns_resolvers> port 53 keep state queue standard
+pass in on corp proto tcp from <corp_clients> to any port 443 keep state queue standard
+pass in on corp proto tcp from <corp_clients> to any port 22 keep state queue standard
+
+pass in on iot proto udp from <iot_devices> to <dns_resolvers> port 53 keep state queue iot_low
+pass in on iot proto tcp from <iot_devices> to any port 443 keep state queue iot_low
+
+pass in on guest proto udp from <guest_clients> to <dns_resolvers> port 53 keep state queue guest_low
+pass in on guest proto tcp from <guest_clients> to any port 80 keep state queue guest_low
+pass in on guest proto tcp from <guest_clients> to any port 443 keep state queue guest_low
+
+block in log (all) on wan from any to any
+block out log (user) on wan from any to any

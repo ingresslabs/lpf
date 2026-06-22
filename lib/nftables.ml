@@ -75,18 +75,82 @@ let policy_of_default = function
 let address_family_of_entry entry =
   if String.contains entry ':' then "ipv6_addr" else "ipv4_addr"
 
-let table_of_policy_table (table : Ir.table) =
+let split_ipv4 text =
+  match String.split_on_char '.' text with
+  | [ a; b; c; d ] -> (
+      match
+        List.map int_of_string_opt [ a; b; c; d ]
+        |> List.fold_left
+             (fun acc value ->
+               match (acc, value) with
+               | Some values, Some value when value >= 0 && value <= 255 ->
+                   Some (values @ [ value ])
+               | _ -> None)
+             (Some [])
+      with
+      | Some [ a; b; c; d ] ->
+          Some
+            Int64.(
+              logor
+                (shift_left (of_int a) 24)
+                (logor
+                   (shift_left (of_int b) 16)
+                   (logor (shift_left (of_int c) 8) (of_int d))))
+      | _ -> None)
+  | _ -> None
+
+let parse_ipv4_cidr text =
+  match String.split_on_char '/' text with
+  | [ network; prefix_text ] -> (
+      match (split_ipv4 network, int_of_string_opt prefix_text) with
+      | Some network, Some prefix when prefix >= 0 && prefix <= 32 ->
+          let mask =
+            if prefix = 0 then 0L
+            else
+              let host_bits = 32 - prefix in
+              let host_mask =
+                if host_bits = 0 then 0L
+                else Int64.sub (Int64.shift_left 1L host_bits) 1L
+              in
+              Int64.logand 0xffffffffL (Int64.lognot host_mask)
+          in
+          Some (Int64.logand network mask, mask)
+      | _ -> None)
+  | _ -> Option.map (fun address -> (address, 0xffffffffL)) (split_ipv4 text)
+
+let ipv4_cidr_contains cidr value =
+  match (parse_ipv4_cidr cidr, parse_ipv4_cidr value) with
+  | Some (network, mask), Some (address, value_mask) ->
+      let value_prefix_is_narrower =
+        Int64.equal (Int64.logand value_mask mask) mask
+      in
+      value_prefix_is_narrower
+      && Int64.equal (Int64.logand address mask) network
+  | _ -> false
+
+let normalize_set_elements entries =
+  entries
+  |> List.sort_uniq String.compare
+  |> List.filter (fun entry ->
+         not
+           (List.exists
+              (fun other ->
+                (not (String.equal entry other))
+                && ipv4_cidr_contains other entry)
+              entries))
+
+let table_of_policy_table ?(table_name = filter_table_name) (table : Ir.table) =
   let set_type =
     match table.entries with
     | [] -> "ipv4_addr"
     | entry :: _ -> address_family_of_entry entry
   in
   {
-    table = filter_table_name;
+    table = table_name;
     name = set_name table.name;
     set_type;
     flags = [ "interval" ];
-    elements = List.sort String.compare table.entries;
+    elements = normalize_set_elements table.entries;
   }
 
 let address_to_nft = function
@@ -292,6 +356,29 @@ let anchor_chain (anchor : Ir.anchor) =
     policy = None;
   }
 
+let table_refs_in_address = function Ir.Table name -> [ name ] | _ -> []
+
+let nat_table_refs (ir : Ir.t) =
+  let add refs name =
+    if List.exists (String.equal name) refs then refs else name :: refs
+  in
+  let refs =
+    List.fold_left
+      (fun refs (nat : Ir.nat) ->
+        table_refs_in_address nat.source
+        @ table_refs_in_address nat.destination
+        @ table_refs_in_address nat.translation
+        |> List.fold_left add refs)
+      [] ir.nats
+  in
+  List.fold_left
+    (fun refs (rdr : Ir.rdr) ->
+      table_refs_in_address rdr.source
+      @ table_refs_in_address rdr.destination
+      @ table_refs_in_address rdr.translation
+      |> List.fold_left add refs)
+    refs ir.rdrs
+
 let of_ir (ir : Ir.t) =
   let filter_table = { family = Inet; name = filter_table_name } in
   let nat_needed = ir.nats <> [] || ir.rdrs <> [] in
@@ -344,7 +431,14 @@ let of_ir (ir : Ir.t) =
   {
     tables;
     chains;
-    sets = List.map table_of_policy_table ir.tables;
+    sets =
+      List.map table_of_policy_table ir.tables
+      @ (nat_table_refs ir
+        |> List.filter_map (fun name ->
+               List.find_opt
+                 (fun (table : Ir.table) -> String.equal table.name name)
+                 ir.tables)
+        |> List.map (table_of_policy_table ~table_name:nat_table_name));
     rules =
       List.map (compile_rule ir) ir.rules
       @ anchor_rules
@@ -367,6 +461,10 @@ let string_of_policy = function
   | Policy_accept -> "accept"
   | Policy_drop -> "drop"
 
+let nat_address_family target =
+  if String.contains target ':' && not (String.contains target '.') then "ip6"
+  else "ip"
+
 let string_of_expression = function
   | Meta (key, value) -> "meta " ^ key ^ " " ^ value
   | Payload (protocol, field, value) -> protocol ^ " " ^ field ^ " " ^ value
@@ -378,8 +476,8 @@ let string_of_statement = function
   | Reject -> "reject"
   | Log None -> "log"
   | Log (Some prefix) -> "log prefix " ^ Json_util.string prefix
-  | Snat address -> "snat to " ^ address
-  | Dnat target -> "dnat to " ^ target
+  | Snat address -> "snat " ^ nat_address_family address ^ " to " ^ address
+  | Dnat target -> "dnat " ^ nat_address_family target ^ " to " ^ target
   | Masquerade -> "masquerade"
   | Meta_priority_set p -> "meta priority set " ^ p
   | Meta_mark_set m -> Printf.sprintf "meta mark set %d" m
@@ -462,6 +560,12 @@ let owned_table_name_from_header line =
   | "table" :: _family :: name :: _ when is_owned_table name -> Some name
   | _ -> None
 
+let owned_table_header_from_header line =
+  match words line with
+  | "table" :: family :: name :: _ when is_owned_table name ->
+      Some (family, name)
+  | _ -> None
+
 let brace_delta line =
   let delta = ref 0 in
   String.iter (function '{' -> incr delta | '}' -> decr delta | _ -> ()) line;
@@ -488,6 +592,13 @@ let extract_owned_tables text =
   in
   outside [] (String.split_on_char '\n' text)
 
+let owned_table_headers text =
+  extract_owned_tables text
+  |> List.filter_map (fun (_name, block) ->
+         match String.split_on_char '\n' block with
+         | header :: _ -> owned_table_header_from_header header
+         | [] -> None)
+
 let owned_ruleset_text text =
   let tables = extract_owned_tables text in
   let blocks =
@@ -499,6 +610,135 @@ let owned_ruleset_text text =
            |> Option.map snd)
   in
   match blocks with [] -> "" | _ -> String.concat "\n\n" blocks ^ "\n"
+
+let rollback_script ~current ~preimage =
+  let deletes =
+    owned_table_headers current
+    |> List.map (fun (family, name) -> "delete table " ^ family ^ " " ^ name)
+  in
+  String.concat "\n" deletes
+  ^ (if deletes = [] then "" else "\n")
+  ^ preimage
+  ^ if preimage = "" || String.ends_with ~suffix:"\n" preimage then "" else "\n"
+
+let compress_spaces text =
+  text |> String.split_on_char ' '
+  |> List.filter (fun part -> not (String.equal part ""))
+  |> String.concat " "
+
+let normalize_state_list states =
+  states |> String.split_on_char ',' |> List.sort String.compare
+  |> String.concat ","
+
+let replace_all ~pattern ~replacement text =
+  let pattern_len = String.length pattern in
+  if pattern_len = 0 then text
+  else
+    let buffer = Buffer.create (String.length text) in
+    let rec loop index =
+      if index >= String.length text then ()
+      else if
+        index + pattern_len <= String.length text
+        && String.equal pattern (String.sub text index pattern_len)
+      then (
+        Buffer.add_string buffer replacement;
+        loop (index + pattern_len))
+      else (
+        Buffer.add_char buffer text.[index];
+        loop (index + 1))
+    in
+    loop 0;
+    Buffer.contents buffer
+
+let normalize_ct_state line =
+  match String.split_on_char ' ' line with
+  | parts ->
+      let rec loop acc = function
+        | "ct" :: "state" :: states :: rest ->
+            List.rev_append acc
+              ("ct" :: "state" :: normalize_state_list states :: rest)
+        | part :: rest -> loop (part :: acc) rest
+        | [] -> parts
+      in
+      loop [] parts |> String.concat " "
+
+let normalize_hex_int_token token =
+  if String.length token > 2 && String.sub token 0 2 = "0x" then
+    match Int64.of_string_opt token with
+    | Some value -> Int64.to_string value
+    | None -> token
+  else token
+
+let normalize_mark_set line =
+  let parts = String.split_on_char ' ' line in
+  let rec loop acc = function
+    | "meta" :: "mark" :: "set" :: value :: rest ->
+        List.rev_append acc
+          ("meta" :: "mark" :: "set" :: normalize_hex_int_token value :: rest)
+    | part :: rest -> loop (part :: acc) rest
+    | [] -> parts
+  in
+  loop [] parts |> String.concat " "
+
+let normalize_elements_line line =
+  match String.split_on_char '{' line with
+  | [ prefix; rest ] when String.contains rest '}' ->
+      let elements_text =
+        match String.split_on_char '}' rest with
+        | before :: _ -> before
+        | [] -> rest
+      in
+      let elements =
+        elements_text |> String.split_on_char ',' |> List.map String.trim
+        |> List.filter (fun element -> not (String.equal element ""))
+        |> List.sort String.compare
+      in
+      String.trim prefix ^ "{ " ^ String.concat ", " elements ^ " }"
+  | _ -> line
+
+let normalize_nft_line line =
+  line |> String.trim |> compress_spaces
+  |> replace_all ~pattern:"priority filter" ~replacement:"priority 0"
+  |> replace_all ~pattern:"priority dstnat" ~replacement:"priority -100"
+  |> replace_all ~pattern:"priority srcnat" ~replacement:"priority 100"
+  |> replace_all ~pattern:"meta iifname" ~replacement:"iifname"
+  |> replace_all ~pattern:"meta oifname" ~replacement:"oifname"
+  |> replace_all ~pattern:"meta l4proto tcp " ~replacement:""
+  |> replace_all ~pattern:"meta l4proto udp " ~replacement:""
+  |> replace_all ~pattern:"meta l4proto icmp " ~replacement:""
+  |> normalize_ct_state |> normalize_mark_set |> normalize_elements_line
+
+let join_wrapped_elements lines =
+  let rec loop acc pending = function
+    | [] -> (
+        match pending with
+        | None -> List.rev acc
+        | Some line -> List.rev (line :: acc))
+    | line :: rest -> (
+        let trimmed = String.trim line in
+        if String.length trimmed = 0 then loop acc pending rest
+        else
+          match pending with
+          | Some current ->
+              let combined = current ^ " " ^ trimmed in
+              if String.contains trimmed '}' then
+                loop (combined :: acc) None rest
+              else loop acc (Some combined) rest
+          | None ->
+              if
+                String.contains trimmed '{'
+                && (not (String.contains trimmed '}'))
+                && String.contains trimmed '='
+              then loop acc (Some trimmed) rest
+              else loop (trimmed :: acc) None rest)
+  in
+  loop [] None lines
+
+let normalized_owned_ruleset_text text =
+  owned_ruleset_text text |> String.split_on_char '\n' |> join_wrapped_elements
+  |> List.map normalize_nft_line
+  |> List.filter (fun line -> not (String.equal line ""))
+  |> String.concat "\n"
 
 let split_lines text =
   let lines = String.split_on_char '\n' text in
@@ -544,8 +784,12 @@ type diff_result = { changes_required : bool; text : string }
 let diff ~intended ~observed =
   let intended = owned_ruleset_text intended in
   let observed = owned_ruleset_text observed in
-  if String.equal intended observed then
-    { changes_required = false; text = "nftables diff: no changes\n" }
+  if
+    String.equal intended observed
+    || String.equal
+         (normalized_owned_ruleset_text intended)
+         (normalized_owned_ruleset_text observed)
+  then { changes_required = false; text = "nftables diff: no changes\n" }
   else
     {
       changes_required = true;

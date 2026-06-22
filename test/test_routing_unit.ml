@@ -45,6 +45,11 @@ let () =
   let rendered = Lpf.Routing.to_string result in
   assert (String.length rendered > 0);
   assert (String.contains rendered 'i');
+  let batch = Lpf.Routing.to_batch_string result in
+  assert (String.length batch > 0);
+  assert (not (String.starts_with ~prefix:"ip " batch));
+  assert (String.starts_with ~prefix:"rule del" batch);
+  assert (String.contains batch '\n');
 
   let mark =
     Lpf.Routing.mark_for_target ir (Lpf.Ir.Literal "1.1.1.1", Some iface)

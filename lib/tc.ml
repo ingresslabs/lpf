@@ -37,7 +37,7 @@ let compile (ir : Ir.t) : t =
         let existing =
           match List.assoc_opt device acc with Some l -> l | None -> []
         in
-        (device, q :: existing) :: List.remove_assoc device acc)
+        (device, existing @ [ q ]) :: List.remove_assoc device acc)
       [] ir.queues
   in
   List.concat_map
@@ -96,8 +96,25 @@ let string_of_command = function
       Printf.sprintf "tc class add dev %s parent %s classid %s %s rate %s"
         device parent classid kind rate
 
+let batch_string_of_command = function
+  | Qdisc_add { device; handle; parent; kind; default } ->
+      let default_str =
+        match default with
+        | Some d -> Printf.sprintf " default %d" d
+        | None -> ""
+      in
+      Printf.sprintf "qdisc replace dev %s %s handle %s %s%s" device parent
+        handle kind default_str
+  | Class_add { device; classid; parent; kind; rate } ->
+      Printf.sprintf "class replace dev %s parent %s classid %s %s rate %s"
+        device parent classid kind rate
+
 let to_string t =
   String.concat "\n" (List.map string_of_command t)
+  ^ if t = [] then "" else "\n"
+
+let to_batch_string t =
+  String.concat "\n" (List.map batch_string_of_command t)
   ^ if t = [] then "" else "\n"
 
 let qdisc_show_invocation device =

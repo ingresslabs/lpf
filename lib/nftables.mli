@@ -53,6 +53,7 @@ type t = {
 }
 
 val owned_ruleset_text : string -> string
+val rollback_script : current:string -> preimage:string -> string
 
 type diff_result = { changes_required : bool; text : string }
 

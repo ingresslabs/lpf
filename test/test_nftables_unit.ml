@@ -61,6 +61,124 @@ table inet lpf_filter {
   let diff_text = Lpf.Nftables.diff_text ~intended ~observed:observed_changed in
   assert (String.length diff_text > 0);
 
+  let canonical_observed =
+    {|
+table inet lpf_filter {
+	set tbl_trusted {
+		type ipv4_addr
+		flags interval
+		elements = { 10.0.0.1, 10.0.0.2 }
+	}
+
+	chain input {
+		type filter hook input priority filter; policy drop;
+		iifname "eth0" ip saddr @tbl_trusted tcp dport 22 ct state established,related,new accept comment "lpf rule 4:1"
+	}
+}
+|}
+  in
+  let canonical_intended =
+    {|
+flush ruleset
+
+table inet lpf_filter {
+  set tbl_trusted {
+    type ipv4_addr
+    flags interval
+    elements = { 10.0.0.2, 10.0.0.1 }
+  }
+
+  chain input {
+    type filter hook input priority 0; policy drop;
+    meta iifname "eth0" meta l4proto tcp ip saddr @tbl_trusted tcp dport 22 ct state new,established,related accept comment "lpf rule 4:1"
+  }
+}
+|}
+  in
+  let diff =
+    Lpf.Nftables.diff ~intended:canonical_intended ~observed:canonical_observed
+  in
+  assert (not diff.Lpf.Nftables.changes_required);
+
+  let mark_observed =
+    {|
+table inet lpf_filter {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		iifname "lan0" tcp dport 443 ct state established,related,new meta mark set 0x00000064 accept comment "lpf rule 7:1"
+	}
+}
+|}
+  in
+  let mark_intended =
+    {|
+flush ruleset
+
+table inet lpf_filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    meta iifname "lan0" meta l4proto tcp tcp dport 443 ct state new,established,related meta mark set 100 accept comment "lpf rule 7:1"
+  }
+}
+|}
+  in
+  let diff =
+    Lpf.Nftables.diff ~intended:mark_intended ~observed:mark_observed
+  in
+  assert (not diff.Lpf.Nftables.changes_required);
+
+  let nat_table_policy =
+    "set default deny\n\n\
+     interface wan = \"eth0\"\n\
+     table <wg_peers> { 10.8.0.0/24 }\n\
+     nat on wan from <wg_peers> to any -> wan\n\
+     pass out on wan from <wg_peers> to any\n"
+  in
+  (match Lpf.render_nftables_policy_text nat_table_policy with
+  | Ok (rendered, _) ->
+      assert (contains_substring rendered "table inet lpf_nat");
+      assert (contains_substring rendered "set tbl_wg_peers");
+      assert (contains_substring rendered "ip saddr @tbl_wg_peers masquerade")
+  | Error diagnostics ->
+      failwith
+        (String.concat "\n"
+           (List.map Lpf.Policy.diagnostic_to_string diagnostics)));
+
+  let rdr_policy =
+    "set default deny\n\n\
+     interface wan = \"eth0\"\n\
+     rdr on wan proto tcp from any to any port 443 -> 10.30.0.10 port 8443\n"
+  in
+  (match Lpf.render_nftables_policy_text rdr_policy with
+  | Ok (rendered, _) ->
+      assert (contains_substring rendered "table inet lpf_nat");
+      assert (contains_substring rendered "dnat ip to 10.30.0.10:8443")
+  | Error diagnostics ->
+      failwith
+        (String.concat "\n"
+           (List.map Lpf.Policy.diagnostic_to_string diagnostics)));
+
+  let overlapping_policy =
+    "set default deny\n\n\
+     table <lan> { 10.0.0.0/24, 10.0.0.10 }\n\
+     pass in from any to <lan>\n"
+  in
+  (match Lpf.render_nftables_policy_text overlapping_policy with
+  | Ok (rendered, _) ->
+      assert (contains_substring rendered "elements = { 10.0.0.0/24 }");
+      assert (not (contains_substring rendered "10.0.0.10"))
+  | Error diagnostics ->
+      failwith
+        (String.concat "\n"
+           (List.map Lpf.Policy.diagnostic_to_string diagnostics)));
+
+  let rollback =
+    Lpf.Nftables.rollback_script ~current:"table inet lpf_filter {\n}\n"
+      ~preimage:"table inet lpf_filter {\n}\n\ntable inet lpf_nat {\n}\n"
+  in
+  assert (contains_substring rollback "delete table inet lpf_filter");
+  assert (contains_substring rollback "table inet lpf_nat");
+
   let ipv6_policy =
     "set default deny\n\n\
      pass out proto tcp from 2001:db8::1 to 2001:db8::2 port 443 keep state\n"

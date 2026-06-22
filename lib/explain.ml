@@ -22,6 +22,58 @@ type explanation = {
   log : log_option option;
 }
 
+let split_ipv4 text =
+  match String.split_on_char '.' text with
+  | [ a; b; c; d ] -> (
+      match
+        List.map int_of_string_opt [ a; b; c; d ]
+        |> List.fold_left
+             (fun acc value ->
+               match (acc, value) with
+               | Some values, Some value when value >= 0 && value <= 255 ->
+                   Some (values @ [ value ])
+               | _ -> None)
+             (Some [])
+      with
+      | Some [ a; b; c; d ] ->
+          Some
+            Int64.(
+              logor
+                (shift_left (of_int a) 24)
+                (logor
+                   (shift_left (of_int b) 16)
+                   (logor (shift_left (of_int c) 8) (of_int d))))
+      | _ -> None)
+  | _ -> None
+
+let parse_ipv4_cidr text =
+  match String.split_on_char '/' text with
+  | [ network; prefix_text ] -> (
+      match (split_ipv4 network, int_of_string_opt prefix_text) with
+      | Some network, Some prefix when prefix >= 0 && prefix <= 32 ->
+          let mask =
+            if prefix = 0 then 0L
+            else
+              let host_bits = 32 - prefix in
+              let host_mask =
+                if host_bits = 0 then 0L
+                else Int64.sub (Int64.shift_left 1L host_bits) 1L
+              in
+              Int64.logand 0xffffffffL (Int64.lognot host_mask)
+          in
+          Some (Int64.logand network mask, mask)
+      | _ -> None)
+  | _ -> None
+
+let ipv4_cidr_contains cidr value =
+  match (parse_ipv4_cidr cidr, split_ipv4 value) with
+  | Some (network, mask), Some address ->
+      Int64.equal (Int64.logand address mask) network
+  | _ -> false
+
+let entry_matches_value entry value =
+  String.equal entry value || ipv4_cidr_contains entry value
+
 let match_address (ir : Ir.t) (addr : address) (value : string) =
   match addr with
   | Any -> true
@@ -30,7 +82,8 @@ let match_address (ir : Ir.t) (addr : address) (value : string) =
       match
         List.find_opt (fun (t : table) -> String.equal t.name name) ir.tables
       with
-      | Some t -> List.exists (String.equal value) t.entries
+      | Some t ->
+          List.exists (fun entry -> entry_matches_value entry value) t.entries
       | None -> false)
 
 let match_port (range : port_range) (value : int option) =

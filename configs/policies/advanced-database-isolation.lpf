@@ -1,0 +1,28 @@
+set default deny
+
+interface mgmt = "ens3"
+interface app = "app0"
+interface db = "db0"
+interface backup = "backup0"
+
+table <app_servers> { 10.40.0.10, 10.40.0.11, 10.40.0.12 }
+table <db_hosts> { 10.50.0.10, 10.50.0.11 }
+table <dba_hosts> { 10.60.0.10, 10.60.0.11 }
+table <backup_hosts> { 10.90.0.10, 10.90.0.11 }
+table <blocked> { 10.40.0.66, 10.60.0.66 }
+
+queue db_primary on app bandwidth 40mbit
+queue db_backup on backup bandwidth 15mbit
+
+pass in on mgmt proto tcp from any to any port 22 keep state
+pass out on mgmt from any to any keep state
+
+block in log (all) from <blocked> to any
+pass in log on app proto tcp from <app_servers> to <db_hosts> port 5432 keep state queue db_primary
+pass in log (user) on db proto tcp from <dba_hosts> to <db_hosts> port 22 keep state
+pass in log (user) on mgmt proto tcp from <dba_hosts> to <db_hosts> port 5432 keep state
+pass in on backup proto tcp from <backup_hosts> to <db_hosts> port 5432 keep state queue db_backup
+pass out on app proto tcp from <db_hosts> to <app_servers> port 443 keep state queue db_primary
+
+block in log (all) from any to <db_hosts>
+block out log (user) from <db_hosts> to any
