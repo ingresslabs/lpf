@@ -13,6 +13,7 @@
   routing
   nftables
   nft
+  ebpf
   explain
   ir_json
   test_engine

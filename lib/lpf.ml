@@ -11,6 +11,7 @@ type command = Command.command =
   | Table
   | State
   | Rules
+  | Ebpf
   | History
   | Man
   | Tools
@@ -45,6 +46,7 @@ module Nftables = Nftables
 module Tc = Tc
 module Routing = Routing
 module Nft = Nft
+module Ebpf = Ebpf
 module Explain = Explain
 module Json_util = Json_util
 module Test_engine = Test_engine
@@ -77,6 +79,9 @@ let plan_policy_text = Pipeline.plan_policy_text
 let render_nftables_policy_text = Pipeline.render_nftables_policy_text
 let render_tc_policy_text = Pipeline.render_tc_policy_text
 let render_routing_policy_text = Pipeline.render_routing_policy_text
+let render_ebpf_policy_text = Pipeline.render_ebpf_policy_text
+let render_ebpf_loader_text = Pipeline.render_ebpf_loader_text
+let diff_ebpf_policy = Pipeline.diff_ebpf_policy
 let diff_nftables_policy_text = Pipeline.diff_nftables_policy_text
 let diff_nftables_policy = Pipeline.diff_nftables_policy
 let diff_tc_policy = Pipeline.diff_tc_policy

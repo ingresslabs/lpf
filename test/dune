@@ -8,6 +8,7 @@
   test_ir_unit
   test_explain_unit
   test_nftables_unit
+  test_ebpf_unit
   test_apply_guard_unit
   test_history_unit
   test_runner_unit
