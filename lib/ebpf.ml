@@ -31,6 +31,7 @@ type rule = {
   daddr : addr_match;
   dport : port_match;
   iface : string option;
+  direction : Policy.direction option;
   identity : identity;
   comment : string;
 }
@@ -41,6 +42,7 @@ type t = {
   maps : map list;
   programs : program list;
   rules : rule list;
+  tables : Ir.table list;
 }
 
 let pin_root = "/sys/fs/bpf/lpf"
@@ -114,6 +116,7 @@ let compile_rule index ?anchor (rule : Ir.rule) =
     daddr = addr_match_of_address rule.destination;
     dport = port_match_of_range rule.port;
     iface = Option.map (fun (i : Ir.interface_ref) -> i.device) rule.interface;
+    direction = rule.direction;
     identity = rule_identity rule;
     comment = location;
   }
@@ -159,13 +162,26 @@ let default_to_int = function
 
 let verdict_code = function Pass -> 1 | Drop -> 2 | Reject -> 3
 
+(* IANA IP protocol numbers. 255 (reserved) is the explicit "unknown protocol"
+   sentinel: the datapath compares against the packet's L4 protocol number, so a
+   name with no assigned number cannot match anything and is flagged distinctly
+   from a known protocol. *)
+let proto_unknown = 255
+
 let proto_code = function
   | L4_any -> 0
   | L4_named "tcp" -> 6
   | L4_named "udp" -> 17
   | L4_named "icmp" -> 1
-  | L4_named "icmp6" -> 58
-  | L4_named _ -> 255
+  | L4_named ("icmp6" | "icmpv6" | "ipv6-icmp") -> 58
+  | L4_named "sctp" -> 132
+  | L4_named "dccp" -> 33
+  | L4_named "gre" -> 47
+  | L4_named "esp" -> 50
+  | L4_named "ah" -> 51
+  | L4_named ("ipip" | "ipencap") -> 4
+  | L4_named "udplite" -> 136
+  | L4_named _ -> proto_unknown
 
 let is_ipv6_entry entry = String.contains entry ':'
 
@@ -366,6 +382,7 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       @ identity_maps;
     programs = net_programs @ identity_programs;
     rules;
+    tables = ir.tables;
   }
 
 let of_plan ?version (plan : Plan.t) = of_ir ?version plan.policy
@@ -566,6 +583,134 @@ let dns_resolution (program : t) =
           ])
         map.entries
 
+(* LPM-trie key encoding for CIDR sets. bpftool wants the key as space-separated
+   decimal bytes: a little-endian u32 prefix length followed by the address in
+   network byte order. *)
+
+let parse_octets_v4 addr =
+  match String.split_on_char '.' addr with
+  | [ a; b; c; d ] -> (
+      match List.map int_of_string_opt [ a; b; c; d ] with
+      | [ Some a; Some b; Some c; Some d ]
+        when List.for_all (fun x -> x >= 0 && x <= 255) [ a; b; c; d ] ->
+          Some [ a; b; c; d ]
+      | _ -> None)
+  | _ -> None
+
+let v6_groups part =
+  if String.equal part "" then Some []
+  else
+    List.fold_right
+      (fun group acc ->
+        match
+          ( acc,
+            if String.equal group "" then None
+            else int_of_string_opt ("0x" ^ group) )
+        with
+        | Some groups, Some value when value >= 0 && value <= 0xffff ->
+            Some (value :: groups)
+        | _ -> None)
+      (String.split_on_char ':' part) (Some [])
+
+let v6_bytes_of_groups groups =
+  List.concat_map (fun g -> [ (g lsr 8) land 0xff; g land 0xff ]) groups
+
+let split_double_colon addr =
+  let len = String.length addr in
+  let rec loop i =
+    if i + 1 >= len then None
+    else if addr.[i] = ':' && addr.[i + 1] = ':' then
+      Some (String.sub addr 0 i, String.sub addr (i + 2) (len - i - 2))
+    else loop (i + 1)
+  in
+  loop 0
+
+let parse_bytes_v6 addr =
+  match split_double_colon addr with
+  | Some (left, right) -> (
+      match (v6_groups left, v6_groups right) with
+      | Some l, Some r when List.length l + List.length r <= 7 ->
+          let fill = 8 - (List.length l + List.length r) in
+          Some (v6_bytes_of_groups (l @ List.init fill (fun _ -> 0) @ r))
+      | _ -> None)
+  | None -> (
+      match v6_groups addr with
+      | Some g when List.length g = 8 -> Some (v6_bytes_of_groups g)
+      | _ -> None)
+
+let split_cidr default_prefix entry =
+  match String.split_on_char '/' entry with
+  | [ addr ] -> Some (addr, default_prefix)
+  | [ addr; prefix ] ->
+      Option.map (fun p -> (addr, p)) (int_of_string_opt prefix)
+  | _ -> None
+
+let lpm_key prefix bytes =
+  String.concat " " (u32_le prefix :: List.map string_of_int bytes)
+
+let cidr_updates map_name max_prefix parse (program : t) =
+  match
+    List.find_opt (fun (m : map) -> String.equal m.name map_name) program.maps
+  with
+  | None -> []
+  | Some map ->
+      List.filter_map
+        (fun (entry, _) ->
+          match split_cidr max_prefix entry with
+          | Some (addr, prefix) when prefix >= 0 && prefix <= max_prefix -> (
+              match parse addr with
+              | Some bytes ->
+                  Some (update_line map_name (lpm_key prefix bytes) (u32_le 1))
+              | None -> None)
+          | _ -> None)
+        map.entries
+
+let cidr4_updates program = cidr_updates "lpf_cidr4" 32 parse_octets_v4 program
+let cidr6_updates program = cidr_updates "lpf_cidr6" 128 parse_bytes_v6 program
+
+(* cgroup ids cannot be known at compile time, so resolve them on the target at
+   load time: the kernfs inode of the cgroup directory is the id read by
+   [bpf_get_current_cgroup_id]. *)
+let cgroup_resolution (program : t) =
+  match
+    List.find_opt
+      (fun (m : map) -> String.equal m.name "lpf_cgroup")
+      program.maps
+  with
+  | None | Some { entries = []; _ } -> []
+  | Some map ->
+      List.map
+        (fun (path, idx) ->
+          Printf.sprintf
+            "p=%s; case \"$p\" in /*) ;; *) p=\"/sys/fs/cgroup/$p\";; esac; \
+             cid=$(stat -c %%i \"$p\" 2>/dev/null); [ -n \"$cid\" ] && bpftool \
+             map update pinned \"$PIN/lpf_cgroup\" key $(lpf_u64 \"$cid\") value \
+             %s 2>/dev/null || true"
+            (Filename.quote path)
+            (u32_le (int_of_string idx)))
+        map.entries
+
+(* Best-effort proc -> cgroup id resolution: the only stable identity a
+   cgroup_skb/LSM hook can read is the cgroup id, so map each named process to
+   the cgroup id(s) of its live instances. *)
+let proc_resolution (program : t) =
+  match
+    List.find_opt (fun (m : map) -> String.equal m.name "lpf_proc") program.maps
+  with
+  | None | Some { entries = []; _ } -> []
+  | Some map ->
+      List.map
+        (fun (name, idx) ->
+          Printf.sprintf
+            "for pid in $(pgrep -x %s 2>/dev/null); do cg=$(awk -F: \
+             '{print $NF}' \"/proc/$pid/cgroup\" 2>/dev/null | head -n1); [ -n \
+             \"$cg\" ] && cid=$(stat -c %%i \"/sys/fs/cgroup$cg\" 2>/dev/null) \
+             && [ -n \"$cid\" ] && bpftool map update pinned \"$PIN/lpf_proc\" \
+             key $(lpf_u64 \"$cid\") value %s 2>/dev/null || true; done"
+            (Filename.quote name)
+            (u32_le (int_of_string idx)))
+        map.entries
+
 let loader_script (program : t) =
   let rule_count = List.length program.rules in
   let header =
@@ -578,6 +723,9 @@ let loader_script (program : t) =
       "$1";
       "EOF";
       "printf '%s %s %s %s' \"$a\" \"$b\" \"$c\" \"$d\"; }";
+      "lpf_u64() { n=$1; out=''; i=0; while [ $i -lt 8 ]; do out=\"$out \
+       $((n & 255))\"; n=$((n >> 8)); i=$((i + 1)); done; printf '%s' \
+       \"$out\"; }";
       "if ! mountpoint -q /sys/fs/bpf 2>/dev/null; then mount -t bpf bpf \
        /sys/fs/bpf 2>/dev/null || true; fi";
       "mkdir -p \"$PIN\" \"$PIN/prog\" 2>/dev/null || true";
@@ -586,7 +734,9 @@ let loader_script (program : t) =
   let creates = List.map create_map_line program.maps in
   let updates =
     meta_updates program rule_count
-    @ rule_updates program @ port_updates program @ dns_resolution program
+    @ rule_updates program @ port_updates program @ cidr4_updates program
+    @ cidr6_updates program @ cgroup_resolution program
+    @ proc_resolution program @ dns_resolution program
   in
   let attach =
     [
@@ -647,9 +797,20 @@ let hex_tokens text =
          in
          match int_of_string_opt token with Some v -> Some v | None -> None)
 
+(* Counters are u64 in the kernel but OCaml's native int is 63-bit, so a value
+   >= 2^62 would wrap negative. Accumulate in Int64 and clamp to [max_int]
+   rather than silently overflowing. *)
 let le_int bytes =
-  List.fold_left (fun (acc, shift) b -> (acc lor (b lsl shift), shift + 8)) (0, 0) bytes
-  |> fst
+  let value =
+    List.fold_left
+      (fun (acc, shift) b ->
+        (Int64.logor acc (Int64.shift_left (Int64.of_int b) shift), shift + 8))
+      (0L, 0) bytes
+    |> fst
+  in
+  if Int64.compare value 0L < 0 || Int64.compare value (Int64.of_int max_int) > 0
+  then max_int
+  else Int64.to_int value
 
 let take n list =
   let rec loop n acc = function
@@ -760,8 +921,7 @@ let read_active_version () =
   else None
 
 let write_active_version version =
-  (try if not (Sys.file_exists state_dir) then Unix.mkdir state_dir 0o755
-   with _ -> ());
+  File_util.ensure_dir ~strict:false state_dir;
   try
     let oc = open_out active_version_path in
     Fun.protect
@@ -802,11 +962,33 @@ let port_matches rule (packet : Explain.packet) =
   | Mport_range (lo, hi), Some p -> p >= lo && p <= hi
   | Mport_range _, None -> false
 
-let addr_matches matcher value =
-  match matcher with
-  | Addr_any -> true
-  | Addr_set _ -> true
-  | Addr_literal literal -> String.equal literal value
+let addr_match_to_ir = function
+  | Addr_any -> Ir.Any
+  | Addr_literal value -> Ir.Literal value
+  | Addr_set name -> Ir.Table name
+
+(* A minimal [Ir.t] carrying only the tables, so we can reuse Explain's address
+   matching (literal + CIDR containment + set membership) verbatim and stay in
+   lockstep with the IR/nftables backends. *)
+let ir_view (program : t) : Ir.t =
+  {
+    default_action = program.default_action;
+    interfaces = [];
+    tables = program.tables;
+    queues = [];
+    nats = [];
+    rdrs = [];
+    anchors = [];
+    rules = [];
+  }
+
+let direction_matches rule (packet : Explain.packet) =
+  match rule.direction with None -> true | Some d -> d = packet.direction
+
+let iface_matches rule (packet : Explain.packet) =
+  match rule.iface with
+  | None -> true
+  | Some device -> String.equal device packet.interface
 
 let hook_label rule =
   match rule.identity with
@@ -815,12 +997,18 @@ let hook_label rule =
   | Id_none -> "xdp ingress"
 
 let classify (program : t) (packet : Explain.packet) =
+  let ir = ir_view program in
   let matched =
     List.find_opt
       (fun rule ->
-        proto_matches rule packet && port_matches rule packet
-        && addr_matches rule.saddr packet.source
-        && addr_matches rule.daddr packet.destination)
+        direction_matches rule packet
+        && iface_matches rule packet
+        && proto_matches rule packet
+        && port_matches rule packet
+        && Explain.match_address ir (addr_match_to_ir rule.saddr) packet.source
+        && Explain.match_address ir
+             (addr_match_to_ir rule.daddr)
+             packet.destination)
       program.rules
   in
   match matched with
@@ -833,3 +1021,61 @@ let classify (program : t) (packet : Explain.packet) =
         (match program.default_action with
         | Policy.Default_pass -> "pass"
         | Policy.Default_deny -> "drop")
+
+(* --- capability gating ---
+
+   The eBPF datapath is L3/L4 + identity only. Rather than silently dropping IR
+   features it cannot honor (as it did before), report them as warnings so
+   `lpf ... --backend ebpf` is explicit about what will and will not be enforced. *)
+
+let warn span message = { Policy.severity = Policy.Diag_warning; span; message }
+
+let capability_diagnostics (ir : Ir.t) =
+  let ignored = "is not supported by the ebpf backend and will be ignored" in
+  let nat_diags =
+    List.map (fun (n : Ir.nat) -> warn n.span ("nat " ^ ignored)) ir.nats
+  in
+  let rdr_diags =
+    List.map (fun (r : Ir.rdr) -> warn r.span ("rdr " ^ ignored)) ir.rdrs
+  in
+  let queue_diags =
+    List.map
+      (fun (q : Ir.queue) -> warn q.span ("queue/QoS " ^ ignored))
+      ir.queues
+  in
+  let rule_diags (rule : Ir.rule) =
+    let diags = [] in
+    let diags =
+      if rule.keep_state then
+        warn rule.span
+          "keep state is not supported by the ebpf backend (stateless datapath)"
+        :: diags
+      else diags
+    in
+    let diags =
+      match rule.route_to with
+      | Some _ -> warn rule.span ("route-to " ^ ignored) :: diags
+      | None -> diags
+    in
+    let diags =
+      match rule.queue with
+      | Some _ -> warn rule.span ("queue " ^ ignored) :: diags
+      | None -> diags
+    in
+    let diags =
+      match rule.action with
+      | Policy.Reject ->
+          let detail =
+            match rule.direction with
+            | Some Policy.Out -> "egress reject requires a tc clsact program"
+            | _ -> "ingress reject cannot send RST in xdp"
+          in
+          warn rule.span (detail ^ "; the ebpf backend drops instead") :: diags
+      | _ -> diags
+    in
+    List.rev diags
+  in
+  let all_rules =
+    ir.rules @ List.concat_map (fun (a : Ir.anchor) -> a.rules) ir.anchors
+  in
+  nat_diags @ rdr_diags @ queue_diags @ List.concat_map rule_diags all_rules
