@@ -48,6 +48,16 @@ build:
 static:
 	$(DUNE) build --profile=static bin/main.exe
 
+# eBPF datapath object (Linux + clang/llvm + kernel BTF required).
+bpf:
+	sh bpf/build.sh
+
+# In-kernel datapath conformance matrix (root + bpftool required; Linux only).
+bpf-e2e: bpf
+	rm -rf /sys/fs/bpf/lpftest && mkdir -p /sys/fs/bpf/lpftest/prog
+	bpftool prog loadall bpf/lpf_kern.o /sys/fs/bpf/lpftest/prog pinmaps /sys/fs/bpf/lpftest
+	python3 bpf/e2e_progrun.py; status=$$?; rm -rf /sys/fs/bpf/lpftest; exit $$status
+
 test:
 	$(DUNE) runtest
 
