@@ -22,6 +22,7 @@
   test_file_util_unit
   test_command_unit
   test_policy_examples_unit
+  test_test_engine_unit
   test_integration_unit
   test_roundtrip_unit)
  (deps

@@ -33,15 +33,26 @@ let run_suite (ir : Ir.t) (suite : test_suite) =
     suite.cases
 
 let to_junit results =
-  (* Basic JUnit XML generation *)
+  let escape_xml text =
+    let buffer = Buffer.create (String.length text) in
+    String.iter
+      (function
+        | '&' -> Buffer.add_string buffer "&amp;"
+        | '<' -> Buffer.add_string buffer "&lt;"
+        | '>' -> Buffer.add_string buffer "&gt;"
+        | '"' -> Buffer.add_string buffer "&quot;"
+        | '\'' -> Buffer.add_string buffer "&apos;"
+        | character -> Buffer.add_char buffer character)
+      text;
+    Buffer.contents buffer
+  in
   let buffer = Buffer.create 4096 in
   Buffer.add_string buffer "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
   Buffer.add_string buffer "<testsuites>\n";
   List.iter
     (fun (case, results) ->
       Buffer.add_string buffer
-        (Printf.sprintf "  <testsuite name=\"%s\">\n"
-           (Json_util.string case.name));
+        (Printf.sprintf "  <testsuite name=\"%s\">\n" (escape_xml case.name));
       List.iteri
         (fun i result ->
           Buffer.add_string buffer
@@ -54,7 +65,8 @@ let to_junit results =
                    "      <failure message=\"Expected %s but got %s\">\n"
                    (Policy.string_of_action expected)
                    (Policy.string_of_action actual));
-              Buffer.add_string buffer (Explain.to_string explanation);
+              Buffer.add_string buffer
+                (escape_xml (Explain.to_string explanation));
               Buffer.add_string buffer "\n      </failure>\n");
           Buffer.add_string buffer "    </testcase>\n")
         results;
