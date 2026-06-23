@@ -32,6 +32,8 @@ type rule = {
   dport : port_match;
   iface : string option;
   direction : Policy.direction option;
+  saddr_set : int;
+  daddr_set : int;
   identity : identity;
   comment : string;
 }
@@ -91,6 +93,67 @@ let identity_of_address = function
   | Ir.Table name -> identity_of_name name
   | _ -> Id_none
 
+(* Per-rule address linkage. Each distinct CIDR set / literal referenced by a
+   rule gets a small "set id" (1..31). A rule records the set id of its source
+   and destination address constraints (0 = any), and the lpf_cidr{4,6} LPM maps
+   store, per prefix, a bitmask of the set ids whose entries cover it. The
+   datapath then does one LPM lookup per direction and tests
+   [(mask >> rule.saddr_set) & 1]. Identity tables (cgroup/proc/dns) are matched
+   via the identity maps instead, so they are excluded here. *)
+
+let address_key = function
+  | Ir.Any -> None
+  | Ir.Literal value -> Some ("=" ^ value)
+  | Ir.Table name -> (
+      match identity_of_name name with Id_none -> Some ("@" ^ name) | _ -> None)
+
+let max_set_id = 31
+
+let set_registry (ir : Ir.t) =
+  let bare =
+    ir.rules @ List.concat_map (fun (a : Ir.anchor) -> a.rules) ir.anchors
+  in
+  List.concat_map
+    (fun (r : Ir.rule) ->
+      List.filter_map address_key [ r.source; r.destination ])
+    bare
+  |> List.sort_uniq String.compare
+  |> List.filteri (fun i _ -> i < max_set_id)
+  |> List.mapi (fun i key -> (key, i + 1))
+
+let set_id_of registry address =
+  match address_key address with
+  | None -> 0
+  | Some key -> (
+      match List.assoc_opt key registry with Some id -> id | None -> 0)
+
+let entries_for_key (ir : Ir.t) key =
+  if String.length key = 0 then []
+  else
+    let rest = String.sub key 1 (String.length key - 1) in
+    match key.[0] with
+    | '@' -> (
+        match
+          List.find_opt
+            (fun (t : Ir.table) -> String.equal t.name rest)
+            ir.tables
+        with
+        | Some table -> table.entries
+        | None -> [])
+    | _ -> [ rest ]
+
+let set_masks registry (ir : Ir.t) =
+  List.fold_left
+    (fun acc (key, id) ->
+      let bit = 1 lsl id in
+      List.fold_left
+        (fun acc entry ->
+          let current = try List.assoc entry acc with Not_found -> 0 in
+          (entry, current lor bit) :: List.remove_assoc entry acc)
+        acc
+        (entries_for_key ir key))
+    [] registry
+
 let port_match_of_range = function
   | Ir.Port_any -> Mport_any
   | Ir.Range (lower, upper) -> Mport_range (lower, upper)
@@ -100,7 +163,7 @@ let rule_identity (rule : Ir.rule) =
   | Id_none -> identity_of_address rule.source
   | id -> id
 
-let compile_rule index ?anchor (rule : Ir.rule) =
+let compile_rule registry index ?anchor (rule : Ir.rule) =
   let location =
     match anchor with
     | None -> Printf.sprintf "lpf rule %d:%d" rule.span.line rule.span.column
@@ -117,6 +180,8 @@ let compile_rule index ?anchor (rule : Ir.rule) =
     dport = port_match_of_range rule.port;
     iface = Option.map (fun (i : Ir.interface_ref) -> i.device) rule.interface;
     direction = rule.direction;
+    saddr_set = set_id_of registry rule.source;
+    daddr_set = set_id_of registry rule.destination;
     identity = rule_identity rule;
     comment = location;
   }
@@ -195,16 +260,11 @@ let identity_tables (ir : Ir.t) prefixes =
       | Id_none -> false)
     ir.tables
 
-let plain_tables (ir : Ir.t) =
-  List.filter
-    (fun (table : Ir.table) ->
-      match identity_of_name table.name with Id_none -> true | _ -> false)
-    ir.tables
-
 let of_ir ?(version = 1) (ir : Ir.t) =
+  let registry = set_registry ir in
   let rules =
     List.mapi
-      (fun index (anchor, rule) -> compile_rule index ?anchor rule)
+      (fun index (anchor, rule) -> compile_rule registry index ?anchor rule)
       (all_ir_rules ir)
   in
   let rule_count = List.length rules in
@@ -231,17 +291,19 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       name = "lpf_rules";
       kind = Array;
       key_size = 4;
-      value_size = 16;
+      value_size = 24;
       max_entries = max rule_count 1;
       entries =
         List.map
           (fun r ->
             ( string_of_int r.index,
-              Printf.sprintf "verdict=%s proto=%s dport=%s id=%s"
+              Printf.sprintf
+                "verdict=%s proto=%s dport=%s id=%s saddr_set=%d daddr_set=%d"
                 (verdict_to_string r.verdict)
                 (l4_to_string r.l4)
                 (port_match_to_string r.dport)
-                (identity_to_string r.identity) ))
+                (identity_to_string r.identity)
+                r.saddr_set r.daddr_set ))
           rules;
     }
   in
@@ -262,19 +324,11 @@ let of_ir ?(version = 1) (ir : Ir.t) =
           rules;
     }
   in
-  let plain = plain_tables ir in
+  let masks = set_masks registry ir in
   let v4_entries =
-    List.concat_map
-      (fun (table : Ir.table) ->
-        List.filter (fun e -> not (is_ipv6_entry e)) table.entries)
-      plain
+    List.filter (fun (entry, _) -> not (is_ipv6_entry entry)) masks
   in
-  let v6_entries =
-    List.concat_map
-      (fun (table : Ir.table) ->
-        List.filter is_ipv6_entry table.entries)
-      plain
-  in
+  let v6_entries = List.filter (fun (entry, _) -> is_ipv6_entry entry) masks in
   let cidr4_map =
     {
       name = "lpf_cidr4";
@@ -282,7 +336,7 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       key_size = 8;
       value_size = 4;
       max_entries = max (List.length v4_entries) 1;
-      entries = List.map (fun e -> (e, "1")) v4_entries;
+      entries = List.map (fun (e, m) -> (e, string_of_int m)) v4_entries;
     }
   in
   let cidr6_map =
@@ -292,7 +346,7 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       key_size = 20;
       value_size = 4;
       max_entries = max (List.length v6_entries) 1;
-      entries = List.map (fun e -> (e, "1")) v6_entries;
+      entries = List.map (fun (e, m) -> (e, string_of_int m)) v6_entries;
     }
   in
   let counters_map =
@@ -554,6 +608,8 @@ let rule_updates (program : t) =
             u32_le (proto_code r.l4);
             u32_le lo;
             u32_le hi;
+            u32_le r.saddr_set;
+            u32_le r.daddr_set;
           ]
       in
       update_line "lpf_rules" (u32_le r.index) value)
@@ -655,12 +711,14 @@ let cidr_updates map_name max_prefix parse (program : t) =
   | None -> []
   | Some map ->
       List.filter_map
-        (fun (entry, _) ->
+        (fun (entry, value) ->
           match split_cidr max_prefix entry with
           | Some (addr, prefix) when prefix >= 0 && prefix <= max_prefix -> (
               match parse addr with
               | Some bytes ->
-                  Some (update_line map_name (lpm_key prefix bytes) (u32_le 1))
+                  Some
+                    (update_line map_name (lpm_key prefix bytes)
+                       (u32_le (int_of_string value)))
               | None -> None)
           | _ -> None)
         map.entries

@@ -44,6 +44,8 @@ type rule = {
   dport : port_match;
   iface : string option;
   direction : Policy.direction option;
+  saddr_set : int;
+  daddr_set : int;
   identity : identity;
   comment : string;
 }
