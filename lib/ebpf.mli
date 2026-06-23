@@ -43,6 +43,7 @@ type rule = {
   daddr : addr_match;
   dport : port_match;
   iface : string option;
+  direction : Policy.direction option;
   identity : identity;
   comment : string;
 }
@@ -53,6 +54,7 @@ type t = {
   maps : map list;
   programs : program list;
   rules : rule list;
+  tables : Ir.table list;
 }
 
 val pin_root : string
@@ -101,3 +103,7 @@ val write_active_version : int -> unit
 
 (* Phase 4 / explain: which hook + rule index handles a packet. *)
 val classify : t -> Explain.packet -> string
+
+(* Capability gating: warnings for IR features the eBPF datapath cannot enforce
+   (nat, rdr, queue/QoS, route-to, keep state, reject). *)
+val capability_diagnostics : Ir.t -> Policy.diagnostic list

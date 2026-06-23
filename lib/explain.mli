@@ -22,3 +22,7 @@ type explanation = {
 val explain : Ir.t -> packet -> explanation
 val to_string : explanation -> string
 val to_json : explanation -> string
+
+(* Address matching (literal equality, IPv4 CIDR containment, and table/set
+   membership) reused by alternate backends to stay in lockstep with the IR. *)
+val match_address : Ir.t -> Ir.address -> string -> bool
