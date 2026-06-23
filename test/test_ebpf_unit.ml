@@ -55,16 +55,19 @@ let () =
   in
   let diff_drift = Lpf.Ebpf.diff ~intended:rendered ~observed:drifted in
   assert diff_drift.Lpf.Ebpf.changes_required;
-  assert (String.length (Lpf.Ebpf.diff_text ~intended:rendered ~observed:drifted) > 0);
+  assert (
+    String.length (Lpf.Ebpf.diff_text ~intended:rendered ~observed:drifted) > 0);
 
   (* Phase 2: loader and rollback scripts are well-formed. *)
   let img = image basic in
   let loader = Lpf.Ebpf.loader_script img in
   assert (contains_substring loader "bpftool map create \"$PIN/lpf_meta\"");
-  assert (contains_substring loader "bpftool map update pinned \"$PIN/lpf_rules\"");
+  assert (
+    contains_substring loader "bpftool map update pinned \"$PIN/lpf_rules\"");
   assert (contains_substring loader "lpf-ebpf-loaded version=1 rules=3");
   let rollback = Lpf.Ebpf.rollback_script ~to_version:3 in
-  assert (contains_substring rollback "bpftool map update pinned \"$PIN/lpf_meta\"");
+  assert (
+    contains_substring rollback "bpftool map update pinned \"$PIN/lpf_meta\"");
   assert (contains_substring rollback "lpf-ebpf-rolled-back version=3");
 
   (* Phase 3: observed counters parse from a bpftool-style dump. *)
