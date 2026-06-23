@@ -32,14 +32,7 @@ let ebpf_verdict image pkt =
   else failwith ("unrecognized classify output: " ^ s)
 
 let packet direction interface protocol source destination port =
-  {
-    Lpf.Explain.direction;
-    interface;
-    protocol;
-    source;
-    destination;
-    port;
-  }
+  { Lpf.Explain.direction; interface; protocol; source; destination; port }
 
 let tcp = Lpf.Policy.Proto_named "tcp"
 let udp = Lpf.Policy.Proto_named "udp"
@@ -62,15 +55,31 @@ let () =
   let image = Lpf.Ebpf.of_plan plan in
   let cases =
     [
-      ("trusted /8 ssh", packet i "eth0" tcp "10.1.2.3" "10.0.0.1" (Some 22), "pass");
-      ("trusted /24 ssh", packet i "eth0" tcp "192.168.1.10" "10.0.0.1" (Some 22), "pass");
-      ("untrusted ssh", packet i "eth0" tcp "8.8.8.8" "10.0.0.1" (Some 22), "drop");
-      ("egress https", packet o "eth0" tcp "10.0.0.1" "1.1.1.1" (Some 443), "pass");
-      ("ingress dns block", packet i "eth0" udp "9.9.9.9" "10.0.0.1" (Some 53), "drop");
-      ("literal web", packet i "eth0" tcp "203.0.113.5" "10.0.0.1" (Some 80), "pass");
-      ("non-literal web", packet i "eth0" tcp "203.0.113.6" "10.0.0.1" (Some 80), "drop");
+      ( "trusted /8 ssh",
+        packet i "eth0" tcp "10.1.2.3" "10.0.0.1" (Some 22),
+        "pass" );
+      ( "trusted /24 ssh",
+        packet i "eth0" tcp "192.168.1.10" "10.0.0.1" (Some 22),
+        "pass" );
+      ( "untrusted ssh",
+        packet i "eth0" tcp "8.8.8.8" "10.0.0.1" (Some 22),
+        "drop" );
+      ( "egress https",
+        packet o "eth0" tcp "10.0.0.1" "1.1.1.1" (Some 443),
+        "pass" );
+      ( "ingress dns block",
+        packet i "eth0" udp "9.9.9.9" "10.0.0.1" (Some 53),
+        "drop" );
+      ( "literal web",
+        packet i "eth0" tcp "203.0.113.5" "10.0.0.1" (Some 80),
+        "pass" );
+      ( "non-literal web",
+        packet i "eth0" tcp "203.0.113.6" "10.0.0.1" (Some 80),
+        "drop" );
       (* `block in udp` must NOT match an egress packet (direction parity). *)
-      ("egress dns default", packet o "eth0" udp "10.0.0.1" "9.9.9.9" (Some 53), "drop");
+      ( "egress dns default",
+        packet o "eth0" udp "10.0.0.1" "9.9.9.9" (Some 53),
+        "drop" );
     ]
   in
   List.iter

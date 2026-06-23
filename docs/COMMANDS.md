@@ -178,6 +178,27 @@ extracts only `lpf`-owned nftables tables, and reports the same deterministic
 diff format as `--observed`. It is read-only and must not change host
 networking state.
 
+### `lpf ebpf <show|load|observe|rollback> [--observed <path>|--live] [--run] <policy>`
+
+Compile policy into an eBPF datapath image of typed BPF maps and an
+XDP/TC/cgroup/LSM attach plan, then load, observe, or roll it back.
+
+Operations:
+
+- `show` renders the map image
+- `load` emits or runs the bpftool loader
+- `observe` reads live per-rule counters
+- `rollback` flips the active version map atomically
+
+`--run` executes the generated bpftool loader instead of printing it.
+`--observed <path>` reads an observed ebpf image from a file or `-` for stdin.
+`--live` reads observed counters from the host via bpftool.
+
+Identity-aware policy is expressed with reserved table names (`cgroup_*`,
+`proc_*`, `dns_*`) referenced from rules. eBPF apply requires
+CAP_BPF/CAP_NET_ADMIN and a BTF-capable kernel. The loader runs in maps-only
+mode unless `LPF_BPF_OBJECT` points to a verified CO-RE object.
+
 ### `lpf history`
 
 Show applied policy versions, operator, timestamp, checksum, test result, and

@@ -13,7 +13,11 @@ type port_match = Mport_any | Mport_range of int * int
 
 (* Phase 4: identity / L7-aware selectors derived from reserved table names
    ([cgroup_*]/[cgroup:*], [proc_*]/[proc:*], [dns_*]/[dns:*]). *)
-type identity = Id_none | Id_cgroup of string | Id_proc of string | Id_dns of string
+type identity =
+  | Id_none
+  | Id_cgroup of string
+  | Id_proc of string
+  | Id_dns of string
 
 type map_kind = Array | Hash | Lpm_trie
 
@@ -91,7 +95,6 @@ type runners = {
 }
 
 val default_runners : runners
-
 val apply_with_runners : runners -> t -> (unit, Nft.run_error) result
 val observe_with_runners : runners -> (counter list, Nft.run_error) result
 

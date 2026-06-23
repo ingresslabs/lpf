@@ -427,7 +427,8 @@ let command_docs =
         ];
       options =
         [
-          ("--run", "execute the generated bpftool loader instead of printing it");
+          ( "--run",
+            "execute the generated bpftool loader instead of printing it" );
           ( "--observed <path>",
             "read an observed ebpf image from a file or - for stdin" );
           ("--live", "read observed counters from the host via bpftool");

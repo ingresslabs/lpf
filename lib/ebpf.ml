@@ -2,7 +2,13 @@ type verdict = Pass | Drop | Reject
 type l4 = L4_any | L4_named of string
 type addr_match = Addr_any | Addr_literal of string | Addr_set of string
 type port_match = Mport_any | Mport_range of int * int
-type identity = Id_none | Id_cgroup of string | Id_proc of string | Id_dns of string
+
+type identity =
+  | Id_none
+  | Id_cgroup of string
+  | Id_proc of string
+  | Id_dns of string
+
 type map_kind = Array | Hash | Lpm_trie
 
 type map = {
@@ -65,8 +71,9 @@ let identity_of_name name =
   let strip prefixes =
     List.find_map
       (fun prefix ->
-        if String.length name > String.length prefix
-           && String.equal (String.sub name 0 (String.length prefix)) prefix
+        if
+          String.length name > String.length prefix
+          && String.equal (String.sub name 0 (String.length prefix)) prefix
         then
           Some
             (String.sub name (String.length prefix)
@@ -105,7 +112,9 @@ let address_key = function
   | Ir.Any -> None
   | Ir.Literal value -> Some ("=" ^ value)
   | Ir.Table name -> (
-      match identity_of_name name with Id_none -> Some ("@" ^ name) | _ -> None)
+      match identity_of_name name with
+      | Id_none -> Some ("@" ^ name)
+      | _ -> None)
 
 let max_set_id = 31
 
@@ -150,8 +159,7 @@ let set_masks registry (ir : Ir.t) =
         (fun acc entry ->
           let current = try List.assoc entry acc with Not_found -> 0 in
           (entry, current lor bit) :: List.remove_assoc entry acc)
-        acc
-        (entries_for_key ir key))
+        acc (entries_for_key ir key))
     [] registry
 
 let port_match_of_range = function
@@ -212,8 +220,7 @@ let addr_match_to_string = function
 let port_match_to_string = function
   | Mport_any -> "any"
   | Mport_range (lower, upper) when lower = upper -> string_of_int lower
-  | Mport_range (lower, upper) ->
-      Printf.sprintf "%d-%d" lower upper
+  | Mport_range (lower, upper) -> Printf.sprintf "%d-%d" lower upper
 
 let identity_to_string = function
   | Id_none -> "none"
@@ -279,9 +286,9 @@ let of_ir ?(version = 1) (ir : Ir.t) =
         [
           ("version", string_of_int version);
           ( "default_action",
-            (match ir.default_action with
+            match ir.default_action with
             | Policy.Default_pass -> "pass"
-            | Policy.Default_deny -> "deny") );
+            | Policy.Default_deny -> "deny" );
           ("rule_count", string_of_int rule_count);
         ];
     }
@@ -365,7 +372,14 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       List.concat_map (fun (table : Ir.table) -> table.entries) tables
       |> List.mapi (fun i e -> (e, string_of_int i))
     in
-    { name; kind; key_size = 8; value_size = 4; max_entries = max (List.length entries) 1; entries }
+    {
+      name;
+      kind;
+      key_size = 8;
+      value_size = 4;
+      max_entries = max (List.length entries) 1;
+      entries;
+    }
   in
   let has_identity =
     List.exists (fun r -> r.identity <> Id_none) rules
@@ -458,19 +472,18 @@ let hook_to_string = function
 let render_map (map : map) =
   let header =
     Printf.sprintf "  map %s type %s key %d value %d entries %d {" map.name
-      (map_kind_to_string map.kind) map.key_size map.value_size map.max_entries
+      (map_kind_to_string map.kind)
+      map.key_size map.value_size map.max_entries
   in
   let body =
     map.entries
     |> List.sort (fun (a, _) (b, _) -> String.compare a b)
-    |> List.map (fun (key, value) ->
-           Printf.sprintf "    %s => %s" key value)
+    |> List.map (fun (key, value) -> Printf.sprintf "    %s => %s" key value)
   in
   String.concat "\n" ((header :: body) @ [ "  }" ])
 
 let render_program (program : program) =
-  Printf.sprintf "  program %s section %s hook %s" program.name
-    program.section
+  Printf.sprintf "  program %s section %s hook %s" program.name program.section
     (hook_to_string program.hook)
 
 let render_rule (rule : rule) =
@@ -479,8 +492,12 @@ let render_rule (rule : rule) =
     (match rule.iface with None -> "" | Some d -> " iif " ^ d)
     (l4_to_string rule.l4)
     (port_match_to_string rule.dport)
-    (match rule.saddr with Addr_any -> "" | a -> " saddr " ^ addr_match_to_string a)
-    (match rule.daddr with Addr_any -> "" | a -> " daddr " ^ addr_match_to_string a)
+    (match rule.saddr with
+    | Addr_any -> ""
+    | a -> " saddr " ^ addr_match_to_string a)
+    (match rule.daddr with
+    | Addr_any -> ""
+    | a -> " daddr " ^ addr_match_to_string a)
     (Json_util.string rule.comment)
 
 let to_string (program : t) =
@@ -578,9 +595,10 @@ let kind_keyword = function
 let create_map_line (map : map) =
   let flags = match map.kind with Lpm_trie -> " flags 1" | _ -> "" in
   Printf.sprintf
-    "bpftool map create \"$PIN/%s\" type %s key %d value %d entries %d name %s%s 2>/dev/null || true"
-    map.name (kind_keyword map.kind) map.key_size map.value_size
-    map.max_entries map.name flags
+    "bpftool map create \"$PIN/%s\" type %s key %d value %d entries %d name \
+     %s%s 2>/dev/null || true"
+    map.name (kind_keyword map.kind) map.key_size map.value_size map.max_entries
+    map.name flags
 
 let update_line map_name key value =
   Printf.sprintf
@@ -632,10 +650,11 @@ let dns_resolution (program : t) =
         (fun (host, idx) ->
           [
             Printf.sprintf
-              "for ip in $(getent ahostsv4 %s 2>/dev/null | awk '{print $1}' \
-               | sort -u); do bpftool map update pinned \"$PIN/lpf_dns\" key \
+              "for ip in $(getent ahostsv4 %s 2>/dev/null | awk '{print $1}' | \
+               sort -u); do bpftool map update pinned \"$PIN/lpf_dns\" key \
                $(lpf_ip4 \"$ip\") value %s 2>/dev/null || true; done"
-              (Filename.quote host) (u32_le (int_of_string idx));
+              (Filename.quote host)
+              (u32_le (int_of_string idx));
           ])
         map.entries
 
@@ -666,7 +685,8 @@ let v6_groups part =
         | Some groups, Some value when value >= 0 && value <= 0xffff ->
             Some (value :: groups)
         | _ -> None)
-      (String.split_on_char ':' part) (Some [])
+      (String.split_on_char ':' part)
+      (Some [])
 
 let v6_bytes_of_groups groups =
   List.concat_map (fun g -> [ (g lsr 8) land 0xff; g land 0xff ]) groups
@@ -742,8 +762,8 @@ let cgroup_resolution (program : t) =
           Printf.sprintf
             "p=%s; case \"$p\" in /*) ;; *) p=\"/sys/fs/cgroup/$p\";; esac; \
              cid=$(stat -c %%i \"$p\" 2>/dev/null); [ -n \"$cid\" ] && bpftool \
-             map update pinned \"$PIN/lpf_cgroup\" key $(lpf_u64 \"$cid\") value \
-             %s 2>/dev/null || true"
+             map update pinned \"$PIN/lpf_cgroup\" key $(lpf_u64 \"$cid\") \
+             value %s 2>/dev/null || true"
             (Filename.quote path)
             (u32_le (int_of_string idx)))
         map.entries
@@ -760,11 +780,11 @@ let proc_resolution (program : t) =
       List.map
         (fun (name, idx) ->
           Printf.sprintf
-            "for pid in $(pgrep -x %s 2>/dev/null); do cg=$(awk -F: \
-             '{print $NF}' \"/proc/$pid/cgroup\" 2>/dev/null | head -n1); [ -n \
-             \"$cg\" ] && cid=$(stat -c %%i \"/sys/fs/cgroup$cg\" 2>/dev/null) \
-             && [ -n \"$cid\" ] && bpftool map update pinned \"$PIN/lpf_proc\" \
-             key $(lpf_u64 \"$cid\") value %s 2>/dev/null || true; done"
+            "for pid in $(pgrep -x %s 2>/dev/null); do cg=$(awk -F: '{print \
+             $NF}' \"/proc/$pid/cgroup\" 2>/dev/null | head -n1); [ -n \"$cg\" \
+             ] && cid=$(stat -c %%i \"/sys/fs/cgroup$cg\" 2>/dev/null) && [ -n \
+             \"$cid\" ] && bpftool map update pinned \"$PIN/lpf_proc\" key \
+             $(lpf_u64 \"$cid\") value %s 2>/dev/null || true; done"
             (Filename.quote name)
             (u32_le (int_of_string idx)))
         map.entries
@@ -781,9 +801,8 @@ let loader_script (program : t) =
       "$1";
       "EOF";
       "printf '%s %s %s %s' \"$a\" \"$b\" \"$c\" \"$d\"; }";
-      "lpf_u64() { n=$1; out=''; i=0; while [ $i -lt 8 ]; do out=\"$out \
-       $((n & 255))\"; n=$((n >> 8)); i=$((i + 1)); done; printf '%s' \
-       \"$out\"; }";
+      "lpf_u64() { n=$1; out=''; i=0; while [ $i -lt 8 ]; do out=\"$out $((n & \
+       255))\"; n=$((n >> 8)); i=$((i + 1)); done; printf '%s' \"$out\"; }";
       "if ! mountpoint -q /sys/fs/bpf 2>/dev/null; then mount -t bpf bpf \
        /sys/fs/bpf 2>/dev/null || true; fi";
       "mkdir -p \"$PIN\" \"$PIN/prog\" 2>/dev/null || true";
@@ -799,8 +818,8 @@ let loader_script (program : t) =
   let attach =
     [
       "if [ -n \"${LPF_BPF_OBJECT:-}\" ] && [ -f \"${LPF_BPF_OBJECT}\" ]; then";
-      "  bpftool prog loadall \"$LPF_BPF_OBJECT\" \"$PIN/prog\" \
-       2>/dev/null || true";
+      "  bpftool prog loadall \"$LPF_BPF_OBJECT\" \"$PIN/prog\" 2>/dev/null || \
+       true";
     ]
     @ List.filter_map
         (fun (p : program) ->
@@ -819,16 +838,14 @@ let loader_script (program : t) =
     [
       "if bpftool map show pinned \"$PIN/lpf_meta\" >/dev/null 2>&1 && bpftool \
        map show pinned \"$PIN/lpf_rules\" >/dev/null 2>&1; then";
-      Printf.sprintf
-        "  echo \"lpf-ebpf-loaded version=%d rules=%d maps=%d\"" program.version
-        rule_count (List.length program.maps);
+      Printf.sprintf "  echo \"lpf-ebpf-loaded version=%d rules=%d maps=%d\""
+        program.version rule_count (List.length program.maps);
       "else";
       "  echo \"lpf-ebpf-load-failed: required maps missing\" >&2; exit 1";
       "fi";
     ]
   in
-  String.concat "\n"
-    (header @ creates @ updates @ attach @ verify) ^ "\n"
+  String.concat "\n" (header @ creates @ updates @ attach @ verify) ^ "\n"
 
 let rollback_script ~to_version =
   String.concat "\n"
@@ -845,8 +862,7 @@ let rollback_script ~to_version =
 type counter = { rule_index : int; packets : int; bytes : int }
 
 let hex_tokens text =
-  text
-  |> String.split_on_char ' '
+  text |> String.split_on_char ' '
   |> List.filter (fun token -> token <> "")
   |> List.filter_map (fun token ->
          let token =
@@ -866,7 +882,8 @@ let le_int bytes =
       (0L, 0) bytes
     |> fst
   in
-  if Int64.compare value 0L < 0 || Int64.compare value (Int64.of_int max_int) > 0
+  if
+    Int64.compare value 0L < 0 || Int64.compare value (Int64.of_int max_int) > 0
   then max_int
   else Int64.to_int value
 
@@ -878,7 +895,11 @@ let take n list =
   loop n [] list
 
 let drop n list =
-  let rec loop n = function rest when n <= 0 -> rest | _ :: rest -> loop (n - 1) rest | [] -> [] in
+  let rec loop n = function
+    | rest when n <= 0 -> rest
+    | _ :: rest -> loop (n - 1) rest
+    | [] -> []
+  in
   loop n list
 
 let split_on_first sep s =
@@ -893,9 +914,7 @@ let split_on_first sep s =
   loop 0
 
 let parse_counters dump =
-  let normalized =
-    dump |> String.split_on_char '\n' |> String.concat " "
-  in
+  let normalized = dump |> String.split_on_char '\n' |> String.concat " " in
   (* split into records on the "key:" marker *)
   let segments =
     let re = "key:" in
@@ -1060,8 +1079,7 @@ let classify (program : t) (packet : Explain.packet) =
     List.find_opt
       (fun rule ->
         direction_matches rule packet
-        && iface_matches rule packet
-        && proto_matches rule packet
+        && iface_matches rule packet && proto_matches rule packet
         && port_matches rule packet
         && Explain.match_address ir (addr_match_to_ir rule.saddr) packet.source
         && Explain.match_address ir
