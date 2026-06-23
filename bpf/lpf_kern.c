@@ -31,6 +31,8 @@ struct lpf_rule {
   __u32 proto;
   __u32 dport_lo;
   __u32 dport_hi;
+  __u32 saddr_set;
+  __u32 daddr_set;
 };
 
 struct lpf_counter {
@@ -48,6 +50,8 @@ struct lpf_match_ctx {
   __u32 rule_count;
   __u8 proto;
   __u16 dport;
+  __u32 saddr_mask;
+  __u32 daddr_mask;
   /* output */
   __u32 verdict;
   __s32 matched;
@@ -110,10 +114,26 @@ static long lpf_match_rule(__u32 i, struct lpf_match_ctx *ctx) {
     if (ctx->dport < rule->dport_lo || ctx->dport > rule->dport_hi) return 0;
   }
 
+  /* per-rule source/destination set membership (0 = any) */
+  if (rule->saddr_set != 0 &&
+      !((ctx->saddr_mask >> rule->saddr_set) & 1U))
+    return 0;
+  if (rule->daddr_set != 0 &&
+      !((ctx->daddr_mask >> rule->daddr_set) & 1U))
+    return 0;
+
   ctx->verdict = rule->verdict;
   ctx->matched = (__s32)i;
   ctx->done = 1;
   return 1;
+}
+
+static __always_inline __u32 lpf_cidr4_mask(__be32 addr) {
+  struct lpf_lpm_v4_key key;
+  key.prefixlen = 32;
+  __builtin_memcpy(key.data, &addr, 4);
+  __u32 *mask = bpf_map_lookup_elem(&lpf_cidr4, &key);
+  return mask ? *mask : 0;
 }
 
 SEC("xdp")
@@ -146,13 +166,16 @@ int lpf_ingress(struct xdp_md *ctx) {
   }
 
   __u32 rule_count = lpf_rule_count();
+  __u32 default_verdict = lpf_default_action();
 
   struct lpf_match_ctx m = {
-    .default_verdict = lpf_default_action(),
+    .default_verdict = default_verdict,
     .rule_count = rule_count,
     .proto = proto,
     .dport = dport,
-    .verdict = lpf_default_action(),
+    .saddr_mask = lpf_cidr4_mask(ip->saddr),
+    .daddr_mask = lpf_cidr4_mask(ip->daddr),
+    .verdict = default_verdict,
     .matched = -1,
     .done = 0,
   };

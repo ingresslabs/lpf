@@ -17,6 +17,7 @@ PROG = f"{PIN}/prog/lpf_ingress"
 META = f"{PIN}/lpf_meta"
 RULES = f"{PIN}/lpf_rules"
 COUNTERS = f"{PIN}/lpf_counters"
+CIDR4 = f"{PIN}/lpf_cidr4"
 
 XDP_DROP, XDP_PASS = 1, 2
 TCP, UDP, ICMP = 6, 17, 1
@@ -46,20 +47,29 @@ def set_meta(idx, val):
     map_update(META, u32le(idx), u32le(val))
 
 
-def set_rule(i, verdict, proto, lo, hi):
-    val = u32le(verdict) + u32le(proto) + u32le(lo) + u32le(hi)
+def set_rule(i, verdict, proto, lo, hi, saddr_set=0, daddr_set=0):
+    val = (u32le(verdict) + u32le(proto) + u32le(lo) + u32le(hi)
+           + u32le(saddr_set) + u32le(daddr_set))
     map_update(RULES, u32le(i), val)
+
+
+def set_cidr4(prefixlen, octets, mask):
+    key = u32le(prefixlen) + [str(o) for o in octets]
+    map_update(CIDR4, key, u32le(mask))
 
 
 def configure(default_pass, rules):
     set_meta(0, 1)                       # version
     set_meta(1, 1 if default_pass else 0)  # default action
     set_meta(2, len(rules))              # rule_count
-    for i, (v, p, lo, hi) in enumerate(rules):
-        set_rule(i, v, p, lo, hi)
+    for i, r in enumerate(rules):
+        v, p, lo, hi = r[0], r[1], r[2], r[3]
+        ss = r[4] if len(r) > 4 else 0
+        ds = r[5] if len(r) > 5 else 0
+        set_rule(i, v, p, lo, hi, ss, ds)
 
 
-def craft(proto, dport=0, ethertype=0x0800):
+def craft(proto, dport=0, ethertype=0x0800, src=(10, 0, 0, 2), dst=(10, 0, 0, 1)):
     mac = b"\x02\x00\x00\x00\x00\x01"
     eth = mac + mac + struct.pack("!H", ethertype)
     if ethertype != 0x0800:
@@ -74,7 +84,7 @@ def craft(proto, dport=0, ethertype=0x0800):
         l4 = b"\x00" * 8
     total = 20 + len(l4)
     ip = struct.pack("!BBHHHBBH4s4s", (4 << 4) | 5, 0, total, 1, 0, 64,
-                     proto, 0, bytes([10, 0, 0, 2]), bytes([10, 0, 0, 1]))
+                     proto, 0, bytes(src), bytes(dst))
     return eth + ip + l4
 
 
@@ -208,6 +218,45 @@ urng = [(PASS_V, UDP, 5000, 5005)]
 check("udp range 5000", False, urng, P(UDP, 5000), XDP_PASS)
 check("udp range 5005", False, urng, P(UDP, 5005), XDP_PASS)
 check("udp range 5006 drop", False, urng, P(UDP, 5006), XDP_DROP)
+
+# 14. per-rule SOURCE set membership (set id 1 = 10.0.0.0/8 -> bit 1 -> mask 2)
+set_cidr4(8, [10, 0, 0, 0], 2)
+src1 = [(PASS_V, TCP, 22, 22, 1, 0)]
+check("src in set1 tcp/22", False, src1, craft(TCP, 22, src=(10, 5, 5, 5)), XDP_PASS)
+check("src not in set1", False, src1, craft(TCP, 22, src=(8, 8, 8, 8)), XDP_DROP)
+check("src in set1 wrong port", False, src1, craft(TCP, 80, src=(10, 5, 5, 5)), XDP_DROP)
+
+# 15. per-rule DESTINATION set membership (reuse set 1)
+dst1 = [(PASS_V, TCP, 443, 443, 0, 1)]
+check("dst in set1 tcp/443", False, dst1, craft(TCP, 443, dst=(10, 1, 1, 1)), XDP_PASS)
+check("dst not in set1", False, dst1, craft(TCP, 443, dst=(1, 1, 1, 1)), XDP_DROP)
+
+# 16. set discrimination: set 2 = 192.168.0.0/16 -> bit 2 -> mask 4
+set_cidr4(16, [192, 168, 0, 0], 4)
+s1 = [(PASS_V, TCP, 0, 0, 1, 0)]
+s2 = [(PASS_V, TCP, 0, 0, 2, 0)]
+check("set2 src 192.168.x pass", False, s2, craft(TCP, 1, src=(192, 168, 1, 1)), XDP_PASS)
+check("set2 src 10.x drop", False, s2, craft(TCP, 1, src=(10, 1, 1, 1)), XDP_DROP)
+check("set1 src 10.x pass", False, s1, craft(TCP, 1, src=(10, 9, 9, 9)), XDP_PASS)
+check("set1 src 192.168.x drop", False, s1, craft(TCP, 1, src=(192, 168, 1, 1)), XDP_DROP)
+
+# 17. multi-membership: 172.16.0.0/24 in set1 AND set2 -> mask 2|4 = 6
+set_cidr4(24, [172, 16, 0, 0], 6)
+check("multimember via set1", False, s1, craft(TCP, 1, src=(172, 16, 0, 5)), XDP_PASS)
+check("multimember via set2", False, s2, craft(TCP, 1, src=(172, 16, 0, 5)), XDP_PASS)
+
+# 18. saddr_set=0 ignores membership (any source)
+check("saddr_set=0 any src", False, [(PASS_V, TCP, 22, 22, 0, 0)],
+      craft(TCP, 22, src=(203, 0, 113, 9)), XDP_PASS)
+
+# 19. combined source AND destination set constraints
+both = [(PASS_V, TCP, 0, 0, 1, 1)]
+check("both src+dst in set1", False, both,
+      craft(TCP, 1, src=(10, 1, 1, 1), dst=(10, 2, 2, 2)), XDP_PASS)
+check("src in set1 dst outside", False, both,
+      craft(TCP, 1, src=(10, 1, 1, 1), dst=(8, 8, 8, 8)), XDP_DROP)
+check("dst in set1 src outside", False, both,
+      craft(TCP, 1, src=(8, 8, 8, 8), dst=(10, 2, 2, 2)), XDP_DROP)
 
 # ---- report ----
 passed = sum(1 for r in results if r[0])

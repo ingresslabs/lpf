@@ -31,6 +31,7 @@ let () =
   let basic =
     "set default deny\n\n\
      table <trusted> { 10.0.0.0/8 }\n\
+     pass in proto tcp from <trusted> to any port 22\n\
      pass out proto tcp from any to any port 443 keep state\n\
      block in from any to any\n"
   in
@@ -39,10 +40,12 @@ let () =
   assert (contains_substring rendered "map lpf_meta type array");
   assert (contains_substring rendered "map lpf_rules type array");
   assert (contains_substring rendered "map lpf_cidr4 type lpm_trie");
-  assert (contains_substring rendered "10.0.0.0/8 => 1");
+  (* <trusted> is set id 1, so its membership bitmask is bit 1 = 2. *)
+  assert (contains_substring rendered "10.0.0.0/8 => 2");
+  assert (contains_substring rendered "saddr_set=1");
   assert (contains_substring rendered "verdict=pass proto=tcp dport=443");
   assert (contains_substring rendered "program lpf_xdp_eth0");
-  assert (contains_substring rendered "rule_count => 2");
+  assert (contains_substring rendered "rule_count => 3");
 
   (* Phase 1: identical images diff clean; a changed image needs changes. *)
   let diff_same = Lpf.Ebpf.diff ~intended:rendered ~observed:rendered in
@@ -59,7 +62,7 @@ let () =
   let loader = Lpf.Ebpf.loader_script img in
   assert (contains_substring loader "bpftool map create \"$PIN/lpf_meta\"");
   assert (contains_substring loader "bpftool map update pinned \"$PIN/lpf_rules\"");
-  assert (contains_substring loader "lpf-ebpf-loaded version=1 rules=2");
+  assert (contains_substring loader "lpf-ebpf-loaded version=1 rules=3");
   let rollback = Lpf.Ebpf.rollback_script ~to_version:3 in
   assert (contains_substring rollback "bpftool map update pinned \"$PIN/lpf_meta\"");
   assert (contains_substring rollback "lpf-ebpf-rolled-back version=3");
@@ -105,7 +108,28 @@ let () =
     }
   in
   let classification = Lpf.Ebpf.classify img packet in
-  assert (contains_substring classification "rule 0");
+  assert (contains_substring classification "rule 1");
   assert (contains_substring classification "pass");
+
+  (* set membership: an in/22 packet from <trusted> matches rule 0. *)
+  let trusted_packet =
+    {
+      Lpf.Explain.direction = Lpf.Policy.In;
+      interface = "eth0";
+      protocol = Lpf.Policy.Proto_named "tcp";
+      source = "10.0.0.5";
+      destination = "1.1.1.1";
+      port = Some 22;
+    }
+  in
+  let trusted_class = Lpf.Ebpf.classify img trusted_packet in
+  assert (contains_substring trusted_class "rule 0");
+  assert (contains_substring trusted_class "pass");
+  (* a non-trusted in/22 packet misses rule 0 and is caught by `block in`. *)
+  let untrusted_class =
+    Lpf.Ebpf.classify img { trusted_packet with source = "8.8.8.8" }
+  in
+  assert (contains_substring untrusted_class "rule 2");
+  assert (contains_substring untrusted_class "drop");
 
   print_endline "ebpf unit tests passed"
