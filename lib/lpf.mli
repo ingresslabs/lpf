@@ -11,6 +11,7 @@ type command = Command.command =
   | Table
   | State
   | Rules
+  | Ebpf
   | History
   | Man
   | Tools
@@ -45,6 +46,7 @@ module Nftables : module type of Nftables
 module Tc : module type of Tc
 module Routing : module type of Routing
 module Nft : module type of Nft
+module Ebpf : module type of Ebpf
 module Explain : module type of Explain
 module Json_util : module type of Json_util
 module Test_engine : module type of Test_engine
@@ -96,6 +98,22 @@ val render_routing_policy_text :
   ?file:string ->
   string ->
   (string * Policy.diagnostic list, Policy.diagnostic list) result
+
+val render_ebpf_policy_text :
+  ?file:string ->
+  string ->
+  (string * Policy.diagnostic list, Policy.diagnostic list) result
+
+val render_ebpf_loader_text :
+  ?file:string ->
+  string ->
+  (string * Policy.diagnostic list, Policy.diagnostic list) result
+
+val diff_ebpf_policy :
+  ?file:string ->
+  observed:string ->
+  string ->
+  (Ebpf.diff_result * Policy.diagnostic list, Policy.diagnostic list) result
 
 val diff_nftables_policy_text :
   ?file:string ->

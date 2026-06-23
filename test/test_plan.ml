@@ -65,7 +65,7 @@ let () =
   assert (Lpf.command_of_string "man" = Some Lpf.Man);
   assert (Lpf.command_of_string "does-not-exist" = None);
   assert (String.contains (Lpf.help ()) 'c');
-  assert (List.length (Lpf.man_pages ()) = 20);
+  assert (List.length (Lpf.man_pages ()) = 21);
   Lpf.man_pages ()
   |> List.iter (fun page ->
          let path = Filename.concat "../man/generated" page.Lpf.filename in

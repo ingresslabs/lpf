@@ -11,6 +11,7 @@ type command =
   | Table
   | State
   | Rules
+  | Ebpf
   | History
   | Man
   | Tools

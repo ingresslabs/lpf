@@ -180,6 +180,7 @@ let parse_plan_args args =
     | "--backend" :: "nftables" :: rest -> loop "nftables" paths rest
     | "--backend" :: "tc" :: rest -> loop "tc" paths rest
     | "--backend" :: "routing" :: rest -> loop "routing" paths rest
+    | "--backend" :: "ebpf" :: rest -> loop "ebpf" paths rest
     | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
     | arg :: _ when is_option arg -> Error arg
     | path :: rest -> loop backend (path :: paths) rest
@@ -206,6 +207,14 @@ let handle_plan args =
               exit 1)
       | "routing" -> (
           match Lpf.render_routing_policy_text ~file:path input with
+          | Ok (rendered, diagnostics) ->
+              print_diagnostics diagnostics;
+              print_string rendered
+          | Error diagnostics ->
+              print_diagnostics diagnostics;
+              exit 1)
+      | "ebpf" -> (
+          match Lpf.render_ebpf_policy_text ~file:path input with
           | Ok (rendered, diagnostics) ->
               print_diagnostics diagnostics;
               print_string rendered
@@ -1117,6 +1126,144 @@ let handle_completion args =
       prerr_endline ("completion script not found: " ^ filename);
       exit 1)
 
+let ebpf_image_of_path path =
+  let input = read_file path in
+  match Lpf.plan_policy_text ~file:path input with
+  | Ok (plan, diagnostics) -> Ok (Lpf.Ebpf.of_plan plan, diagnostics)
+  | Error diagnostics -> Error diagnostics
+
+let last_policy_path args =
+  List.fold_left
+    (fun acc arg ->
+      if String.length arg > 0 && arg.[0] = '-' then acc else Some arg)
+    None args
+
+let handle_ebpf args =
+  let print_run_error error =
+    prerr_endline (Lpf.Nft.string_of_run_error error)
+  in
+  match args with
+  | "show" :: rest -> (
+      match last_policy_path rest with
+      | None ->
+          prerr_endline "usage: lpf ebpf show <policy>";
+          exit 64
+      | Some path -> (
+          match ebpf_image_of_path path with
+          | Ok (image, diagnostics) ->
+              print_diagnostics diagnostics;
+              print_string (Lpf.Ebpf.to_string image)
+          | Error diagnostics ->
+              print_diagnostics diagnostics;
+              exit 1))
+  | "load" :: rest -> (
+      let run = List.mem "--run" rest in
+      match last_policy_path rest with
+      | None ->
+          prerr_endline "usage: lpf ebpf load [--run] <policy>";
+          exit 64
+      | Some path -> (
+          match ebpf_image_of_path path with
+          | Error diagnostics ->
+              print_diagnostics diagnostics;
+              exit 1
+          | Ok (image, diagnostics) -> (
+              print_diagnostics diagnostics;
+              if not run then print_string (Lpf.Ebpf.loader_script image)
+              else
+                match
+                  Lpf.Ebpf.apply_with_runners Lpf.Ebpf.default_runners image
+                with
+                | Ok () ->
+                    Printf.printf "ebpf image loaded (version %d, %d rules)\n"
+                      image.Lpf.Ebpf.version
+                      (List.length image.Lpf.Ebpf.rules);
+                    exit 0
+                | Error error ->
+                    print_run_error error;
+                    exit 1)))
+  | "observe" :: rest -> (
+      let dump_path =
+        let rec find = function
+          | "--dump" :: path :: _ -> Some path
+          | _ :: more -> find more
+          | [] -> None
+        in
+        find rest
+      in
+      match dump_path with
+      | Some path ->
+          let counters = Lpf.Ebpf.parse_counters (read_file path) in
+          print_endline (Lpf.Ebpf.render_counters counters);
+          exit 0
+      | None -> (
+          match Lpf.Ebpf.observe_with_runners Lpf.Ebpf.default_runners with
+          | Ok counters ->
+              print_endline (Lpf.Ebpf.render_counters counters);
+              exit 0
+          | Error error ->
+              print_run_error error;
+              exit 1))
+  | "rollback" :: rest -> (
+      let rec parse_to = function
+        | "--to" :: value :: _ -> int_of_string_opt value
+        | _ :: more -> parse_to more
+        | [] -> None
+      in
+      let to_version =
+        match parse_to rest with
+        | Some version -> Some version
+        | None -> (
+            match Lpf.Ebpf.read_active_version () with
+            | Some active when active > 1 -> Some (active - 1)
+            | _ -> None)
+      in
+      match to_version with
+      | None ->
+          prerr_endline "usage: lpf ebpf rollback --to <version>";
+          exit 64
+      | Some to_version -> (
+          match
+            Lpf.Ebpf.rollback_with_runners Lpf.Ebpf.default_runners ~to_version
+          with
+          | Ok () ->
+              Printf.printf "ebpf rolled back to version %d\n" to_version;
+              exit 0
+          | Error error ->
+              print_run_error error;
+              exit 1))
+  | "diff" :: rest -> (
+      let observed_path =
+        let rec find = function
+          | "--observed" :: path :: _ -> Some path
+          | _ :: more -> find more
+          | [] -> None
+        in
+        find rest
+      in
+      match (observed_path, last_policy_path rest) with
+      | Some observed_path, Some path -> (
+          let observed =
+            if String.equal observed_path "-" then read_stdin ()
+            else read_file observed_path
+          in
+          let input = read_file path in
+          match Lpf.diff_ebpf_policy ~file:path ~observed input with
+          | Ok (diff, diagnostics) ->
+              print_diagnostics diagnostics;
+              print_string diff.Lpf.Ebpf.text;
+              exit (if diff.Lpf.Ebpf.changes_required then 1 else 0)
+          | Error diagnostics ->
+              print_diagnostics diagnostics;
+              exit 1)
+      | _ ->
+          prerr_endline "usage: lpf ebpf diff --observed <image|-> <policy>";
+          exit 64)
+  | _ ->
+      prerr_endline
+        "usage: lpf ebpf <show|load|observe|rollback|diff> [options] <policy>";
+      exit 64
+
 let handle_tools args =
   let rec parse format = function
     | [] -> Ok format
@@ -1217,6 +1364,7 @@ let () =
   | _ :: "test" :: args -> handle_test args
   | _ :: "history" :: args -> handle_history args
   | _ :: "rules" :: args -> handle_rules args
+  | _ :: "ebpf" :: args -> handle_ebpf args
   | _ :: "state" :: args -> handle_state args
   | _ :: "table" :: args -> handle_table args
   | _ :: "man" :: args -> handle_man args

@@ -11,6 +11,7 @@ type command =
   | Table
   | State
   | Rules
+  | Ebpf
   | History
   | Man
   | Tools
@@ -47,6 +48,7 @@ let all_commands =
     ("table", Table, "manage dynamic policy tables");
     ("state", State, "inspect or modify conntrack state");
     ("rules", Rules, "show or diff generated backend rules");
+    ("ebpf", Ebpf, "compile, load, observe, and roll back the eBPF datapath");
     ("history", History, "show policy apply history and rollback points");
     ("man", Man, "generate, check, or install man pages");
     ("tools", Tools, "emit tool-calling schemas for AI agents");
@@ -69,6 +71,7 @@ let command_name = function
   | Table -> "table"
   | State -> "state"
   | Rules -> "rules"
+  | Ebpf -> "ebpf"
   | History -> "history"
   | Man -> "man"
   | Tools -> "tools"
@@ -407,6 +410,45 @@ let command_docs =
       see_also = [ "lpf-diff(8)"; "lpf-plan(8)" ];
     };
     {
+      command = Ebpf;
+      section = 8;
+      synopsis =
+        "lpf ebpf <show|load|observe|rollback> [--observed <path>|--live] \
+         [--run] <policy>";
+      description =
+        [
+          "Compile policy into an eBPF datapath image of typed BPF maps and an \
+           XDP/TC/cgroup/LSM attach plan, then load, observe, or roll it back.";
+          "show renders the map image; load emits or runs the bpftool loader; \
+           observe reads live per-rule counters; rollback flips the active \
+           version map atomically.";
+          "Identity-aware policy is expressed with reserved table names \
+           (cgroup_*, proc_*, dns_*) referenced from rules.";
+        ];
+      options =
+        [
+          ("--run", "execute the generated bpftool loader instead of printing it");
+          ( "--observed <path>",
+            "read an observed ebpf image from a file or - for stdin" );
+          ("--live", "read observed counters from the host via bpftool");
+        ];
+      examples =
+        [
+          "lpf ebpf show fixtures/policies/basic.lpf";
+          "lpf ebpf load --run /etc/lpf.conf";
+          "lpf ebpf observe --live";
+          "lpf ebpf rollback";
+        ];
+      files = [ "/sys/fs/bpf/lpf"; "/var/lib/lpf/ebpf" ];
+      safety_notes =
+        [
+          "eBPF apply requires CAP_BPF/CAP_NET_ADMIN and a BTF-capable kernel.";
+          "Loader runs in maps-only mode unless LPF_BPF_OBJECT points to a \
+           verified CO-RE object.";
+        ];
+      see_also = [ "lpf-plan(8)"; "lpf-diff(8)"; "lpf-apply(8)" ];
+    };
+    {
       command = History;
       section = 8;
       synopsis = "lpf history";
@@ -537,6 +579,7 @@ let command_status = function
   | Check | Fmt | Plan | Diff | Apply | Confirm | Rollback | Explain | Test
   | Table | State | Rules | History | Man | Tools | Sysctl | Completion ->
       "implemented"
+  | Ebpf -> "implemented"
   | Version | Help -> "implemented"
 
 let command_help command =
