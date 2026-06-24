@@ -40,14 +40,6 @@ pipeline {
   }
 
   stages {
-    stage('Build (OCaml / dune)') {
-      steps { sh 'docker build --target builder -t lpf-builder:ci .' }
-    }
-
-    stage('Unit tests (dune runtest)') {
-      steps { sh 'docker run --rm lpf-builder:ci opam exec -- dune runtest' }
-    }
-
     stage('Image matrix: lpf features in isolated Vagabond sandboxes') {
       steps {
         script {
@@ -68,6 +60,9 @@ pipeline {
             branches["image:${label}"] = {
               stage("build lpf-ci:${label}") {
                 sh "docker build -f Dockerfile.ci --build-arg BASE=${base} -t lpf-ci:${label} ."
+              }
+              stage("unit tests on ${label}") {
+                sh "docker run --rm lpf-ci:${label} opam exec -- dune runtest"
               }
               stage("features on ${label}") {
                 def r = vagabondRun(
