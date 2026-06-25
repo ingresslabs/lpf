@@ -46,11 +46,8 @@ anchor web_traffic {
 block in from <banned> to any
 block out from any to <banned>
 
-# Admin SSH from trusted IPs (anchor)
-admin_access
-
-# Web traffic ingress (anchor)
-web_traffic
+# Admin SSH from trusted IPs (anchor rules are always active)
+# web_traffic anchor rules are always active
 
 # DNS ingress (UDP only)
 pass in on wan proto udp from any to <dns_servers> port 53
