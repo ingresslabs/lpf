@@ -89,6 +89,26 @@ pipeline {
       }
     }
 
+    stage('eBPF conformance (Docker, privileged)') {
+      // Run the full eBPF suite directly in the Docker CI container.
+      // Container runs privileged with /sys/fs/bpf mounted — no Firecracker VM needed.
+      // This avoids Vagabond VM timeout issues and gives results in ~3 min.
+      steps {
+        script {
+          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+            sh '''
+              docker run --rm --privileged --user root \
+                -v /sys/fs/bpf:/sys/fs/bpf \
+                -v /sys/kernel/btf:/sys/kernel/btf:ro \
+                --tmpfs /tmp \
+                lpf-ci:debian \
+                bash -lc "cd /home/opam/src && ci/vagabond/ebpf-suite.sh"
+            '''
+          }
+        }
+      }
+    }
+
     stage('Kernel matrix: eBPF datapath in Firecracker microVMs') {
       when { expression { return params.AVAILABLE_KERNELS?.trim() } }
       steps {

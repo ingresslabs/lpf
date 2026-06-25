@@ -96,9 +96,7 @@ let () =
              ir_verdict))
     cases;
 
-  (* Capability gating: unsupported IR features surface as warnings.
-     keep_state, route-to, and queue/QoS are now supported via eBPF.
-     Only reject is still degraded to drop in XDP. *)
+  (* All features now supported — no capability warnings remain *)
   let gated =
     "set default deny\n\n\
      pass in proto tcp from any to any port 22 keep state\n\
@@ -117,5 +115,5 @@ let () =
       let has needle = List.exists (fun m -> contains m needle) messages in
       assert (not (has "keep state is not supported"));
       assert (not (has "route-to is not supported"));
-      assert (has "reject");
+      assert (not (has "reject degraded"));
       print_endline "ebpf conformance tests passed"

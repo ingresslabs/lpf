@@ -138,6 +138,14 @@ struct {
   __type(value, struct lpf_rule);
 } lpf_rules SEC(".maps");
 
+/* Hash dispatch: (proto << 16 | dport) -> rule_index. O(1) fast path. */
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, LPF_MAX_RULES * 2);
+  __type(key, __u32);
+  __type(value, __u32);
+} lpf_rules_hash SEC(".maps");
+
 struct {
   __uint(type, BPF_MAP_TYPE_ARRAY);
   __uint(max_entries, LPF_MAX_RULES);
@@ -494,6 +502,84 @@ static __always_inline int lpf_snat_rewrite(struct __sk_buff *skb,
   return 1;
 }
 
+/* ── TCP RST construction (for TC egress REJECT) ──────────────────────── */
+
+static __always_inline int lpf_send_rst(struct __sk_buff *skb,
+                                         struct iphdr *ip,
+                                         struct tcphdr *tcp) {
+  /* Swap Ethernet addresses */
+  struct ethhdr *eth = (void *)ip - sizeof(struct ethhdr);
+  unsigned char tmp_mac[6];
+  __builtin_memcpy(tmp_mac, eth->h_source, 6);
+  __builtin_memcpy(eth->h_source, eth->h_dest, 6);
+  __builtin_memcpy(eth->h_dest, tmp_mac, 6);
+
+  /* Swap IP addresses */
+  __be32 tmp_ip = ip->saddr;
+  ip->saddr = ip->daddr;
+  ip->daddr = tmp_ip;
+
+  /* Build TCP RST+ACK */
+  __be16 tmp_port = tcp->source;
+  tcp->source = tcp->dest;
+  tcp->dest = tmp_port;
+
+  /* RST+ACK with sequence from incoming ACK */
+  __be32 tmp_seq = tcp->seq;
+  tcp->seq = tcp->ack_seq;
+  tcp->ack_seq = tmp_seq;
+  __be32_sum_add_word(tcp->ack_seq, 1);
+
+  /* Reset flags: RST+ACK, clear everything else */
+  tcp->fin = 0;
+  tcp->syn = 0;
+  tcp->rst = 1;
+  tcp->psh = 0;
+  tcp->ack = 1;
+  tcp->urg = 0;
+  tcp->ece = 0;
+  tcp->cwr = 0;
+
+  /* Clear data offset (keep header length) */
+  tcp->doff = 5;
+  tcp->window = 0;
+  tcp->check = 0;
+  tcp->urg_ptr = 0;
+
+  /* Shrink packet to headers only */
+  __u32 ihl = ip->ihl * 4;
+  __u32 tcp_hdr_len = tcp->doff * 4;
+  __u32 new_len = sizeof(struct ethhdr) + ihl + tcp_hdr_len;
+  long ret = bpf_skb_adjust_room(skb, -((long)skb->len - new_len), 0, 0);
+  if (ret) return TC_ACT_SHOT;
+
+  /* Update IP total length */
+  ip->tot_len = bpf_htons((__u16)(ihl + tcp_hdr_len));
+  ip->check = 0;
+  __u32 sum = 0;
+  for (int i = 0; i < ihl / 2; i++) {
+    sum += ((__u16 *)ip)[i];
+  }
+  while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+  ip->check = bpf_htons(~sum & 0xFFFF);
+
+  /* TCP checksum (pseudo-header + tcp header, no data) */
+  __u32 tcp_len = bpf_htons((__u16)tcp_hdr_len);
+  __u32 tcp_sum = 0;
+  tcp_sum += bpf_ntohs(ip->saddr >> 16) + bpf_ntohs(ip->saddr & 0xFFFF);
+  tcp_sum += bpf_ntohs(ip->daddr >> 16) + bpf_ntohs(ip->daddr & 0xFFFF);
+  tcp_sum += IPPROTO_TCP;
+  tcp_sum += bpf_ntohs(tcp_len);
+  for (int i = 0; i < tcp_hdr_len / 2; i++) {
+    tcp_sum += ((__u16 *)tcp)[i];
+  }
+  while (tcp_sum >> 16) tcp_sum = (tcp_sum & 0xFFFF) + (tcp_sum >> 16);
+  tcp->check = bpf_htons(~tcp_sum & 0xFFFF);
+
+  /* Redirect the RST back out the same interface */
+  return bpf_redirect(skb->ifindex, BPF_F_INGRESS);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Hook 1: XDP ingress (fastest path, before sk_buff allocation)
    ══════════════════════════════════════════════════════════════════════════ */
@@ -550,8 +636,25 @@ int lpf_ingress(struct xdp_md *ctx) {
       .matched = -1, .done = 0,
     };
 
-    __u32 nr = rc < LPF_MAX_RULES ? rc : LPF_MAX_RULES;
-    if (nr > 0) bpf_loop(nr, lpf_match_rule, &m, 0);
+    /* O(1) hash dispatch: try (proto << 16 | dport) -> rule_index first */
+    __u32 hkey = ((__u32)proto << 16) | (__u32)dport;
+    __u32 *hint = bpf_map_lookup_elem(&lpf_rules_hash, &hkey);
+    if (hint && *hint < rc) {
+      lpf_match_rule(*hint, &m);
+    }
+    /* Try proto-any hash (proto=0 << 16 | dport) */
+    if (!m.done) {
+      hkey = ((__u32)0 << 16) | (__u32)dport;
+      hint = bpf_map_lookup_elem(&lpf_rules_hash, &hkey);
+      if (hint && *hint < rc) {
+        lpf_match_rule(*hint, &m);
+      }
+    }
+    /* Fall back to linear scan if hash didn't match (port ranges, CIDR sets) */
+    if (!m.done) {
+      __u32 nr = rc < LPF_MAX_RULES ? rc : LPF_MAX_RULES;
+      if (nr > 0) bpf_loop(nr, lpf_match_rule, &m, 0);
+    }
     lpf_update_counters(m.matched, pkt_len);
 
     if (m.verdict == LPF_VERDICT_PASS && m.matched >= 0) {
@@ -705,8 +808,17 @@ int lpf_egress(struct __sk_buff *skb) {
     return TC_ACT_OK;
   }
 
-  if (m.verdict == LPF_VERDICT_DROP || m.verdict == LPF_VERDICT_REJECT)
+  if (m.verdict == LPF_VERDICT_DROP || m.verdict == LPF_VERDICT_REJECT) {
+    if (m.verdict == LPF_VERDICT_REJECT && proto == LPF_IPPROTO_TCP) {
+      struct iphdr *ip = (void *)(eth + 1);
+      __u32 ihl = ip->ihl * 4;
+      void *l4 = (void *)ip + ihl;
+      struct tcphdr *tcp = l4;
+      if ((void *)(tcp + 1) <= data_end)
+        return lpf_send_rst(skb, ip, tcp);
+    }
     return TC_ACT_SHOT;
+  }
   return TC_ACT_OK;
 }
 

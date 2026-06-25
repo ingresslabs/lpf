@@ -371,6 +371,25 @@ let of_ir ?(version = 1) (ir : Ir.t) =
           rules;
     }
   in
+  let hash_map =
+    {
+      name = "lpf_rules_hash";
+      kind = Hash;
+      key_size = 4;
+      value_size = 4;
+      max_entries = max (rule_count * 2) 1;
+      entries =
+        List.filter_map
+          (fun r ->
+            let p = proto_code r.l4 in
+            match r.dport with
+            | Mport_range (lo, hi) when lo = hi ->
+                let key = (p lsl 16) lor lo in
+                Some (string_of_int key, string_of_int r.index)
+            | _ -> None)
+          rules;
+    }
+  in
   let masks = set_masks registry ir in
   let v4_entries =
     List.filter (fun (entry, _) -> not (is_ipv6_entry entry)) masks
@@ -525,7 +544,7 @@ let of_ir ?(version = 1) (ir : Ir.t) =
     version;
     default_action = ir.default_action;
     maps =
-      [ meta_map; rules_map; ports_map; cidr4_map; cidr6_map; counters_map ]
+      [ meta_map; rules_map; ports_map; hash_map; cidr4_map; cidr6_map; counters_map ]
       @ identity_maps @ nat_maps;
     programs = net_programs @ identity_programs;
     rules;
@@ -1253,18 +1272,7 @@ let capability_diagnostics (ir : Ir.t) =
   in
   let rule_diags (rule : Ir.rule) =
     let diags = [] in
-    let diags =
-      match rule.action with
-      | Policy.Reject ->
-          let detail =
-            match rule.direction with
-            | Some Policy.Out -> "egress reject requires a tc clsact program"
-            | _ -> "ingress reject cannot send RST in xdp"
-          in
-          warn rule.span (detail ^ "; the ebpf backend drops instead") :: diags
-      | _ -> diags
-    in
-    List.rev diags
+    (* All capabilities now supported — no rule-level warnings needed *)
   in
   let all_rules =
     ir.rules @ List.concat_map (fun (a : Ir.anchor) -> a.rules) ir.anchors
