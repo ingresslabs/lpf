@@ -89,6 +89,22 @@ pipeline {
       }
     }
 
+    stage('Controller eBPF E2E: 50+ cases with real traffic') {
+      // Run the comprehensive eBPF E2E suite directly on the Jenkins
+      // controller (no Firecracker needed). Controller has kernel 7.0+,
+      // bpftool v7.7, and BTF — perfect for progrun + veth traffic tests.
+      steps {
+        script {
+          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+            // Build OCaml + BPF object, then run controller-ebpf.sh
+            sh 'opam exec -- dune build'
+            sh 'make bpf || true'
+            sh 'sudo env "PATH=$PATH" "HOME=$HOME" bash ci/jenkins/controller-ebpf.sh'
+          }
+        }
+      }
+    }
+
     stage('Kernel matrix: eBPF datapath in Firecracker microVMs') {
       when { expression { return params.AVAILABLE_KERNELS?.trim() } }
       steps {

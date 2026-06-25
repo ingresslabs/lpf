@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="lpf-functional" tests="30" failures="1">
+    <testcase classname="lpf.functional" name="01 version command reports semver" time="0">
+      <system-out>command: bash -c lpf version | grep -Eq &quot;^[0-9]+\\.[0-9]+\\.[0-9]+&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="02 top-level help lists check command" time="0">
+      <system-out>command: bash -c lpf help | grep -q &quot;check           parse and validate policy&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="03 rules command help is implemented" time="0">
+      <system-out>command: bash -c lpf help rules | grep -q &quot;Status: implemented&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="04 basic policy validates as JSON" time="0">
+      <system-out>command: bash -c lpf check --json fixtures/policies/basic.lpf | grep -q &quot;\&quot;valid\&quot;:true&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="05 invalid syntax policy is rejected" time="0">
+      <system-out>command: bash -c ! lpf check fixtures/policies/invalid-syntax.lpf
+fixtures/policies/invalid-syntax.lpf:1:13: error: expected default action `deny` or `pass`
+fixtures/policies/invalid-syntax.lpf:3:7: error: expected table name like `&lt;trusted&gt;`
+fixtures/policies/invalid-syntax.lpf:5:6: error: invalid rule: unexpected token `sideways`</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="06 formatted policy passes fmt check" time="0">
+      <system-out>command: bash -c lpf fmt --check fixtures/policies/basic.lpf | grep -q &quot;is formatted&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="07 messy policy formatter emits normalized policy" time="0">
+      <system-out>command: bash -c lpf fmt fixtures/policies/messy.lpf | grep -q &quot;set default deny&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="08 semantic plan includes checksum" time="0">
+      <system-out>command: bash -c lpf plan --json fixtures/policies/basic.lpf | grep -q &quot;\&quot;checksum\&quot;:\&quot;md5:&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="09 semantic plan preserves default deny" time="0">
+      <system-out>command: bash -c lpf plan --json fixtures/policies/basic.lpf | grep -q &quot;\&quot;default_action\&quot;:\&quot;deny\&quot;&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="10 nftables renderer emits filter table" time="0">
+      <system-out>command: bash -c lpf rules show fixtures/policies/basic.lpf | grep -q &quot;table inet lpf_filter&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="11 unchanged nftables fixture has no diff" time="0">
+      <system-out>command: bash -c lpf rules diff --observed fixtures/nftables/basic.nft fixtures/policies/basic.lpf | grep -q &quot;no changes&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="12 changed nftables fixture reports changes" time="0">
+      <system-out>command: bash -c lpf rules diff --observed fixtures/nftables-diff/changed-rule.diff fixtures/policies/basic.lpf | grep -q &quot;changes required&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="13 tc backend renders qdisc plan" time="0">
+      <system-out>command: bash -c lpf plan --backend tc fixtures/policies/queue-route.lpf | grep -q &quot;tc qdisc add&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="14 routing backend renders fwmark rule" time="0">
+      <system-out>command: bash -c lpf plan --backend routing fixtures/policies/queue-route.lpf | grep -q &quot;ip rule add fwmark&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="15 nat and rdr policy validates" time="0">
+      <system-out>command: bash -c lpf check --json fixtures/policies/nat-rdr.lpf | grep -q &quot;\&quot;valid\&quot;:true&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="16 nat and rdr rules include dnat" time="0">
+      <system-out>command: bash -c lpf rules show fixtures/policies/nat-rdr.lpf | grep -q &quot;dnat ip to 10.0.0.5:8080&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="17 explain reports trusted ssh pass" time="0">
+      <system-out>command: bash -c lpf explain in eth0 from 10.0.0.5 to 192.168.1.1 proto tcp port 22 fixtures/policies/exhaustive.lpf | grep -q &quot;Decision: pass&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="18 explain reports untrusted ssh block" time="0">
+      <system-out>command: bash -c lpf explain in eth0 from 8.8.8.8 to 10.0.0.10 proto tcp port 22 fixtures/policies/exhaustive.lpf | grep -q &quot;Decision: block&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="19 exhaustive policy assertions pass with junit" time="0">
+      <system-out>command: bash -c lpf test --junit junit-lpf-policy.xml fixtures/tests/exhaustive.lpf.test | grep -q &quot;OK:&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="20 generated man pages are current" time="0">
+      <system-out>command: bash -c lpf man check --dir man/generated | grep -q &quot;checked&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="21 openai tool schemas include check" time="0">
+      <system-out>command: bash -c lpf tools --format openai | grep -q &quot;\&quot;name\&quot;:\&quot;check\&quot;&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="22 jsonschema tool schemas include lpf-check" time="0">
+      <system-out>command: bash -c lpf tools --format jsonschema | grep -q &quot;lpf-check&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="23 system prompt mentions firewall automation" time="0">
+      <system-out>command: bash -c lpf tools --format system-prompt | grep -q &quot;firewall automation agent&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="24 bash completion includes command helper" time="0">
+      <system-out>command: bash -c lpf completion bash | grep -q &quot;_lpf_commands&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="25 zsh completion includes compdef" time="0">
+      <system-out>command: bash -c lpf completion zsh | grep -q &quot;#compdef lpf&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="26 fish completion includes lpf commands" time="0">
+      <system-out>command: bash -c lpf completion fish | grep -q &quot;complete -c lpf&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="27 sysctl diff emits JSON status" time="0">
+      <system-out>command: bash -c lpf diff --backend sysctl --json fixtures/policies/basic.lpf | grep -q &quot;\&quot;backend\&quot;:\&quot;sysctl\&quot;&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="28 apply dry-run reports plan checksum" time="0">
+      <system-out>command: bash -c lpf apply --dry-run fixtures/policies/basic.lpf | grep -q &quot;dry-run: plan checksum&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="29 observed tc diff sees no changes" time="0">
+      <system-out>command: bash -c tmp=&quot;$(mktemp)&quot;; lpf plan --backend tc fixtures/policies/queue-route.lpf &gt;&quot;$tmp&quot;; lpf diff --backend tc --observed &quot;$tmp&quot; fixtures/policies/queue-route.lpf | grep -q &quot;no changes&quot;; rm -f &quot;$tmp&quot;
+</system-out>
+    </testcase>
+    <testcase classname="lpf.functional" name="30 qemu boots host kernel smoke vm" time="0">
+      <failure message="command exited 1">qemu-system-x86_64 not found</failure>
+      <system-out>command: bash -c ci/semaphore/qemu-smoke.sh reports/qemu-smoke.log
+qemu-system-x86_64 not found</system-out>
+    </testcase>
+  </testsuite>
+</testsuites>
