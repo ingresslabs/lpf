@@ -115,6 +115,6 @@ let () =
       in
       let has needle = List.exists (fun m -> contains m needle) messages in
       assert (not (has "keep state is not supported"));
-      assert (has "route-to is not supported");
+      assert (not (has "route-to is not supported"));
       assert (has "reject");
       print_endline "ebpf conformance tests passed"

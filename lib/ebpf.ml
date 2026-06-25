@@ -42,8 +42,24 @@ type rule = {
   daddr_set : int;
   identity : identity;
   keep_state : bool;
+  route_gw : int32;  (* 0 = none, otherwise gateway IP as int32 *)
   comment : string;
 }
+
+let ip4_to_int32 s =
+  match String.split_on_char '.' s with
+  | [ a; b; c; d ] -> (
+      match
+        List.map int_of_string_opt [ a; b; c; d ]
+      with
+      | [ Some a; Some b; Some c; Some d ]
+        when List.for_all (fun x -> x >= 0 && x <= 255) [ a; b; c; d ] ->
+          Int32.logor (Int32.shift_left (Int32.of_int a) 24)
+            (Int32.logor (Int32.shift_left (Int32.of_int b) 16)
+               (Int32.logor (Int32.shift_left (Int32.of_int c) 8)
+                  (Int32.of_int d)))
+      | _ -> 0l)
+  | _ -> 0l
 
 type t = {
   version : int;
@@ -193,6 +209,13 @@ let compile_rule registry index ?anchor (rule : Ir.rule) =
     daddr_set = set_id_of registry rule.destination;
     identity = rule_identity rule;
     keep_state = rule.keep_state;
+    route_gw =
+      (match rule.route_to with
+      | Some addr -> (
+          match addr with
+          | Ir.Literal s -> ip4_to_int32 s
+          | _ -> 0l)
+      | None -> 0l);
     comment = location;
   }
 
@@ -300,7 +323,7 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       name = "lpf_rules";
       kind = Array;
       key_size = 4;
-      value_size = 28;
+      value_size = 32;
       max_entries = max rule_count 1;
       entries =
         List.map
@@ -414,8 +437,9 @@ let of_ir ?(version = 1) (ir : Ir.t) =
     let snat_entries =
       List.filter_map
         (fun (nat : Ir.nat) ->
-          match nat.translation with
-          | Ir.Literal to_addr -> Some (to_addr, to_addr)
+          match (nat.source, nat.translation) with
+          | Ir.Literal src, Ir.Literal to_addr ->
+              Some (src, to_addr)
           | _ -> None)
         ir.nats
     in
@@ -428,7 +452,7 @@ let of_ir ?(version = 1) (ir : Ir.t) =
           entries = dnat_entries;
         };
         {
-          name = "lpf_snat"; kind = Hash; key_size = 4; value_size = 4;
+          name = "lpf_snat"; kind = Lpm_trie; key_size = 8; value_size = 8;
           max_entries = max (List.length snat_entries) 1;
           entries = snat_entries;
         };
@@ -670,6 +694,7 @@ let rule_updates (program : t) =
             u32_le r.saddr_set;
             u32_le r.daddr_set;
             u32_le (if r.keep_state then 1 else 0);
+            u32_le (Int32.to_int r.route_gw);
           ]
       in
       update_line "lpf_rules" (u32_le r.index) value)
@@ -1190,9 +1215,14 @@ let warn span message = { Policy.severity = Policy.Diag_warning; span; message }
 let capability_diagnostics (ir : Ir.t) =
   let ignored = "is not supported by the ebpf backend and will be ignored" in
   let nat_diags =
-    List.map
+    List.filter_map
       (fun (n : Ir.nat) ->
-        warn n.span "nat/snat is not supported by the ebpf backend and will be ignored")
+        match n.translation with
+        | Ir.Literal _ -> None
+        | _ ->
+            Some
+              (warn n.span
+                 "nat with non-literal translation is not supported by the ebpf backend"))
       ir.nats
   in
   let rdr_diags =
@@ -1213,11 +1243,6 @@ let capability_diagnostics (ir : Ir.t) =
   in
   let rule_diags (rule : Ir.rule) =
     let diags = [] in
-    let diags =
-      match rule.route_to with
-      | Some _ -> warn rule.span ("route-to " ^ ignored) :: diags
-      | None -> diags
-    in
     let diags =
       match rule.queue with
       | Some _ -> warn rule.span ("queue " ^ ignored) :: diags

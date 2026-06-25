@@ -60,6 +60,7 @@ struct lpf_rule {
   __u32 saddr_set;
   __u32 daddr_set;
   __u32 keep_state;  /* 1 = create conntrack entry on pass */
+  __u32 route_gw;    /* gateway IP for route-to (0 = none, uses __be32 encoding) */
 };
 
 struct lpf_counter {
@@ -203,11 +204,13 @@ struct {
   __uint(map_flags, BPF_F_NO_PREALLOC);
 } lpf_dnat SEC(".maps");
 
+/* SNAT: source prefix -> new source IP. LPM lookup on src IP, rewrite on match. */
 struct {
-  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(type, BPF_MAP_TYPE_LPM_TRIE);
   __uint(max_entries, 1024);
-  __type(key, __u32);  /* original dst_ip (after DNAT) as lookup key */
+  __type(key, struct lpf_lpm_v4_key);
   __type(value, struct lpf_nat_value);
+  __uint(map_flags, BPF_F_NO_PREALLOC);
 } lpf_snat SEC(".maps");
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
@@ -438,12 +441,56 @@ static __always_inline int lpf_dnat_rewrite(struct iphdr *ip, void *data_end) {
 }
 
 static __always_inline int lpf_snat_rewrite(struct __sk_buff *skb,
-                                             struct iphdr *ip) {
-  /* Lookup SNAT by original destination (post-DNAT destination) */
-  __u32 *snat = bpf_map_lookup_elem(&lpf_snat, &ip->daddr);
-  if (!snat) return 0;
-  /* SNAT in TC: rewrite source IP via bpf_skb_store_bytes */
-  return 0; /* reserved for full SNAT implementation */
+                                             struct iphdr *ip, void *data_end) {
+  struct lpf_lpm_v4_key key = { .prefixlen = 32 };
+  __builtin_memcpy(key.data, &ip->saddr, 4);
+  struct lpf_nat_value *nat = bpf_map_lookup_elem(&lpf_snat, &key);
+  if (!nat) {
+    /* Try shorter prefixes */
+    for (int plen = 31; plen >= 8; plen--) {
+      struct lpf_lpm_v4_key pk = { .prefixlen = plen };
+      __builtin_memcpy(pk.data, &ip->saddr, 4);
+      nat = bpf_map_lookup_elem(&lpf_snat, &pk);
+      if (nat) break;
+    }
+    if (!nat) return 0;
+  }
+
+  /* Rewrite source IP in-place */
+  __u32 old_saddr = ip->saddr;
+  ip->saddr = nat->new_addr;
+
+  /* Incremental IP checksum update */
+  __u32 sum = ~bpf_ntohs(ip->check) & 0xFFFF;
+  sum += bpf_ntohs(old_saddr >> 16) + bpf_ntohs(old_saddr & 0xFFFF);
+  sum -= bpf_ntohs(nat->new_addr >> 16) + bpf_ntohs(nat->new_addr & 0xFFFF);
+  while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+  ip->check = bpf_htons(~sum & 0xFFFF);
+
+  /* Rewrite source port if needed */
+  if (nat->new_port != 0) {
+    __u32 ihl = ip->ihl * 4;
+    void *l4 = (void *)ip + ihl;
+    if (ip->protocol == LPF_IPPROTO_TCP) {
+      struct tcphdr *tcp = l4;
+      if ((void *)(tcp + 1) <= data_end) {
+        /* Update TCP checksum incrementally */
+        __u32 old_port = bpf_ntohs(tcp->source);
+        __u32 new_port = bpf_ntohs(nat->new_port);
+        __u32 tcp_sum = ~bpf_ntohs(tcp->check) & 0xFFFF;
+        tcp_sum += old_port;
+        tcp_sum -= new_port;
+        while (tcp_sum >> 16) tcp_sum = (tcp_sum & 0xFFFF) + (tcp_sum >> 16);
+        tcp->check = bpf_htons(~tcp_sum & 0xFFFF);
+        tcp->source = nat->new_port;
+      }
+    } else if (ip->protocol == LPF_IPPROTO_UDP) {
+      struct udphdr *udp = l4;
+      if ((void *)(udp + 1) <= data_end)
+        udp->source = nat->new_port;
+    }
+  }
+  return 1;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -605,6 +652,51 @@ int lpf_egress(struct __sk_buff *skb) {
   lpf_update_counters(m.matched, pkt_len);
   lpf_emit_event(m.verdict, m.matched, proto, dport,
                   saddr, daddr, 1, pkt_len);
+
+  if (m.verdict == LPF_VERDICT_PASS) {
+    /* SNAT: rewrite source IP/port after match engine passes */
+    struct iphdr *ip = (void *)(eth + 1);
+    lpf_snat_rewrite(skb, ip, data_end);
+
+    /* Route-to: if matched rule has a gateway, do FIB lookup */
+    if (m.matched >= 0) {
+      struct lpf_rule *rule = bpf_map_lookup_elem(&lpf_rules, &m.matched);
+      if (rule && rule->route_gw != 0) {
+        struct bpf_fib_lookup fib = {};
+        fib.family = 2; /* AF_INET */
+        fib.tos = ip->tos;
+        fib.l4_protocol = ip->protocol;
+        fib.sport = 0;
+        fib.dport = 0;
+        fib.tot_len = bpf_ntohs(ip->tot_len);
+        __builtin_memcpy(&fib.ipv4_src, &ip->saddr, 4);
+        __builtin_memcpy(&fib.ipv4_dst, &ip->daddr, 4);
+        fib.ifindex = skb->ifindex;
+
+        long rc = bpf_fib_lookup(skb, &fib, sizeof(fib), 0);
+        if (rc == BPF_FIB_LKUP_RET_SUCCESS ||
+            rc == BPF_FIB_LKUP_RET_NO_NEIGH) {
+          /* Override destination with rule's gateway */
+          __u32 gw = rule->route_gw;
+          __builtin_memcpy(&fib.ipv4_dst, &gw, 4);
+          rc = bpf_fib_lookup(skb, &fib, sizeof(fib), 0);
+          if (rc == BPF_FIB_LKUP_RET_SUCCESS) {
+            __u32 new_daddr = fib.ipv4_dst;
+            __u32 old_daddr = ip->daddr;
+            ip->daddr = new_daddr;
+            /* Update IP checksum incrementally */
+            __u32 sum = ~bpf_ntohs(ip->check) & 0xFFFF;
+            sum += bpf_ntohs(old_daddr >> 16) + bpf_ntohs(old_daddr & 0xFFFF);
+            sum -= bpf_ntohs(new_daddr >> 16) + bpf_ntohs(new_daddr & 0xFFFF);
+            while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+            ip->check = bpf_htons(~sum & 0xFFFF);
+            return bpf_redirect(fib.ifindex, BPF_F_INGRESS);
+          }
+        }
+      }
+    }
+    return TC_ACT_OK;
+  }
 
   if (m.verdict == LPF_VERDICT_DROP || m.verdict == LPF_VERDICT_REJECT)
     return TC_ACT_SHOT;
