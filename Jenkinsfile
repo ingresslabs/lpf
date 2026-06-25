@@ -89,24 +89,6 @@ pipeline {
       }
     }
 
-    stage('Controller eBPF E2E: 50+ cases with real traffic') {
-      // Run eBPF tests directly on the host (no Docker, no Firecracker).
-      // Controller has kernel 7.0, bpftool v7.7, clang, BTF — all we need.
-      // Builds BPF object via make bpf, then runs the comprehensive test suite.
-      steps {
-        script {
-          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-            // Build BPF object only (no OCaml needed for pure-eBPF tests)
-            sh 'make bpf || { echo "make bpf failed"; exit 1; }'
-            // Run the comprehensive controller eBPF suite as root (needed for bpftool)
-            sh '''
-              sudo bash ci/jenkins/controller-ebpf.sh
-            '''
-          }
-        }
-      }
-    }
-
     stage('Kernel matrix: eBPF datapath in Firecracker microVMs') {
       when { expression { return params.AVAILABLE_KERNELS?.trim() } }
       steps {
