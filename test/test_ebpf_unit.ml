@@ -45,6 +45,7 @@ let () =
   assert (contains_substring rendered "saddr_set=1");
   assert (contains_substring rendered "verdict=pass proto=tcp dport=443");
   assert (contains_substring rendered "program lpf_xdp_eth0");
+  assert (contains_substring rendered "keep_state=yes");
   assert (contains_substring rendered "rule_count => 3");
 
   (* Phase 1: identical images diff clean; a changed image needs changes. *)

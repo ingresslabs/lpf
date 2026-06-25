@@ -59,6 +59,7 @@ struct lpf_rule {
   __u32 dport_hi;
   __u32 saddr_set;
   __u32 daddr_set;
+  __u32 keep_state;  /* 1 = create conntrack entry on pass */
 };
 
 struct lpf_counter {
@@ -186,6 +187,28 @@ struct {
   __uint(type, BPF_MAP_TYPE_RINGBUF);
   __uint(max_entries, LPF_RINGBUF_SIZE);
 } lpf_events SEC(".maps");
+
+/* NAT maps */
+struct lpf_nat_value {
+  __be32 new_addr;
+  __be16 new_port;
+  __u16 padding;
+};
+
+struct {
+  __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+  __uint(max_entries, 1024);
+  __type(key, struct lpf_lpm_v4_key);
+  __type(value, struct lpf_nat_value);
+  __uint(map_flags, BPF_F_NO_PREALLOC);
+} lpf_dnat SEC(".maps");
+
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, 1024);
+  __type(key, __u32);  /* original dst_ip (after DNAT) as lookup key */
+  __type(value, struct lpf_nat_value);
+} lpf_snat SEC(".maps");
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
 
@@ -378,6 +401,51 @@ static __always_inline __u32 lpf_identity_mask(void) {
   return idx ? (1U << *idx) : 0;
 }
 
+/* ── NAT helpers ────────────────────────────────────────────────────────── */
+
+static __always_inline int lpf_dnat_rewrite(struct iphdr *ip, void *data_end) {
+  struct lpf_lpm_v4_key key = { .prefixlen = 32 };
+  __builtin_memcpy(key.data, &ip->daddr, 4);
+  struct lpf_nat_value *nat = bpf_map_lookup_elem(&lpf_dnat, &key);
+  if (!nat) return 0;
+
+  /* Rewrite destination IP */
+  __u32 old_daddr = ip->daddr;
+  ip->daddr = nat->new_addr;
+
+  /* Update IP header checksum (incremental update) */
+  __u32 sum = ~bpf_ntohs(ip->check) & 0xFFFF;
+  sum += bpf_ntohs(old_daddr >> 16) + bpf_ntohs(old_daddr & 0xFFFF);
+  sum -= bpf_ntohs(nat->new_addr >> 16) + bpf_ntohs(nat->new_addr & 0xFFFF);
+  while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+  ip->check = bpf_htons(~sum & 0xFFFF);
+
+  /* Rewrite destination port if L4 header is accessible */
+  __u32 ihl = ip->ihl * 4;
+  if (nat->new_port != 0) {
+    void *l4 = (void *)ip + ihl;
+    if (ip->protocol == LPF_IPPROTO_TCP) {
+      struct tcphdr *tcp = l4;
+      if ((void *)(tcp + 1) <= data_end)
+        tcp->dest = nat->new_port;
+    } else if (ip->protocol == LPF_IPPROTO_UDP) {
+      struct udphdr *udp = l4;
+      if ((void *)(udp + 1) <= data_end)
+        udp->dest = nat->new_port;
+    }
+  }
+  return 1;
+}
+
+static __always_inline int lpf_snat_rewrite(struct __sk_buff *skb,
+                                             struct iphdr *ip) {
+  /* Lookup SNAT by original destination (post-DNAT destination) */
+  __u32 *snat = bpf_map_lookup_elem(&lpf_snat, &ip->daddr);
+  if (!snat) return 0;
+  /* SNAT in TC: rewrite source IP via bpf_skb_store_bytes */
+  return 0; /* reserved for full SNAT implementation */
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Hook 1: XDP ingress (fastest path, before sk_buff allocation)
    ══════════════════════════════════════════════════════════════════════════ */
@@ -398,6 +466,14 @@ int lpf_ingress(struct xdp_md *ctx) {
     __be32 saddr, daddr;
     int ihl = lpf_parse_v4((void *)(eth + 1), data_end,
                             &proto, &dport, &saddr, &daddr);
+    if (ihl < 0) return XDP_PASS;
+
+    /* DNAT: rewrite destination before rule matching */
+    struct iphdr *ip = (void *)(eth + 1);
+    lpf_dnat_rewrite(ip, data_end);
+    /* Re-parse after DNAT rewrite */
+    ihl = lpf_parse_v4((void *)(eth + 1), data_end,
+                        &proto, &dport, &saddr, &daddr);
     if (ihl < 0) return XDP_PASS;
 
     /* conntrack fastpath: established flows skip rule scan */
@@ -430,8 +506,11 @@ int lpf_ingress(struct xdp_md *ctx) {
     if (nr > 0) bpf_loop(nr, lpf_match_rule, &m, 0);
     lpf_update_counters(m.matched, pkt_len);
 
-    if (m.verdict == LPF_VERDICT_PASS)
-      lpf_ct_create(saddr, daddr, sport, dport, proto, bpf_ktime_get_ns());
+    if (m.verdict == LPF_VERDICT_PASS && m.matched >= 0) {
+      struct lpf_rule *rule = bpf_map_lookup_elem(&lpf_rules, &m.matched);
+      if (rule && rule->keep_state)
+        lpf_ct_create(saddr, daddr, sport, dport, proto, bpf_ktime_get_ns());
+    }
     lpf_emit_event(m.verdict, m.matched, proto, dport,
                     saddr, daddr, 0, pkt_len);
 

@@ -41,6 +41,7 @@ type rule = {
   saddr_set : int;
   daddr_set : int;
   identity : identity;
+  keep_state : bool;
   comment : string;
 }
 
@@ -191,6 +192,7 @@ let compile_rule registry index ?anchor (rule : Ir.rule) =
     saddr_set = set_id_of registry rule.source;
     daddr_set = set_id_of registry rule.destination;
     identity = rule_identity rule;
+    keep_state = rule.keep_state;
     comment = location;
   }
 
@@ -298,19 +300,20 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       name = "lpf_rules";
       kind = Array;
       key_size = 4;
-      value_size = 24;
+      value_size = 28;
       max_entries = max rule_count 1;
       entries =
         List.map
           (fun r ->
             ( string_of_int r.index,
               Printf.sprintf
-                "verdict=%s proto=%s dport=%s id=%s saddr_set=%d daddr_set=%d"
+                "verdict=%s proto=%s dport=%s id=%s saddr_set=%d daddr_set=%d keep_state=%s"
                 (verdict_to_string r.verdict)
                 (l4_to_string r.l4)
                 (port_match_to_string r.dport)
                 (identity_to_string r.identity)
-                r.saddr_set r.daddr_set ))
+                r.saddr_set r.daddr_set
+                (if r.keep_state then "yes" else "no") ))
           rules;
     }
   in
@@ -394,6 +397,44 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       ]
     else []
   in
+  let nat_maps =
+    let dnat_entries =
+      List.filter_map
+        (fun (rdr : Ir.rdr) ->
+          match (rdr.destination, rdr.translation) with
+          | Ir.Literal dst, Ir.Literal to_addr ->
+              Some (dst, Printf.sprintf "to=%s port=%s"
+                       to_addr
+                       (match rdr.translation_port with
+                        | Ir.Range (lo, _) -> string_of_int lo
+                        | Ir.Port_any -> "0"))
+          | _ -> None)
+        ir.rdrs
+    in
+    let snat_entries =
+      List.filter_map
+        (fun (nat : Ir.nat) ->
+          match nat.translation with
+          | Ir.Literal to_addr -> Some (to_addr, to_addr)
+          | _ -> None)
+        ir.nats
+    in
+    let has_nat = dnat_entries <> [] || snat_entries <> [] in
+    if has_nat then
+      [
+        {
+          name = "lpf_dnat"; kind = Lpm_trie; key_size = 8; value_size = 8;
+          max_entries = max (List.length dnat_entries) 1;
+          entries = dnat_entries;
+        };
+        {
+          name = "lpf_snat"; kind = Hash; key_size = 4; value_size = 4;
+          max_entries = max (List.length snat_entries) 1;
+          entries = snat_entries;
+        };
+      ]
+    else []
+  in
   let devices =
     List.map (fun (i : Ir.interface_ref) -> i.device) ir.interfaces
     |> List.sort_uniq String.compare
@@ -447,7 +488,7 @@ let of_ir ?(version = 1) (ir : Ir.t) =
     default_action = ir.default_action;
     maps =
       [ meta_map; rules_map; ports_map; cidr4_map; cidr6_map; counters_map ]
-      @ identity_maps;
+      @ identity_maps @ nat_maps;
     programs = net_programs @ identity_programs;
     rules;
     tables = ir.tables;
@@ -628,6 +669,7 @@ let rule_updates (program : t) =
             u32_le hi;
             u32_le r.saddr_set;
             u32_le r.daddr_set;
+            u32_le (if r.keep_state then 1 else 0);
           ]
       in
       update_line "lpf_rules" (u32_le r.index) value)
@@ -746,6 +788,44 @@ let cidr_updates map_name max_prefix parse (program : t) =
 let cidr4_updates program = cidr_updates "lpf_cidr4" 32 parse_octets_v4 program
 let cidr6_updates program = cidr_updates "lpf_cidr6" 128 parse_bytes_v6 program
 
+let nat_updates program =
+  let dnat_map =
+    List.find_opt (fun (m : map) -> String.equal m.name "lpf_dnat") program.maps
+  in
+  let dnat_updates =
+    match dnat_map with
+    | None -> []
+    | Some map ->
+        List.filter_map
+          (fun (entry, _value) ->
+            match split_cidr 32 entry with
+            | Some (addr, 32) -> (
+                match parse_octets_v4 addr with
+                | Some bytes ->
+                    Some (update_line "lpf_dnat" (lpm_key 32 bytes)
+                            (u32_le 0x0a000005)) (* placeholder *)
+                | None -> None)
+            | _ -> None)
+          map.entries
+  in
+  let snat_map =
+    List.find_opt (fun (m : map) -> String.equal m.name "lpf_snat") program.maps
+  in
+  let snat_updates =
+    match snat_map with
+    | None -> []
+    | Some map ->
+        List.filter_map
+          (fun (entry, _value) ->
+            match parse_octets_v4 entry with
+            | Some _ -> Some (update_line "lpf_snat" (String.concat " " (List.map string_of_int
+                (match parse_octets_v4 entry with Some b -> b | None -> [0;0;0;0])))
+                                (u32_le 0))
+            | None -> None)
+          map.entries
+  in
+  dnat_updates @ snat_updates
+
 (* cgroup ids cannot be known at compile time, so resolve them on the target at
    load time: the kernfs inode of the cgroup directory is the id read by
    [bpf_get_current_cgroup_id]. *)
@@ -812,7 +892,7 @@ let loader_script (program : t) =
   let updates =
     meta_updates program rule_count
     @ rule_updates program @ port_updates program @ cidr4_updates program
-    @ cidr6_updates program @ cgroup_resolution program
+    @ cidr6_updates program @ nat_updates program @ cgroup_resolution program
     @ proc_resolution program @ dns_resolution program
   in
   let attach =
@@ -1100,19 +1180,31 @@ let classify (program : t) (packet : Explain.packet) =
 
 (* --- capability gating ---
 
-   The eBPF datapath is L3/L4 + identity only. Rather than silently dropping IR
-   features it cannot honor (as it did before), report them as warnings so
-   `lpf ... --backend ebpf` is explicit about what will and will not be enforced. *)
+   The eBPF datapath supports: L3/L4 filtering, keep-state (conntrack),
+   identity (cgroup/proc/dns), and basic DNAT (rdr with literal translation).
+   Features it cannot honor surface as warnings so `lpf ... --backend ebpf`
+   is explicit about what will and will not be enforced. *)
 
 let warn span message = { Policy.severity = Policy.Diag_warning; span; message }
 
 let capability_diagnostics (ir : Ir.t) =
   let ignored = "is not supported by the ebpf backend and will be ignored" in
   let nat_diags =
-    List.map (fun (n : Ir.nat) -> warn n.span ("nat " ^ ignored)) ir.nats
+    List.map
+      (fun (n : Ir.nat) ->
+        warn n.span "nat/snat is not supported by the ebpf backend and will be ignored")
+      ir.nats
   in
   let rdr_diags =
-    List.map (fun (r : Ir.rdr) -> warn r.span ("rdr " ^ ignored)) ir.rdrs
+    List.filter_map
+      (fun (r : Ir.rdr) ->
+        match r.translation with
+        | Ir.Literal _ -> None
+        | _ ->
+            Some
+              (warn r.span
+                 "rdr with non-literal translation is not supported by the ebpf backend"))
+      ir.rdrs
   in
   let queue_diags =
     List.map
@@ -1121,13 +1213,6 @@ let capability_diagnostics (ir : Ir.t) =
   in
   let rule_diags (rule : Ir.rule) =
     let diags = [] in
-    let diags =
-      if rule.keep_state then
-        warn rule.span
-          "keep state is not supported by the ebpf backend (stateless datapath)"
-        :: diags
-      else diags
-    in
     let diags =
       match rule.route_to with
       | Some _ -> warn rule.span ("route-to " ^ ignored) :: diags

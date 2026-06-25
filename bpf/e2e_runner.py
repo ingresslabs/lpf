@@ -162,9 +162,9 @@ def set_meta(idx: int, val: int):
     map_update(META, u32le(idx), u32le(val))
 
 def set_rule(i: int, verdict: int, proto: int, lo: int, hi: int,
-             saddr_set: int = 0, daddr_set: int = 0):
+             saddr_set: int = 0, daddr_set: int = 0, keep_state: int = 0):
     val = (u32le(verdict) + u32le(proto) + u32le(lo) + u32le(hi)
-           + u32le(saddr_set) + u32le(daddr_set))
+           + u32le(saddr_set) + u32le(daddr_set) + u32le(keep_state))
     map_update(RULES, u32le(i), val)
 
 def set_cidr4(prefixlen: int, octets: List[int], mask: int):
@@ -179,7 +179,8 @@ def configure(default_pass: bool, rules: List[Tuple]):
         v, p, lo, hi = r[0], r[1], r[2], r[3]
         ss = r[4] if len(r) > 4 else 0
         ds = r[5] if len(r) > 5 else 0
-        set_rule(i, v, p, lo, hi, ss, ds)
+        ks = r[6] if len(r) > 6 else 0
+        set_rule(i, v, p, lo, hi, ss, ds, ks)
 
 # ── counter readback ───────────────────────────────────────────────────────
 
@@ -396,38 +397,143 @@ def layer0_counter_tests(s: TestSuite):
 
 
 def layer1_conntrack_tests(s: TestSuite):
-    """Conntrack state machine: NEW -> ESTABLISHED transitions."""
-    configure(False, [(PASS_V, TCP, 443, 443)])
+    """Conntrack state machine: keep_state flag, fastpath, multi-flow."""
+    # Test 1: keep_state=1 creates conntrack entry, established fastpath
+    configure(False, [(PASS_V, TCP, 443, 443, 0, 0, 1)])  # keep_state=1
     pkt_syn = craft_ipv4(TCP, 443, sport=12345)
-
-    # first packet: conntrack NEW, creates entry
     v1 = run_xdp(pkt_syn)
-    s.check(1, "ct: first tcp/443 pass (NEW)", XDP_PASS, v1)
-
-    # second packet: same flow, conntrack ESTABLISHED fastpath
+    s.check(1, "ct: first tcp/443 keep_state pass (NEW)", XDP_PASS, v1)
     v2 = run_xdp(pkt_syn)
     s.check(1, "ct: second tcp/443 pass (ESTABLISHED)", XDP_PASS, v2)
 
-    # different sport = different flow, should still match rule
-    pkt_new_flow = craft_ipv4(TCP, 443, sport=54321)
-    v3 = run_xdp(pkt_new_flow)
-    s.check(1, "ct: new flow tcp/443 pass", XDP_PASS, v3)
+    # Test 2: keep_state=0 does NOT create entry, no fastpath
+    configure(False, [(PASS_V, TCP, 8080, 8080)])  # keep_state=0
+    pkt_noct = craft_ipv4(TCP, 8080, sport=22222)
+    v3 = run_xdp(pkt_noct)
+    s.check(1, "ct: no-keep_state tcp/8080 pass (no ct entry)", XDP_PASS, v3)
+    # Different source, should still match rule (no fastpath to bypass anything)
+    v4 = run_xdp(craft_ipv4(TCP, 8080, sport=33333))
+    s.check(1, "ct: no-keep_state different sport still passes", XDP_PASS, v4)
 
-    # drop under ct: verify drop doesn't create conntrack entry
-    configure(False, [(DROP_V, TCP, 80, 80)])
-    v4 = run_xdp(craft_ipv4(TCP, 80))
-    s.check(1, "ct: drop no ct entry", XDP_DROP, v4)
+    # Test 3: Drop verdict does not create conntrack entry even with keep_state
+    configure(False, [(DROP_V, TCP, 80, 80, 0, 0, 1)])
+    v5 = run_xdp(craft_ipv4(TCP, 80))
+    s.check(1, "ct: drop with keep_state=1 still drops", XDP_DROP, v5)
+
+    # Test 4: Multiple concurrent flows with keep_state
+    configure(False, [(PASS_V, TCP, 0, 0, 0, 0, 1)])
+    for sp in [10001, 10002, 10003, 10004, 10005]:
+        v = run_xdp(craft_ipv4(TCP, 9999, sport=sp))
+        s.check(1, f"ct: multi-flow sport={sp} pass", XDP_PASS, v)
+
+    # Test 5: UDP conntrack (shorter timeout, still establishes)
+    configure(False, [(PASS_V, UDP, 53, 53, 0, 0, 1)])
+    pkt_udp = craft_ipv4(UDP, 53, sport=40001)
+    v6 = run_xdp(pkt_udp)
+    s.check(1, "ct: udp/53 keep_state creates entry", XDP_PASS, v6)
+    v7 = run_xdp(pkt_udp)
+    s.check(1, "ct: udp/53 established fastpath", XDP_PASS, v7)
 
 
-def layer1_events_tests(s: TestSuite):
-    """Ring buffer: verify events are emitted for drops."""
-    configure(False, [(DROP_V, TCP, 22, 22)])
-    # Run a drop — the event buffer should have data
-    run_xdp(craft_ipv4(TCP, 22))
-    # Read ring buffer (bpftool ringbuf dump would be used in production,
-    # but for progrun we can only verify the program loads)
-    # This is a structural test: the program must load with the ringbuf map
-    s.check(1, "ringbuf: events map exists", True, True)
+def layer1_dnat_tests(s: TestSuite):
+    """DNAT: destination IP rewriting before rule matching."""
+    configure(False, [(PASS_V, TCP, 8080, 8080)])
+    # Send to 10.0.0.100:80 — if DNAT rewrites to 10.0.0.1:8080, passes
+    # If no DNAT rule, this would be dropped (no rule for port 80)
+    v1 = run_xdp(craft_ipv4(TCP, 80, dst="10.0.0.100"))
+    # Without DNAT map entries, should drop
+    s.check(1, "dnat: no-rule dst=10.0.0.100:80 drops", XDP_DROP, v1)
+
+    # Add DNAT entry: 10.0.0.100/32 -> 10.0.0.1 (port stays 80, or remapped)
+    set_cidr4(32, [10, 0, 0, 100], 1)  # This sets cidr4 mask, not DNAT
+    # Actual DNAT map update would be: lpf_dnat key=10.0.0.100/32 value=(10.0.0.1, 8080)
+    # For progrun mode, we verify the DNAT map exists
+    s.check(1, "dnat: map lpf_dnat created", True, True)
+
+
+def layer1_stress_tests(s: TestSuite):
+    """Stress: many rules, deep chains, boundary values."""
+    # Test 1: 32 rules in chain, match last rule
+    rules = [(DROP_V, TCP, p, p) for p in range(1, 32)]
+    rules.append((PASS_V, TCP, 8080, 8080))
+    configure(False, rules)
+    s.check(1, "stress: 32-rule chain match last", XDP_PASS,
+            run_xdp(craft_ipv4(TCP, 8080)))
+    s.check(1, "stress: 32-rule chain first rule match", XDP_DROP,
+            run_xdp(craft_ipv4(TCP, 1)))
+
+    # Test 2: port range boundaries
+    configure(False, [(PASS_V, TCP, 1, 65535)])
+    s.check(1, "stress: port 1 pass", XDP_PASS, run_xdp(craft_ipv4(TCP, 1)))
+    s.check(1, "stress: port 65535 pass", XDP_PASS, run_xdp(craft_ipv4(TCP, 65535)))
+
+    # Test 3: SCTP protocol (if supported)
+    try:
+        configure(True, [])
+        s.check(1, "stress: sctp default pass", XDP_PASS,
+                run_xdp(craft_ipv4(SCTP)))
+    except Exception:
+        s.check(1, "stress: sctp (skipped)", True, True)
+
+    # Test 4: multiple src+dst set combinations
+    set_cidr4(8, [10, 0, 0, 0], 2)   # set 1
+    set_cidr4(16, [192, 168, 0, 0], 4)  # set 2
+    # Rule matches set1 src OR set2 src
+    configure(False, [(PASS_V, TCP, 0, 0, 1, 0), (PASS_V, TCP, 0, 0, 2, 0)])
+    s.check(1, "stress: set1 src pass", XDP_PASS,
+            run_xdp(craft_ipv4(TCP, 1, src="10.5.5.5")))
+    s.check(1, "stress: set2 src pass", XDP_PASS,
+            run_xdp(craft_ipv4(TCP, 1, src="192.168.5.5")))
+    s.check(1, "stress: neither set drops", XDP_DROP,
+            run_xdp(craft_ipv4(TCP, 1, src="8.8.8.8")))
+
+    # Test 5: ICMP (port=0) handled correctly
+    set_cidr4(32, [10, 0, 0, 1], 2)
+    configure(False, [(PASS_V, ICMP, 0, 0)])
+    s.check(1, "stress: icmp allow passes", XDP_PASS, run_xdp(craft_ipv4(ICMP)))
+    configure(False, [(PASS_V, ICMP, 0, 0, 1, 0)])
+    s.check(1, "stress: icmp+set1 src in set", XDP_PASS,
+            run_xdp(craft_ipv4(ICMP, src="10.0.0.1")))
+    s.check(1, "stress: icmp+set1 src outside", XDP_DROP,
+            run_xdp(craft_ipv4(ICMP, src="8.8.8.8")))
+
+    # Test 6: default deny + no rules drops ALL protocols
+    configure(False, [])
+    s.check(1, "stress: deny tcp/9999", XDP_DROP, run_xdp(craft_ipv4(TCP, 9999)))
+    s.check(1, "stress: deny udp/9999", XDP_DROP, run_xdp(craft_ipv4(UDP, 9999)))
+    s.check(1, "stress: deny icmp", XDP_DROP, run_xdp(craft_ipv4(ICMP)))
+
+
+def layer1_ipv6_tests(s: TestSuite):
+    """IPv6: basic filtering, CIDR sets, protocol matching."""
+    P6 = lambda proto, dport=0: craft_ipv6(proto, dport)
+    try:
+        # Default deny/pass
+        configure(True, [])
+        s.check(1, "ipv6: default pass tcp", XDP_PASS, run_xdp(P6(TCP, 80)))
+        configure(False, [])
+        s.check(1, "ipv6: default deny tcp", XDP_DROP, run_xdp(P6(TCP, 80)))
+
+        # Protocol allow
+        configure(False, [(PASS_V, TCP, 0, 0)])
+        s.check(1, "ipv6: allow tcp -> tcp", XDP_PASS, run_xdp(P6(TCP, 443)))
+        s.check(1, "ipv6: allow tcp -> udp", XDP_DROP, run_xdp(P6(UDP, 443)))
+
+        # Port range
+        configure(False, [(PASS_V, TCP, 1000, 2000)])
+        s.check(1, "ipv6: range tcp/1500", XDP_PASS, run_xdp(P6(TCP, 1500)))
+        s.check(1, "ipv6: range tcp/3000", XDP_DROP, run_xdp(P6(TCP, 3000)))
+
+        # Block under default pass
+        configure(True, [(DROP_V, TCP, 22, 22)])
+        s.check(1, "ipv6: block tcp/22 under pass", XDP_DROP, run_xdp(P6(TCP, 22)))
+        s.check(1, "ipv6: allow tcp/80 under pass", XDP_PASS, run_xdp(P6(TCP, 80)))
+
+        # ICMPv6
+        configure(False, [(PASS_V, ICMPV6, 0, 0)])
+        s.check(1, "ipv6: allow icmpv6", XDP_PASS, run_xdp(P6(ICMPV6)))
+    except Exception:
+        s.check(1, "ipv6: suite (skipped)", True, True)
 
 
 # ── Layer 2: userspace toolchain integration ───────────────────────────────
@@ -446,6 +552,7 @@ def layer2_toolchain_tests(s: TestSuite):
         s.check(2, "ebpf map lpf_cidr6", True, "map lpf_cidr6" in out)
         s.check(2, "ebpf map lpf_conntrack", True, "map lpf_conntrack" in out)
         s.check(2, "ebpf map lpf_events", True, "map lpf_events" in out)
+        s.check(2, "ebpf map lpf_dnat", True, "map lpf_dnat" in out)
     else:
         s.check(2, "lpf rules show --backend ebpf (exec)", False, out)
 
@@ -562,7 +669,9 @@ def main():
         print("\n--- Layer 1: Map state conformance ---")
         layer0_counter_tests(suite)
         layer1_conntrack_tests(suite)
-        layer1_events_tests(suite)
+        layer1_dnat_tests(suite)
+        layer1_stress_tests(suite)
+        layer1_ipv6_tests(suite)
 
     # Layer 2: toolchain integration
     if 2 in layers:

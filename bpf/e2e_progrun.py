@@ -47,9 +47,9 @@ def set_meta(idx, val):
     map_update(META, u32le(idx), u32le(val))
 
 
-def set_rule(i, verdict, proto, lo, hi, saddr_set=0, daddr_set=0):
+def set_rule(i, verdict, proto, lo, hi, saddr_set=0, daddr_set=0, keep_state=0):
     val = (u32le(verdict) + u32le(proto) + u32le(lo) + u32le(hi)
-           + u32le(saddr_set) + u32le(daddr_set))
+           + u32le(saddr_set) + u32le(daddr_set) + u32le(keep_state))
     map_update(RULES, u32le(i), val)
 
 
@@ -66,7 +66,8 @@ def configure(default_pass, rules):
         v, p, lo, hi = r[0], r[1], r[2], r[3]
         ss = r[4] if len(r) > 4 else 0
         ds = r[5] if len(r) > 5 else 0
-        set_rule(i, v, p, lo, hi, ss, ds)
+        ks = r[6] if len(r) > 6 else 0
+        set_rule(i, v, p, lo, hi, ss, ds, ks)
 
 
 def craft(proto, dport=0, ethertype=0x0800, src=(10, 0, 0, 2), dst=(10, 0, 0, 1)):
@@ -258,16 +259,17 @@ check("src in set1 dst outside", False, both,
 check("dst in set1 src outside", False, both,
       craft(TCP, 1, src=(8, 8, 8, 8), dst=(10, 2, 2, 2)), XDP_DROP)
 
-# 20. conntrack smoke: ESTABLISHED flow passes despite rule scan
-#     (the new lpf_kern.c has a conntrack fastpath — established flows
-#      bypass the rule loop entirely)
-configure(False, [(PASS_V, TCP, 443, 443)])
+# 20. conntrack: keep_state creates entries, ESTABLISHED flows bypass rule scan
+configure(False, [(PASS_V, TCP, 443, 443, 0, 0, 1)])  # keep_state=1
 pkt_ct = craft(TCP, 443)
-# Run once to create conntrack entry
+# Run once to create conntrack entry (via keep_state)
 run_xdp(pkt_ct)
-# Second run should hit ESTABLISHED fastpath
-check("ct: established tcp/443 pass", False, [(PASS_V, TCP, 443, 443)],
+# Second run should hit ESTABLISHED fastpath and PASS
+check("ct: keep_state+established pass", False, [(PASS_V, TCP, 443, 443, 0, 0, 1)],
       P(TCP, 443), XDP_PASS)
+# Without keep_state — no fastpath, but rule still matches
+check("ct: no-keep_state still matches rule", False, [(PASS_V, TCP, 8080, 8080)],
+      P(TCP, 8080), XDP_PASS)
 
 # ---- report ----
 passed = sum(1 for r in results if r[0])
