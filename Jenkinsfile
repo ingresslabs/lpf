@@ -113,25 +113,25 @@ pipeline {
               continue
             }
             branches["kernel:${label}"] = {
-              catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                // Run ebpf-suite.sh which includes:
-                //   1) basic progrun matrix (80+ skb checks)
-                //   2) comprehensive 4-layer E2E runner (conntrack, IPv6, ringbuf)
-                //   3) OCaml eBPF unit tests
-                def f = vagabondRun(
-                  image: 'lpf-ci:debian',
-                  target: params.SCAN_TARGET,
-                  runtime: 'nomad.firecracker',
-                  kernel: kernelImage,
-                  rootfs: params.FIRECRACKER_ROOTFS,
-                  vcpu: 2,
-                  memoryMiB: 1024,
-                  dryRun: false,
-                  waitForCompletion: false,
-                  apiUrl: params.VAGABOND_API_URL,
-                  credentialsId: params.VAGABOND_CREDENTIALS_ID,
-                  command: ['bash', '-lc', "cd /home/opam/src && LPF_KERNEL_LABEL=${label} LPF_EBPF_LAYERS=0,1,2 ci/vagabond/ebpf-suite.sh"])
-                echo "lpf eBPF on kernel ${label}: job=${f.jobId} status=${f.status}"
+              // Batch-run mode: wait for Firecracker VM to complete eBPF suite,
+              // then gate on the JUnit result. Timeout 15min for VM boot + tests.
+              stage("eBPF on kernel:${label}") {
+                timeout(time: 15, unit: 'MINUTES') {
+                  def f = vagabondRun(
+                    image: 'lpf-ci:debian',
+                    target: params.SCAN_TARGET,
+                    runtime: 'nomad.firecracker',
+                    kernel: kernelImage,
+                    rootfs: params.FIRECRACKER_ROOTFS,
+                    vcpu: 2,
+                    memoryMiB: 1024,
+                    dryRun: false,
+                    waitForCompletion: true,
+                    apiUrl: params.VAGABOND_API_URL,
+                    credentialsId: params.VAGABOND_CREDENTIALS_ID,
+                    command: ['bash', '-lc', "cd /home/opam/src && LPF_KERNEL_LABEL=${label} LPF_EBPF_LAYERS=0,1,2 ci/vagabond/ebpf-suite.sh"])
+                  echo "lpf eBPF on kernel ${label}: job=${f.jobId} status=${f.status}"
+                }
               }
             }
           }
