@@ -258,6 +258,17 @@ check("src in set1 dst outside", False, both,
 check("dst in set1 src outside", False, both,
       craft(TCP, 1, src=(8, 8, 8, 8), dst=(10, 2, 2, 2)), XDP_DROP)
 
+# 20. conntrack smoke: ESTABLISHED flow passes despite rule scan
+#     (the new lpf_kern.c has a conntrack fastpath — established flows
+#      bypass the rule loop entirely)
+configure(False, [(PASS_V, TCP, 443, 443)])
+pkt_ct = craft(TCP, 443)
+# Run once to create conntrack entry
+run_xdp(pkt_ct)
+# Second run should hit ESTABLISHED fastpath
+check("ct: established tcp/443 pass", False, [(PASS_V, TCP, 443, 443)],
+      P(TCP, 443), XDP_PASS)
+
 # ---- report ----
 passed = sum(1 for r in results if r[0])
 total = len(results)

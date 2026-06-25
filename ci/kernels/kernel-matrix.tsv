@@ -1,15 +1,18 @@
-# label	release_line	role	distro	expected_uname	source	status
+# label	release_line	role	distro	expected_uname	source	status	e2e_layers
 # Refreshed from https://www.kernel.org/ on 2026-06-18.
 # This file intentionally does not contain lab ids, real hostnames, IP
 # addresses, or registered Firecracker image inventory. Supply image mappings
 # to private lab runners with AVAILABLE_KERNELS or controller-side configuration.
-7.1	7.1	mainline	ubuntu	7.1.0-070100-generic	ubuntu-mainline	requested
-7.0.12	7.0.12	stable	ubuntu	7.0.12-070012-generic	ubuntu-mainline	requested
-6.18.35	6.18.35	longterm	ubuntu	6.18.35-061835-generic	ubuntu-mainline	requested
-6.12.93	6.12.93	longterm	ubuntu	6.12.93-061293-generic	ubuntu-mainline	requested
-6.6.142	6.6.142	longterm	ubuntu	6.6.142-0606142-generic	ubuntu-mainline	requested
-6.1.175	6.1.175	longterm	ubuntu	6.1.175-0601175-generic	ubuntu-mainline	requested
-5.15.209	5.15.209	longterm	ubuntu	5.15.209-0515209-generic	ubuntu-mainline	requested
-5.10.258	5.10.258	longterm	ubuntu	5.10.258-0510258-generic	ubuntu-mainline	requested
-ubuntu-mainline-daily-20260616	7.1-daily	daily	ubuntu	7.1.0-070100daily20260616-generic	ubuntu-mainline-daily	requested
-baseline-default	baseline	baseline	ubuntu	*	external-baseline	optional
+# e2e_layers: which layers of the comprehensive E2E runner to execute on this kernel.
+#   Layer 0 = progrun verdict checks, Layer 1 = map state (conntrack/counters/ringbuf),
+#   Layer 2 = userspace toolchain, Layer 3 = live veth+iperf3 (LTS kernels only).
+7.1	7.1	mainline	ubuntu	7.1.0-070100-generic	ubuntu-mainline	requested	0,1,2
+7.0.12	7.0.12	stable	ubuntu	7.0.12-070012-generic	ubuntu-mainline	requested	0,1,2
+6.18.35	6.18.35	longterm	ubuntu	6.18.35-061835-generic	ubuntu-mainline	requested	0,1,2
+6.12.93	6.12.93	longterm	ubuntu	6.12.93-061293-generic	ubuntu-mainline	requested	0,1,2
+6.6.142	6.6.142	longterm	ubuntu	6.6.142-0606142-generic	ubuntu-mainline	requested	0,1,2,3
+6.1.175	6.1.175	longterm	ubuntu	6.1.175-0601175-generic	ubuntu-mainline	requested	0,1,2,3
+5.15.209	5.15.209	longterm	ubuntu	5.15.209-0515209-generic	ubuntu-mainline	requested	0,1,2,3
+5.10.258	5.10.258	longterm	ubuntu	5.10.258-0510258-generic	ubuntu-mainline	requested	0,1,2,3
+ubuntu-mainline-daily-20260616	7.1-daily	daily	ubuntu	7.1.0-070100daily20260616-generic	ubuntu-mainline-daily	requested	0,1,2
+baseline-default	baseline	baseline	ubuntu	*	external-baseline	optional	0,1

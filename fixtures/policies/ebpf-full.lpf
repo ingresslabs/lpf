@@ -1,0 +1,84 @@
+# eBPF comprehensive E2E test policy.
+# Exercises every feature the eBPF datapath supports:
+#   - default deny with pass/block rules
+#   - CIDR table membership (source + destination)
+#   - Protocol-specific rules (tcp, udp, icmp, sctp)
+#   - Port ranges
+#   - Multiple interfaces (eth0, eth1)
+#   - Direction parity (in, out)
+#   - Rule precedence (first-match)
+#   - Anchors for reusable rule chains
+#   - Identity selectors (cgroup, proc, dns tables)
+#   Reserved for future: keep state (conntrack-aware matching)
+
+set default deny
+
+# ── tables ─────────────────────────────────────────────────────────────────
+
+table <trusted> { 10.0.0.0/8, 192.168.0.0/16, 172.16.0.0/12 }
+table <banned> { 1.2.3.0/24, 5.6.7.0/24 }
+table <web_servers> { 10.0.0.10, 10.0.0.11 }
+table <dns_servers> { 10.0.0.53 }
+table <egress_allowed> { 8.8.8.8, 1.1.1.1 }
+table <cgroup:webapp> { 10.1.0.0/16 }
+table <proc:nginx> { 10.2.0.0/16 }
+table <dns:api_gateway> { 10.3.0.0/16 }
+
+# ── interfaces ─────────────────────────────────────────────────────────────
+
+interface eth0
+interface eth1
+
+# ── anchors ────────────────────────────────────────────────────────────────
+
+anchor admin_access in on eth0 {
+  pass proto tcp from <trusted> to <web_servers> port 22
+  pass proto tcp from <trusted> to <dns_servers> port 22
+}
+
+anchor web_traffic in on eth0 {
+  pass proto tcp from any to <web_servers> port 80
+  pass proto tcp from any to <web_servers> port 443
+}
+
+# ── rules ──────────────────────────────────────────────────────────────────
+
+# Block known-banned sources/destinations first (global)
+block in from <banned> to any
+block out from any to <banned>
+
+# Admin SSH from trusted IPs (anchor)
+admin_access
+
+# Web traffic ingress (anchor)
+web_traffic
+
+# DNS ingress (UDP only)
+pass in proto udp from any to <dns_servers> port 53
+
+# DNS ingress (TCP fallback)
+pass in proto tcp from any to <dns_servers> port 53
+
+# Egress: trusted hosts can reach allowed destinations on common ports
+pass out proto tcp from <trusted> to <egress_allowed> port { 80, 443, 22 }
+pass out proto udp from <trusted> to <egress_allowed> port 53
+
+# ICMP from trusted sources
+pass in proto icmp from <trusted> to any
+pass out proto icmp from any to <egress_allowed>
+
+# LAN interface: trusted sources can reach any destination
+pass in on eth1 proto tcp from <trusted> to any
+pass in on eth1 proto udp from <trusted> to any
+pass in on eth1 proto icmp from <trusted> to any
+
+# Identity-based rules (reserved — Phase 4 hooks enforce these)
+pass out proto tcp from <cgroup:webapp> to any port { 80, 443 }
+pass out proto tcp from <proc:nginx> to any port { 80, 443 }
+pass out proto tcp from any to <dns:api_gateway> port { 443 }
+
+# Policy-based routing (reserved — route-to compilation)
+pass in on eth1 proto tcp from 10.0.0.55 to <egress_allowed> port { 80, 443 }
+
+# Implicit block-everything-else (default deny)
+# This is enforced by the default_action set to deny

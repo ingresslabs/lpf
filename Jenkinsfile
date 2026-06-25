@@ -1,24 +1,23 @@
-// lpf CI/CD pipeline -- comprehensive Vagabond test matrix.
+// lpf CI/CD pipeline — comprehensive Vagabond test matrix.
 //
-// Exercises lpf across two axes using the Vagabond Jenkins plugin:
+// Exercises lpf across three axes using the Vagabond Jenkins plugin:
 //
-//   * IMAGE matrix  (userspace features, all of them): the full lpf feature
-//     suite (ci/vagabond/feature-suite.sh) runs inside isolated Vagabond Docker
-//     sandboxes (nomad.container) built on different Linux userspaces
-//     (Debian/Ubuntu/Alpine -> glibc & musl).
-//   * KERNEL matrix (eBPF datapath): the eBPF conformance suite
-//     (ci/vagabond/ebpf-suite.sh) runs in Vagabond Firecracker microVMs
-//     (nomad.firecracker), one per kernel from ci/kernels/kernel-matrix.tsv,
-//     matching lpf's "validated via isolated Firecracker microVM" model.
+//   * IMAGE matrix   — userspace feature suite (feature-suite.sh) in isolated
+//     Vagabond Docker sandboxes (nomad.container) across Debian/Ubuntu/Alpine.
+//   * KERNEL matrix  — eBPF datapath conformance (ebpf-suite.sh) in Vagabond
+//     Firecracker microVMs (nomad.firecracker), one per kernel from
+//     ci/kernels/kernel-matrix.tsv. Includes basic progrun (80 checks) and
+//     comprehensive 4-layer E2E runner (conntrack, IPv6, ringbuf, live veth).
+//   * E2E matrix     — full Firecracker E2E (ebpf-e2e-suite.sh): live veth
+//     traffic, apply/confirm/rollback cycle, conntrack listing, iperf3
+//     throughput under XDP filtering. Runs on a subset of kernels (LTS only).
 //
-// Security scanning (tsunami) is included only as one optional example use case.
-// Vagabond derives tenant/workspace from the API key (a Jenkins Secret-text
-// credential); jobs gate the build via the plugin's waitForCompletion.
+// Security scanning (tsunami) is included as one optional example use case.
 pipeline {
   agent any
 
   options {
-    timeout(time: 90, unit: 'MINUTES')
+    timeout(time: 120, unit: 'MINUTES')
     disableConcurrentBuilds()
   }
 
@@ -32,11 +31,13 @@ pipeline {
     string(name: 'IMAGE_MATRIX', defaultValue: 'debian,alpine',
            description: 'Comma list of userspace labels to test (debian,ubuntu,alpine)')
     string(name: 'AVAILABLE_KERNELS', defaultValue: '',
-           description: 'Kernel image mappings for the Firecracker matrix: "label=/path/vmlinux;label2=/path/vmlinux". Empty disables the kernel matrix.')
+           description: 'Kernel image mappings: "label=/path;label2=/path". Empty disables kernel matrix.')
+    string(name: 'E2E_KERNELS', defaultValue: '',
+           description: 'Kernel subset for full E2E (veth+iperf3): "label=/path;label2=/path". Empty disables E2E matrix.')
     string(name: 'FIRECRACKER_ROOTFS', defaultValue: '',
-           description: 'Path to the lpf rootfs image for Firecracker microVMs (kernel matrix)')
+           description: 'Path to the lpf rootfs image for Firecracker microVMs')
     booleanParam(name: 'RUN_SECURITY_SCAN', defaultValue: false,
-           description: 'Optional: run a security scan (tsunami) as one example Vagabond use case')
+           description: 'Optional: run a security scan (tsunami) as example use case')
   }
 
   stages {
@@ -61,19 +62,11 @@ pipeline {
               stage("build lpf-ci:${label}") {
                 sh "docker build -f Dockerfile.ci --build-arg BASE=${base} -t lpf-ci:${label} ."
               }
-              stage("tests on ${label} (gate)") {
-                // Comprehensive gate: unit tests + the full lpf feature suite, run
-                // in the CI image for this Linux userspace. Fails the build on any
-                // failure (across every image in IMAGE_MATRIX).
+              stage("unit + feature suite on ${label} (gate)") {
                 sh "docker run --rm lpf-ci:${label} opam exec -- dune runtest"
                 sh "docker run --rm lpf-ci:${label} bash -lc 'cd /home/opam/src && ci/vagabond/feature-suite.sh'"
               }
-              stage("features on ${label} in Vagabond isolation") {
-                // Demonstrate the same comprehensive suite running in an isolated
-                // Vagabond sandbox via the plugin. NOTE: hard pass/fail gating of
-                // ad-hoc command runs needs a Vagabond batch-run mode -- interactive
-                // sandboxes are service-type and do not surface the command exit as
-                // job completion -- so this stage is fire-and-stream.
+              stage("feature suite in Vagabond isolation (${label})") {
                 def r = vagabondRun(
                   image: "lpf-ci:${label}",
                   target: params.SCAN_TARGET,
@@ -84,7 +77,7 @@ pipeline {
                   apiUrl: params.VAGABOND_API_URL,
                   credentialsId: params.VAGABOND_CREDENTIALS_ID,
                   command: ['bash', '-lc', 'cd /home/opam/src && ci/vagabond/feature-suite.sh'])
-                echo "launched comprehensive lpf suite in Vagabond isolation (${label}): job=${r.jobId}"
+                echo "launched feature suite in Vagabond (${label}): job=${r.jobId}"
               }
             }
           }
@@ -100,14 +93,12 @@ pipeline {
       when { expression { return params.AVAILABLE_KERNELS?.trim() } }
       steps {
         script {
-          // Desired kernels from the committed matrix (skip comments/baseline/optional).
           def desired = []
           readFile('ci/kernels/kernel-matrix.tsv').split('\n').each { line ->
             if (line.startsWith('#') || !line.trim()) { return }
             def f = line.split('\t')
             if (f.length >= 7 && f[2] != 'baseline' && f[6] != 'optional') { desired << f[0].trim() }
           }
-          // Operator-supplied kernel image mappings "label=/path;label2=/path".
           def mapping = [:]
           params.AVAILABLE_KERNELS.split(';').each { pair ->
             def kv = pair.split('=')
@@ -118,11 +109,15 @@ pipeline {
             def label = k
             def kernelImage = mapping[label]
             if (kernelImage == null) {
-              echo "kernel ${label}: requested in matrix but no image mapping supplied; skipping"
+              echo "kernel ${label}: requested in matrix, no mapping; skipping"
               continue
             }
             branches["kernel:${label}"] = {
               catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                // Run ebpf-suite.sh which includes:
+                //   1) basic progrun matrix (80+ skb checks)
+                //   2) comprehensive 4-layer E2E runner (conntrack, IPv6, ringbuf)
+                //   3) OCaml eBPF unit tests
                 def f = vagabondRun(
                   image: 'lpf-ci:debian',
                   target: params.SCAN_TARGET,
@@ -135,13 +130,58 @@ pipeline {
                   waitForCompletion: false,
                   apiUrl: params.VAGABOND_API_URL,
                   credentialsId: params.VAGABOND_CREDENTIALS_ID,
-                  command: ['bash', '-lc', "cd /home/opam/src && LPF_KERNEL_LABEL=${label} ci/vagabond/ebpf-suite.sh"])
+                  command: ['bash', '-lc', "cd /home/opam/src && LPF_KERNEL_LABEL=${label} LPF_EBPF_LAYERS=0,1,2 ci/vagabond/ebpf-suite.sh"])
                 echo "lpf eBPF on kernel ${label}: job=${f.jobId} status=${f.status}"
               }
             }
           }
           if (branches.isEmpty()) {
-            echo 'No mapped kernels to run; supply AVAILABLE_KERNELS + FIRECRACKER_ROOTFS to enable the kernel matrix.'
+            echo 'No mapped kernels; supply AVAILABLE_KERNELS + FIRECRACKER_ROOTFS.'
+          } else {
+            parallel branches
+          }
+        }
+      }
+    }
+
+    stage('E2E matrix: full Firecracker e2e (live veth + apply/rollback)') {
+      when { expression { return params.E2E_KERNELS?.trim() } }
+      steps {
+        script {
+          // Only run full E2E on LTS kernels (5.10, 5.15, 6.1, 6.6)
+          def e2e_mapping = [:]
+          params.E2E_KERNELS.split(';').each { pair ->
+            def kv = pair.split('=')
+            if (kv.length == 2) { e2e_mapping[kv[0].trim()] = kv[1].trim() }
+          }
+          def branches = [:]
+          for (kv in e2e_mapping) {
+            def label = kv.key
+            def kernelImage = kv.value
+            if (kernelImage == null) continue
+            branches["e2e:${label}"] = {
+              catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                // Run full E2E: all 4 layers including live veth + iperf3
+                def f = vagabondRun(
+                  image: 'lpf-ci:debian',
+                  target: params.SCAN_TARGET,
+                  runtime: 'nomad.firecracker',
+                  kernel: kernelImage,
+                  rootfs: params.FIRECRACKER_ROOTFS,
+                  vcpu: 2,
+                  memoryMiB: 2048,        // more RAM for live traffic tests
+                  network: 'host',         // allow veth pair creation
+                  dryRun: false,
+                  waitForCompletion: false,
+                  apiUrl: params.VAGABOND_API_URL,
+                  credentialsId: params.VAGABOND_CREDENTIALS_ID,
+                  command: ['bash', '-lc', "cd /home/opam/src && LPF_KERNEL_LABEL=${label} LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"])
+                echo "lpf e2e on kernel ${label}: job=${f.jobId} status=${f.status}"
+              }
+            }
+          }
+          if (branches.isEmpty()) {
+            echo 'No E2E kernels; supply E2E_KERNELS + FIRECRACKER_ROOTFS.'
           } else {
             parallel branches
           }
@@ -175,7 +215,7 @@ pipeline {
       archiveArtifacts artifacts: 'vagabond-report-*.json, vagabond-artifacts/**', allowEmptyArchive: true, fingerprint: true
     }
     success {
-      echo "lpf matrix OK -> images=[${params.IMAGE_MATRIX}] via Vagabond (nomad.container); kernels via nomad.firecracker when mapped"
+      echo "lpf matrix OK -> images=[${params.IMAGE_MATRIX}]; kernels via nomad.firecracker when mapped; e2e via E2E_KERNELS"
     }
   }
 }

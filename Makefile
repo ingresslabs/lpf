@@ -52,11 +52,26 @@ static:
 bpf:
 	sh bpf/build.sh
 
-# In-kernel datapath conformance matrix (root + bpftool required; Linux only).
+# Basic in-kernel datapath conformance matrix (root + bpftool required; Linux only).
 bpf-e2e: bpf
 	rm -rf /sys/fs/bpf/lpftest && mkdir -p /sys/fs/bpf/lpftest/prog
 	bpftool prog loadall bpf/lpf_kern.o /sys/fs/bpf/lpftest/prog pinmaps /sys/fs/bpf/lpftest
 	python3 bpf/e2e_progrun.py; status=$$?; rm -rf /sys/fs/bpf/lpftest; exit $$status
+
+# Comprehensive 4-layer E2E runner (root + bpftool + python3 required).
+# Control layers: LPF_EBPF_LAYERS=0,1,2,3 (default: all)
+bpf-e2e-comprehensive: bpf
+	rm -rf /sys/fs/bpf/lpftest && mkdir -p /sys/fs/bpf/lpftest/prog
+	bpftool prog loadall bpf/lpf_kern.o /sys/fs/bpf/lpftest/prog pinmaps /sys/fs/bpf/lpftest
+	python3 bpf/e2e_runner.py --layers $${LPF_EBPF_LAYERS:-0,1,2,3} --skip-build; status=$$?; rm -rf /sys/fs/bpf/lpftest; exit $$status
+
+# Full Vagabond eBPF E2E suite (all layers including live Firecracker traffic).
+bpf-e2e-vagabond:
+	ci/vagabond/ebpf-e2e-suite.sh
+
+# eBPF conntrack-specific E2E run.
+bpf-e2e-ct: bpf
+	ci/vagabond/ebpf-conntrack-suite.sh
 
 test:
 	$(DUNE) runtest
