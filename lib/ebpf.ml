@@ -43,6 +43,7 @@ type rule = {
   identity : identity;
   keep_state : bool;
   route_gw : int32;  (* 0 = none, otherwise gateway IP as int32 *)
+  queue_id : int;    (* 0 = none, otherwise TC classid for QoS *)
   comment : string;
 }
 
@@ -216,6 +217,19 @@ let compile_rule registry index ?anchor (rule : Ir.rule) =
           | Ir.Literal s -> ip4_to_int32 s
           | _ -> 0l)
       | None -> 0l);
+    queue_id =
+      (match rule.queue with
+      | Some q -> (
+          match Tc.queue_classid ir.queues q with
+          | Some classid_str -> (
+              match String.split_on_char ':' classid_str with
+              | [ major; minor ] -> (
+                  match (int_of_string_opt major, int_of_string_opt minor) with
+                  | Some mj, Some mn -> (mj lsl 16) lor mn
+                  | _ -> 0)
+              | _ -> 0)
+          | None -> 0)
+      | None -> 0);
     comment = location;
   }
 
@@ -323,7 +337,7 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       name = "lpf_rules";
       kind = Array;
       key_size = 4;
-      value_size = 32;
+      value_size = 36;
       max_entries = max rule_count 1;
       entries =
         List.map
@@ -695,6 +709,7 @@ let rule_updates (program : t) =
             u32_le r.daddr_set;
             u32_le (if r.keep_state then 1 else 0);
             u32_le (Int32.to_int r.route_gw);
+            u32_le r.queue_id;
           ]
       in
       update_line "lpf_rules" (u32_le r.index) value)
@@ -1236,18 +1251,8 @@ let capability_diagnostics (ir : Ir.t) =
                  "rdr with non-literal translation is not supported by the ebpf backend"))
       ir.rdrs
   in
-  let queue_diags =
-    List.map
-      (fun (q : Ir.queue) -> warn q.span ("queue/QoS " ^ ignored))
-      ir.queues
-  in
   let rule_diags (rule : Ir.rule) =
     let diags = [] in
-    let diags =
-      match rule.queue with
-      | Some _ -> warn rule.span ("queue " ^ ignored) :: diags
-      | None -> diags
-    in
     let diags =
       match rule.action with
       | Policy.Reject ->
@@ -1264,4 +1269,4 @@ let capability_diagnostics (ir : Ir.t) =
   let all_rules =
     ir.rules @ List.concat_map (fun (a : Ir.anchor) -> a.rules) ir.anchors
   in
-  nat_diags @ rdr_diags @ queue_diags @ List.concat_map rule_diags all_rules
+  nat_diags @ rdr_diags @ List.concat_map rule_diags all_rules

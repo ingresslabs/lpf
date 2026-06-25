@@ -163,10 +163,10 @@ def set_meta(idx: int, val: int):
 
 def set_rule(i: int, verdict: int, proto: int, lo: int, hi: int,
              saddr_set: int = 0, daddr_set: int = 0, keep_state: int = 0,
-             route_gw: int = 0):
+             route_gw: int = 0, queue_id: int = 0):
     val = (u32le(verdict) + u32le(proto) + u32le(lo) + u32le(hi)
            + u32le(saddr_set) + u32le(daddr_set) + u32le(keep_state)
-           + u32le(route_gw))
+           + u32le(route_gw) + u32le(queue_id))
     map_update(RULES, u32le(i), val)
 
 def set_cidr4(prefixlen: int, octets: List[int], mask: int):
@@ -183,7 +183,8 @@ def configure(default_pass: bool, rules: List[Tuple]):
         ds = r[5] if len(r) > 5 else 0
         ks = r[6] if len(r) > 6 else 0
         gw = r[7] if len(r) > 7 else 0
-        set_rule(i, v, p, lo, hi, ss, ds, ks, gw)
+        qi = r[8] if len(r) > 8 else 0
+        set_rule(i, v, p, lo, hi, ss, ds, ks, gw, qi)
 
 # ── counter readback ───────────────────────────────────────────────────────
 

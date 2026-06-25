@@ -60,7 +60,8 @@ struct lpf_rule {
   __u32 saddr_set;
   __u32 daddr_set;
   __u32 keep_state;  /* 1 = create conntrack entry on pass */
-  __u32 route_gw;    /* gateway IP for route-to (0 = none, uses __be32 encoding) */
+  __u32 route_gw;    /* gateway IP for route-to (0 = none) */
+  __u32 queue_id;    /* TC classid for QoS (0 = none) */
 };
 
 struct lpf_counter {
@@ -654,43 +655,49 @@ int lpf_egress(struct __sk_buff *skb) {
                   saddr, daddr, 1, pkt_len);
 
   if (m.verdict == LPF_VERDICT_PASS) {
-    /* SNAT: rewrite source IP/port after match engine passes */
     struct iphdr *ip = (void *)(eth + 1);
+
+    /* SNAT: rewrite source IP/port after match engine passes */
     lpf_snat_rewrite(skb, ip, data_end);
 
-    /* Route-to: if matched rule has a gateway, do FIB lookup */
+    /* Per-rule actions: QoS, keep-state, route-to */
     if (m.matched >= 0) {
       struct lpf_rule *rule = bpf_map_lookup_elem(&lpf_rules, &m.matched);
-      if (rule && rule->route_gw != 0) {
-        struct bpf_fib_lookup fib = {};
-        fib.family = 2; /* AF_INET */
-        fib.tos = ip->tos;
-        fib.l4_protocol = ip->protocol;
-        fib.sport = 0;
-        fib.dport = 0;
-        fib.tot_len = bpf_ntohs(ip->tot_len);
-        __builtin_memcpy(&fib.ipv4_src, &ip->saddr, 4);
-        __builtin_memcpy(&fib.ipv4_dst, &ip->daddr, 4);
-        fib.ifindex = skb->ifindex;
+      if (rule) {
+        /* QoS: set TC classid for kernel TC qdisc shaping */
+        if (rule->queue_id != 0)
+          skb->tc_classid = rule->queue_id;
 
-        long rc = bpf_fib_lookup(skb, &fib, sizeof(fib), 0);
-        if (rc == BPF_FIB_LKUP_RET_SUCCESS ||
-            rc == BPF_FIB_LKUP_RET_NO_NEIGH) {
-          /* Override destination with rule's gateway */
-          __u32 gw = rule->route_gw;
-          __builtin_memcpy(&fib.ipv4_dst, &gw, 4);
-          rc = bpf_fib_lookup(skb, &fib, sizeof(fib), 0);
-          if (rc == BPF_FIB_LKUP_RET_SUCCESS) {
-            __u32 new_daddr = fib.ipv4_dst;
-            __u32 old_daddr = ip->daddr;
-            ip->daddr = new_daddr;
-            /* Update IP checksum incrementally */
-            __u32 sum = ~bpf_ntohs(ip->check) & 0xFFFF;
-            sum += bpf_ntohs(old_daddr >> 16) + bpf_ntohs(old_daddr & 0xFFFF);
-            sum -= bpf_ntohs(new_daddr >> 16) + bpf_ntohs(new_daddr & 0xFFFF);
-            while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
-            ip->check = bpf_htons(~sum & 0xFFFF);
-            return bpf_redirect(fib.ifindex, BPF_F_INGRESS);
+        /* Route-to: FIB lookup + redirect to gateway */
+        if (rule->route_gw != 0) {
+          struct bpf_fib_lookup fib = {};
+          fib.family = 2;
+          fib.tos = ip->tos;
+          fib.l4_protocol = ip->protocol;
+          fib.sport = 0;
+          fib.dport = 0;
+          fib.tot_len = bpf_ntohs(ip->tot_len);
+          __builtin_memcpy(&fib.ipv4_src, &ip->saddr, 4);
+          __builtin_memcpy(&fib.ipv4_dst, &ip->daddr, 4);
+          fib.ifindex = skb->ifindex;
+
+          long rc = bpf_fib_lookup(skb, &fib, sizeof(fib), 0);
+          if (rc == BPF_FIB_LKUP_RET_SUCCESS ||
+              rc == BPF_FIB_LKUP_RET_NO_NEIGH) {
+            __u32 gw = rule->route_gw;
+            __builtin_memcpy(&fib.ipv4_dst, &gw, 4);
+            rc = bpf_fib_lookup(skb, &fib, sizeof(fib), 0);
+            if (rc == BPF_FIB_LKUP_RET_SUCCESS) {
+              __u32 new_daddr = fib.ipv4_dst;
+              __u32 old_daddr = ip->daddr;
+              ip->daddr = new_daddr;
+              __u32 sum = ~bpf_ntohs(ip->check) & 0xFFFF;
+              sum += bpf_ntohs(old_daddr >> 16) + bpf_ntohs(old_daddr & 0xFFFF);
+              sum -= bpf_ntohs(new_daddr >> 16) + bpf_ntohs(new_daddr & 0xFFFF);
+              while (sum >> 16) sum = (sum & 0xFFFF) + (sum >> 16);
+              ip->check = bpf_htons(~sum & 0xFFFF);
+              return bpf_redirect(fib.ifindex, BPF_F_INGRESS);
+            }
           }
         }
       }

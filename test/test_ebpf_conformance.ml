@@ -96,8 +96,9 @@ let () =
              ir_verdict))
     cases;
 
-  (* Capability gating: unsupported IR features surface as warnings instead of
-     being silently dropped. keep_state is now supported via eBPF conntrack. *)
+  (* Capability gating: unsupported IR features surface as warnings.
+     keep_state, route-to, and queue/QoS are now supported via eBPF.
+     Only reject is still degraded to drop in XDP. *)
   let gated =
     "set default deny\n\n\
      pass in proto tcp from any to any port 22 keep state\n\
