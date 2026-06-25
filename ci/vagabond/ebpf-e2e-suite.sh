@@ -181,8 +181,8 @@ if command -v lpf >/dev/null 2>&1; then
   fi
 
   # explain parity test
-  explain_ir=$(lpf explain in eth0 from 10.0.0.5 to 10.0.0.1 proto tcp port 22 fixtures/policies/ebpf-full.lpf 2>&1)
-  explain_ebpf=$(lpf explain --backend ebpf in eth0 from 10.0.0.5 to 10.0.0.1 proto tcp port 22 fixtures/policies/ebpf-full.lpf 2>&1)
+  explain_ir=$(lpf explain in wan from 10.0.0.5 to 10.0.0.10 proto tcp port 80 fixtures/policies/ebpf-full.lpf 2>&1)
+  explain_ebpf=$(lpf explain --backend ebpf in wan from 10.0.0.5 to 10.0.0.10 proto tcp port 80 fixtures/policies/ebpf-full.lpf 2>&1)
   ir_decision=$(echo "$explain_ir" | grep "Decision:" | awk '{print $2}')
   ebpf_decision=$(echo "$explain_ebpf" | grep -oP '(pass|drop|reject)' | head -1)
   if [ "$ir_decision" = "$ebpf_decision" ]; then
