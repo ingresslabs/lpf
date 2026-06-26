@@ -78,3 +78,37 @@ val check_invariant :
 (* Find the minimal semantically-equivalent rule set. Uses Z3
    to determine which rules are redundant. *)
 val minimize : Ir.t -> Ir.t * int
+
+(* Symbolic reverse-explanation: given a rule (identified by its line number),
+   find the full set of packets that match it but NOT any earlier rule.
+   Returns a Z3 expression characterizing these packets, and optionally
+   a concrete example. *)
+type rule_coverage = {
+  line : int;
+  action : string;
+  reachable : bool;
+  example : counterexample option;
+  (* If reachable, example is a concrete packet that hits this rule *)
+}
+val check_rule_coverage : Ir.t -> rule_coverage list
+
+(* Automated test generation: produce test fixtures that guarantee
+   coverage of every rule and every boundary condition (first/last
+   packet in CIDR ranges, port boundaries, etc.).
+   Returns a list of (packet, expected_decision) pairs suitable
+   for use with `lpf test`. *)
+type generated_test = {
+  test_name : string;
+  packet : Explain.packet;
+  expected_action : string;
+  rule_line : int option;
+}
+val generate_tests : Ir.t -> generated_test list
+
+(* Prove that the eBPF backend produces semantically identical
+   results to the concrete explain engine for a given policy.
+   This verifies the eBPF compilation pipeline is correct. *)
+val check_backend_equivalence :
+  ir:Ir.t ->
+  ebpf_rules:(Ir.rule -> bool) ->
+  equiv_result

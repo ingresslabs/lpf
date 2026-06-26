@@ -1,3 +1,0 @@
-fixtures/policies/invalid-syntax.lpf:1:13: error: expected default action `deny` or `pass`
-fixtures/policies/invalid-syntax.lpf:3:7: error: expected table name like `<trusted>`
-fixtures/policies/invalid-syntax.lpf:5:6: error: invalid rule: unexpected token `sideways`

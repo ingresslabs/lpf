@@ -626,3 +626,198 @@ let minimize (ir : Ir.t) =
     all_rules;
   let removed_count = List.length !removed in
   ({ ir with rules = !kept; anchors = [] }, removed_count)
+
+(* ── Symbolic reverse-explain: rule coverage ────────────────────────────── *)
+
+let check_rule_coverage (ir : Ir.t) =
+  let pol = encode_policy ir in
+  let all_rules =
+    List.concat_map (fun (a : anchor) -> a.rules) ir.anchors @ ir.rules
+  in
+  let rec check_rules seen_not acc = function
+    | [] -> List.rev acc
+    | rule :: rest ->
+        let matches = encode_rule_match ir pol.sp rule in
+        let fires = mk_and seen_not matches in
+        let solver = mk_solver () in
+        Z3.Solver.add (ctxt ()) solver [ fires ];
+        let reachable = check_sat solver in
+        let example =
+          if reachable then
+            match get_model solver with
+            | Some model ->
+                let ce = model_to_ce ir pol.sp model rule.action in
+                let line = find_matching_rule_line ir pol.sp model in
+                Some { ce with matched_rule_line = line }
+            | None -> None
+          else None
+        in
+        let coverage = {
+          line = rule.span.line;
+          action = (match rule.action with Pass -> "pass" | Block -> "block" | Reject -> "reject");
+          reachable;
+          example;
+        } in
+        check_rules (mk_and seen_not (mk_not matches)) (coverage :: acc) rest
+  in
+  check_rules (mk_true ()) [] all_rules
+
+(* ── Automated test generation ──────────────────────────────────────────── *)
+
+let generate_tests (ir : Ir.t) =
+  let tests = ref [] in
+  let counter = ref 0 in
+  let next_name prefix =
+    incr counter;
+    Printf.sprintf "%s_%d" prefix !counter
+  in
+
+  (* Strategy: for each rule, generate:
+     1. A packet that hits the rule (reachability witness)
+     2. Boundary packets for CIDR ranges and port ranges
+     3. Edge cases: first/last possible IP, port 0, port 65535 *)
+
+  (* Helper: generate a test from a Z3 query *)
+  let generate ?(name_prefix = "test") (solver : Z3.Solver.solver)
+      (pol : symbolic_policy) (action : Ir.action) =
+    if check_sat solver then
+      match get_model solver with
+      | Some model ->
+          let ce = model_to_ce ir pol.sp model action in
+          let line = find_matching_rule_line ir pol.sp model in
+          let ce = { ce with matched_rule_line = line } in
+          let name = next_name name_prefix in
+          (match action with Pass -> "pass" | Block -> "block" | Reject -> "reject")
+          |> ignore;
+          tests := { test_name = name;
+                     packet = {
+                       direction = (match ce.direction with "out" -> Out | _ -> In);
+                       interface = ce.interface;
+                       protocol = (match ce.protocol with "tcp" -> Proto_named "tcp" | "udp" -> Proto_named "udp" | "icmp" -> Proto_named "icmp" | _ -> Proto_any);
+                       source = ce.source;
+                       destination = ce.destination;
+                       port = ce.port;
+                     };
+                     expected_action = ce.decision;
+                     rule_line = ce.matched_rule_line;
+                   } :: !tests
+      | None -> ()
+    else ()
+  in
+
+  let pol = encode_policy ir in
+
+  (* Per-rule witness: find a packet that matches each rule *)
+  let all_rules =
+    List.concat_map (fun (a : anchor) -> a.rules) ir.anchors @ ir.rules
+  in
+  let rec witness_rules seen_not = function
+    | [] -> ()
+    | rule :: rest ->
+        let matches = encode_rule_match ir pol.sp rule in
+        let fires = mk_and seen_not matches in
+        let solver = mk_solver () in
+        Z3.Solver.add (ctxt ()) solver [ fires ];
+        generate ~name_prefix:"rule_witness" solver pol rule.action;
+        witness_rules (mk_and seen_not (mk_not matches)) rest
+  in
+  witness_rules (mk_true ()) all_rules;
+
+  (* Boundary tests: for each table entry with CIDR, generate packets at
+     low boundary and high boundary *)
+  List.iter (fun (table : table) ->
+    List.iter (fun entry ->
+      match ip4_cidr_low_high entry with
+      | Some (low, high) when low <> high ->
+          let solver = mk_solver () in
+          Z3.Solver.add (ctxt ()) solver
+            [ mk_bv_eq pol.sp.pkt_src (i32_to_z3 low);
+              mk_bv_eq pol.sp.pkt_dst (i32_to_z3 (ip4_to_int32 "1.1.1.1")) ];
+          generate ~name_prefix:"cidr_low_boundary" solver pol Block;
+
+          let solver = mk_solver () in
+          Z3.Solver.add (ctxt ()) solver
+            [ mk_bv_eq pol.sp.pkt_src (i32_to_z3 high);
+              mk_bv_eq pol.sp.pkt_dst (i32_to_z3 (ip4_to_int32 "1.1.1.1")) ];
+          generate ~name_prefix:"cidr_high_boundary" solver pol Block;
+      | _ -> ())
+      table.entries)
+    ir.tables;
+
+  (* Edge case: port 0 and port 65535 *)
+  let solver = mk_solver () in
+  Z3.Solver.add (ctxt ()) solver
+    [ mk_bv_eq pol.sp.pkt_port (Z3.BitVector.mk_numeral (ctxt ()) "0" 16) ];
+  generate ~name_prefix:"port_edge_zero" solver pol Block;
+
+  let solver = mk_solver () in
+  Z3.Solver.add (ctxt ()) solver
+    [ mk_bv_eq pol.sp.pkt_port (Z3.BitVector.mk_numeral (ctxt ()) "65535" 16) ];
+  generate ~name_prefix:"port_edge_max" solver pol Block;
+
+  (* Edge case: IP boundaries *)
+  let solver = mk_solver () in
+  Z3.Solver.add (ctxt ()) solver
+    [ mk_bv_eq pol.sp.pkt_src (i32_to_z3 0l);
+      mk_bv_eq pol.sp.pkt_dst (i32_to_z3 0l) ];
+  generate ~name_prefix:"ip_boundary_zero" solver pol Block;
+
+  let solver = mk_solver () in
+  Z3.Solver.add (ctxt ()) solver
+    [ mk_bv_eq pol.sp.pkt_src (i32_to_z3 0xffffffffl);
+      mk_bv_eq pol.sp.pkt_dst (i32_to_z3 0xffffffffl) ];
+  generate ~name_prefix:"ip_boundary_max" solver pol Block;
+
+  List.rev !tests
+
+(* ── Backend equivalence: prove eBPF = explain engine ────────────────────── *)
+
+let check_backend_equivalence ~ir ~ebpf_rules =
+  let pol = encode_policy ir in
+  let pass_ir, block_ir = encode_decision pol in
+
+  (* Build the eBPF decision function:
+     For each rule, the eBPF backend can or cannot enforce it.
+     ebpf_rules returns true if the eBPF backend covers that rule.
+     Rules not covered by eBPF produce a different decision. *)
+
+  let rules =
+    List.concat_map (fun (a : anchor) -> a.rules) ir.anchors @ ir.rules
+  in
+  let ebpf_pass, ebpf_block =
+    let rec fold seen_not = function
+      | [] -> (mk_false (), mk_false ())  (* eBPF default: no match means drop *)
+      | rule :: rest ->
+          let matches = encode_rule_match ir pol.sp rule in
+          let fires = mk_and seen_not matches in
+          if ebpf_rules rule then
+            let then_pass, then_block = match rule.action with
+              | Pass -> (mk_true (), mk_false ())
+              | Block -> (mk_false (), mk_true ())
+              | Reject -> (mk_false (), mk_false ())
+            in
+            let else_pass, else_block = fold (mk_and seen_not (mk_not matches)) rest in
+            ( mk_or (mk_and fires then_pass) (mk_and (mk_not fires) else_pass),
+              mk_or (mk_and fires then_block) (mk_and (mk_not fires) else_block) )
+          else
+            (* eBPF can't enforce this rule — skip it and continue *)
+            fold (mk_and seen_not (mk_not matches)) rest
+    in
+    fold (mk_true ()) rules
+  in
+
+  let diff = mk_or (mk_not (mk_eq pass_ir ebpf_pass))
+                   (mk_not (mk_eq block_ir ebpf_block)) in
+  let solver = mk_solver () in
+  Z3.Solver.add (ctxt ()) solver [ diff ];
+  if check_sat solver then
+    match get_model solver with
+    | Some model ->
+        let ce = model_to_ce ir pol.sp model Pass in
+        let line = find_matching_rule_line ir pol.sp model in
+        Not_equivalent
+          { counterexample = { ce with matched_rule_line = line };
+            decision_in_first = "unknown";
+            decision_in_second = "unknown"; }
+    | None -> Equivalent
+  else Equivalent

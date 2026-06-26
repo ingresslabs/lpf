@@ -1276,3 +1276,180 @@ let capability_diagnostics (ir : Ir.t) =
     ir.rules @ List.concat_map (fun (a : Ir.anchor) -> a.rules) ir.anchors
   in
   nat_diags @ rdr_diags @ List.concat_map rule_diags all_rules
+
+(* ── Map versioning for atomic swaps ────────────────────────────────────── *)
+
+let version_index_map = "lpf_version_index"
+
+let versioned_loader_script (image : t) =
+  let buf = Buffer.create 4096 in
+  let open Printf in
+  bprintf buf "#!/bin/sh\n";
+  bprintf buf "# lpf versioned eBPF loader — atomic map version swap\n";
+  bprintf buf "set -eu\n";
+  bprintf buf "VERSION=%d\n" image.version;
+  bprintf buf "LAST_VERSION=$((VERSION %% 2 == 0 ? VERSION - 1 : VERSION))\n";
+  bprintf buf "if [ $LAST_VERSION -lt 1 ]; then LAST_VERSION=1; fi\n";
+  bprintf buf "\n";
+
+  (* Load the new version's maps with _v<VERSION> suffix *)
+  List.iter (fun (m : map) ->
+    let map_path = Printf.sprintf "/sys/fs/bpf/lpf/%s_v%d" m.name image.version in
+    bprintf buf "# Create %s (max_entries=%d, key=%d, value=%d)\n"
+      m.name m.max_entries m.key_size m.value_size;
+    bprintf buf "bpftool map create %s \\\n" map_path;
+    bprintf buf "  type %s key %d value %d entries %d \\\n"
+      (match m.kind with Array -> "array" | Hash -> "hash" | Lpm_trie -> "lpm_trie")
+      m.key_size m.value_size m.max_entries;
+    bprintf buf "  name %s_v%d\n" m.name image.version;
+    (* Populate entries *)
+    List.iter (fun (key, value) ->
+      bprintf buf "bpftool map update pinned %s \\\n" map_path;
+      bprintf buf "  key hex %s value hex %s\n" key value)
+      m.entries;
+    bprintf buf "\n")
+    image.maps;
+
+  (* Create per-CPU counter map for this version *)
+  bprintf buf "# Per-CPU rule counters for version %d\n" image.version;
+  bprintf buf "bpftool map create /sys/fs/bpf/lpf/lpf_counters_v%d \\\n" image.version;
+  bprintf buf "  type per_cpu_array key 4 value 8 entries %d \\\n"
+    (List.length image.rules + 1);
+  bprintf buf "  name lpf_counters_v%d\n\n" image.version;
+
+  (* Create ring buffer for events *)
+  bprintf buf "# Ring buffer for structured events\n";
+  bprintf buf "bpftool map create /sys/fs/bpf/lpf/lpf_events_v%d \\\n" image.version;
+  bprintf buf "  type ringbuf max_entries 262144 \\\n";
+  bprintf buf "  name lpf_events_v%d\n\n" image.version;
+
+  (* Load BPF programs *)
+  bprintf buf "# Load programs\n";
+  bprintf buf "bpftool prog loadall bpf/lpf_kern.o /sys/fs/bpf/lpf/prog \\\n";
+  bprintf buf "  pinmaps /sys/fs/bpf/lpf\n\n";
+
+  (* Atomic version flip: update the version index *)
+  bprintf buf "# Atomic version flip\n";
+  bprintf buf "bpftool map update pinned /sys/fs/bpf/lpf/%s \\\n" version_index_map;
+  bprintf buf "  key 0 0 0 0 value %d 0 0 0\n\n"
+    (if image.version mod 2 = 1 then 1 else 2);
+
+  (* Cleanup old version maps *)
+  bprintf buf "# Cleanup old version %d maps (if any)\n" (image.version - 1);
+  bprintf buf "for map in /sys/fs/bpf/lpf/*_v$LAST_VERSION; do\n";
+  bprintf buf "  [ -e \"$map\" ] && bpftool map delete pinned \"$map\" || true\n";
+  bprintf buf "done\n";
+
+  bprintf buf "\necho 'lpf eBPF version %d loaded (atomic swap)'\n" image.version;
+  Buffer.contents buf
+
+(* ── Per-CPU counters ───────────────────────────────────────────────────── *)
+
+let per_cpu_counter_map = "lpf_counters"
+
+let parse_per_cpu_counters raw =
+  (* bpftool map dump for PERCPU_ARRAY outputs per-CPU values:
+     key: 0  value: {cpu0: 100 200} {cpu1: 50 100}
+     We sum across all CPUs. *)
+  let lines = String.split_on_char '\n' raw in
+  let re_key = Str.regexp "key:[ \t]+" in
+  let re_val = Str.regexp "value:[ \t]*{" in
+  let re_cpu = Str.regexp "{cpu[0-9]+:[ \t]+\\([0-9]+\\)[ \t]+\\([0-9]+\\)}" in
+  let results = ref [] in
+  let current_key = ref None in
+  let total_packets = ref 0 in
+  let total_bytes = ref 0 in
+  List.iter (fun line ->
+    if Str.string_match re_key line 0 then (
+      match !current_key with
+      | Some idx -> results := { rule_index = idx; packets = !total_packets; bytes = !total_bytes } :: !results
+      | None -> ();
+      let rest = Str.string_after line (Str.match_end ()) in
+      current_key := int_of_string_opt (String.trim rest);
+      total_packets := 0; total_bytes := 0)
+    else if Str.string_match re_val line 0 then
+      let rest = Str.string_after line (Str.match_end ()) in
+      let pos = ref 0 in
+      while !pos < String.length rest do
+        if Str.string_match re_cpu rest !pos then (
+          let packets = int_of_string (Str.matched_group 1 rest) in
+          let bytes = int_of_string (Str.matched_group 2 rest) in
+          total_packets := !total_packets + packets;
+          total_bytes := !total_bytes + bytes;
+          pos := Str.match_end ())
+        else pos := !pos + 1
+      done)
+    lines;
+  (match !current_key with
+   | Some idx -> results := { rule_index = idx; packets = !total_packets; bytes = !total_bytes } :: !results
+   | None -> ());
+  List.rev !results
+
+(* ── Ring buffer events ─────────────────────────────────────────────────── *)
+
+let ring_buffer_name = "lpf_events"
+
+type ring_event =
+  | Rule_match of { rule_index : int; src : string; dst : string; port : int; verdict : string }
+  | Conntrack_new of { src : string; dst : string; sport : int; dport : int; proto : string }
+  | Conntrack_expire of { src : string; dst : string; sport : int; dport : int }
+  | Error_event of { message : string }
+
+let parse_ring_event raw =
+  let get_field name =
+    let re = Str.regexp (Printf.sprintf "\"%s\":[ \t]*\"?\\([^\",}]*\\)\"?" name) in
+    if Str.string_match re raw 0 then
+      Some (Str.matched_group 1 raw)
+    else
+      None
+  in
+  let get_int name =
+    let re = Str.regexp (Printf.sprintf "\"%s\":[ \t]*\\([0-9]+\\)" name) in
+    if Str.string_match re raw 0 then
+      Some (int_of_string (Str.matched_group 1 raw))
+    else
+      None
+  in
+  match get_field "type" with
+  | Some "rule_match" ->
+      (match (get_int "rule_index", get_field "src", get_field "dst",
+              get_int "port", get_field "verdict") with
+      | Some ri, Some s, Some d, Some p, Some v ->
+          Some (Rule_match { rule_index = ri; src = s; dst = d; port = p; verdict = v })
+      | _ -> None)
+  | Some "conntrack_new" ->
+      (match (get_field "src", get_field "dst", get_int "sport",
+              get_int "dport", get_field "proto") with
+      | Some s, Some d, Some sp, Some dp, Some pr ->
+          Some (Conntrack_new { src = s; dst = d; sport = sp; dport = dp; proto = pr })
+      | _ -> None)
+  | Some "conntrack_expire" ->
+      (match (get_field "src", get_field "dst", get_int "sport", get_int "dport") with
+      | Some s, Some d, Some sp, Some dp ->
+          Some (Conntrack_expire { src = s; dst = d; sport = sp; dport = dp })
+      | _ -> None)
+  | Some "error" ->
+      (match get_field "message" with
+      | Some m -> Some (Error_event { message = m })
+      | None -> None)
+  | _ -> None
+
+let ring_events_to_json events =
+  let event_json = function
+    | Rule_match { rule_index; src; dst; port; verdict } ->
+        Printf.sprintf
+          "{\"type\":\"rule_match\",\"rule_index\":%d,\"src\":%s,\"dst\":%s,\"port\":%d,\"verdict\":%s}"
+          rule_index (Json_util.string src) (Json_util.string dst) port (Json_util.string verdict)
+    | Conntrack_new { src; dst; sport; dport; proto } ->
+        Printf.sprintf
+          "{\"type\":\"conntrack_new\",\"src\":%s,\"dst\":%s,\"sport\":%d,\"dport\":%d,\"proto\":%s}"
+          (Json_util.string src) (Json_util.string dst) sport dport (Json_util.string proto)
+    | Conntrack_expire { src; dst; sport; dport } ->
+        Printf.sprintf
+          "{\"type\":\"conntrack_expire\",\"src\":%s,\"dst\":%s,\"sport\":%d,\"dport\":%d}"
+          (Json_util.string src) (Json_util.string dst) sport dport
+    | Error_event { message } ->
+        Printf.sprintf "{\"type\":\"error\",\"message\":%s}" (Json_util.string message)
+  in
+  let items = List.map event_json events in
+  "[" ^ String.concat "," items ^ "]"
