@@ -1,0 +1,19 @@
+FROM debian:12-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iproute2 \
+    iptables \
+    bpftool \
+    libelf1 \
+    ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY _build/default/bin/cni/main.exe /opt/cni/bin/lpf-cni
+COPY bpf/lpf_kern.o /opt/lpf/bpf/lpf_kern.o
+
+RUN chmod +x /opt/cni/bin/lpf-cni
+
+ENV CNI_PATH=/opt/cni/bin
+ENV PATH="/opt/cni/bin:${PATH}"
+
+ENTRYPOINT ["/opt/cni/bin/lpf-cni"]

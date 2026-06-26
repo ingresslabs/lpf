@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: lpf-cni
+  namespace: kube-system
+  labels:
+    app: lpf-cni
+    tier: node
+spec:
+  selector:
+    matchLabels:
+      app: lpf-cni
+  template:
+    metadata:
+      labels:
+        app: lpf-cni
+    spec:
+      hostNetwork: true
+      hostPID: true
+      tolerations:
+        - operator: Exists
+      priorityClassName: system-node-critical
+      containers:
+        - name: lpf-cni
+          image: ghcr.io/ingresslabs/lpf-cni:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/cni/bin/lpf-cni"]
+          args: ["daemon"]
+          env:
+            - name: CNI_PATH
+              value: /opt/cni/bin
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+                - NET_ADMIN
+                - SYS_ADMIN
+                - BPF
+                - SYS_RESOURCE
+          volumeMounts:
+            - name: cni-bin
+              mountPath: /opt/cni/bin
+            - name: cni-netd
+              mountPath: /etc/cni/net.d
+            - name: bpf-fs
+              mountPath: /sys/fs/bpf
+            - name: lib-modules
+              mountPath: /lib/modules
+              readOnly: true
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: 9999
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 9999
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: cni-bin
+          hostPath:
+            path: /opt/cni/bin
+            type: DirectoryOrCreate
+        - name: cni-netd
+          hostPath:
+            path: /etc/cni/net.d
+            type: DirectoryOrCreate
+        - name: bpf-fs
+          hostPath:
+            path: /sys/fs/bpf
+            type: Directory
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
+            type: Directory
+        - name: cgroup
+          hostPath:
+            path: /sys/fs/cgroup
+            type: Directory
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lpf-cni-config
+  namespace: kube-system
+data:
+  10-lpf.conflist: |
+    {
+      "cniVersion": "1.0.0",
+      "name": "lpf",
+      "plugins": [
+        {
+          "type": "lpf-cni",
+          "ipam": {
+            "type": "host-local",
+            "subnet": "10.42.0.0/16",
+            "routes": [
+              { "dst": "0.0.0.0/0" }
+            ]
+          },
+          "policy": {
+            "mode": "auto",
+            "defaultAction": "deny",
+            "clusterPolicyRef": "lpf-cluster-policy",
+            "logDropped": true
+          },
+          "dns": {}
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lpf-cluster-policy
+  namespace: kube-system
+data:
+  policy.lpf: |
+    # lpf cluster-wide default policy
+    set default deny
+
+    # allow DNS
+    pass out on eth0 proto udp from any to any port 53 keep state
+
+    # allow kubelet health checks
+    pass in on eth0 proto tcp from any to any port {10250,10255}
+
+    # allow node-local traffic
+    pass in on eth0 from 10.42.0.0/16 to 10.42.0.0/16
+    pass out on eth0 from 10.42.0.0/16 to 10.42.0.0/16 keep state
