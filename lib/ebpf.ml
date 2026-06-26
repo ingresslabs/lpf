@@ -189,7 +189,7 @@ let rule_identity (rule : Ir.rule) =
   | Id_none -> identity_of_address rule.source
   | id -> id
 
-let compile_rule registry index ?anchor (rule : Ir.rule) =
+let compile_rule queues registry index ?anchor (rule : Ir.rule) =
   let location =
     match anchor with
     | None -> Printf.sprintf "lpf rule %d:%d" rule.span.line rule.span.column
@@ -212,15 +212,15 @@ let compile_rule registry index ?anchor (rule : Ir.rule) =
     keep_state = rule.keep_state;
     route_gw =
       (match rule.route_to with
-      | Some addr -> (
-          match addr with
+      | Some (gateway, _iface) -> (
+          match gateway with
           | Ir.Literal s -> ip4_to_int32 s
           | _ -> 0l)
       | None -> 0l);
     queue_id =
       (match rule.queue with
       | Some q -> (
-          match Tc.queue_classid ir.queues q with
+          match Tc.queue_classid queues q with
           | Some classid_str -> (
               match String.split_on_char ':' classid_str with
               | [ major; minor ] -> (
@@ -310,7 +310,7 @@ let of_ir ?(version = 1) (ir : Ir.t) =
   let registry = set_registry ir in
   let rules =
     List.mapi
-      (fun index (anchor, rule) -> compile_rule registry index ?anchor rule)
+      (fun index (anchor, rule) -> compile_rule ir.queues registry index ?anchor rule)
       (all_ir_rules ir)
   in
   let rule_count = List.length rules in
@@ -1247,7 +1247,6 @@ let classify (program : t) (packet : Explain.packet) =
 let warn span message = { Policy.severity = Policy.Diag_warning; span; message }
 
 let capability_diagnostics (ir : Ir.t) =
-  let ignored = "is not supported by the ebpf backend and will be ignored" in
   let nat_diags =
     List.filter_map
       (fun (n : Ir.nat) ->
@@ -1270,9 +1269,8 @@ let capability_diagnostics (ir : Ir.t) =
                  "rdr with non-literal translation is not supported by the ebpf backend"))
       ir.rdrs
   in
-  let rule_diags (rule : Ir.rule) =
-    let diags = [] in
-    (* All capabilities now supported — no rule-level warnings needed *)
+  let rule_diags (_rule : Ir.rule) =
+    []
   in
   let all_rules =
     ir.rules @ List.concat_map (fun (a : Ir.anchor) -> a.rules) ir.anchors

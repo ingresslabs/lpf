@@ -51,6 +51,9 @@ type rule = {
   saddr_set : int;
   daddr_set : int;
   identity : identity;
+  keep_state : bool;
+  route_gw : int32;
+  queue_id : int;
   comment : string;
 }
 
