@@ -496,6 +496,79 @@ static __always_inline int lpf_parse_tls_sni(void *data, void *data_end,
   return 0;
 }
 
+/* ── L7 HTTP/1.1 request parser ─────────────────────────────────────────────
+   Parses the first data packet after TCP handshake to extract:
+   - HTTP method (GET/POST/PUT/DELETE/HEAD/PATCH/CONNECT/OPTIONS)
+   - Host header value (domain name)
+   Used at cgroup_skb egress for TCP ports 80/8080.
+   Stores method string and hostname, returns 1 if parsing succeeded. */
+
+#define LPF_HTTP_METHOD_MAX 8
+#define LPF_HTTP_HOST_MAX  64
+
+static __always_inline int lpf_parse_http(void *data, void *data_end,
+                                           char *method, int *method_len,
+                                           char *host, int *host_len) {
+  *method_len = 0;
+  *host_len = 0;
+  if (data >= data_end) return 0;
+
+  __u8 *p = (__u8 *)data;
+  void *http_end = data_end;
+
+  /* find header end: \r\n\r\n */
+  int found = 0;
+#pragma unroll
+  for (int i = 0; i < 64 && p + 4 <= (__u8 *)http_end; i++, p++) {
+    if (p[0] == '\r' && p[1] == '\n' && p[2] == '\r' && p[3] == '\n') {
+      http_end = p;
+      found = 1;
+      break;
+    }
+  }
+  if (!found) return 0;
+
+  p = (__u8 *)data;
+
+  /* parse method from first token */
+  int mlen = 0;
+  while (p < (__u8 *)http_end && *p != ' ' && mlen < LPF_HTTP_METHOD_MAX) {
+    method[mlen++] = (char)*p++;
+  }
+  if (p >= (__u8 *)http_end || *p != ' ') return 0;
+  method[mlen] = '\0';
+  *method_len = mlen;
+  p++;
+
+  /* skip path and version to find Host header */
+  /* scan for \nHost:  (line start) */
+  int hlen = 0;
+  __u8 *scan = (__u8 *)data;
+#pragma unroll
+  for (int i = 0; i < 48 && scan + 7 < (__u8 *)http_end; i++, scan++) {
+    if (scan[0] == '\n' || (scan == (__u8 *)data && i == 0)) {
+      __u8 *line = (scan[0] == '\n') ? scan + 1 : scan;
+      if (line + 6 > (__u8 *)http_end) continue;
+      if (!(line[0] == 'H' || line[0] == 'h')) continue;
+      if (!(line[1] == 'o' || line[1] == 'O')) continue;
+      if (!(line[2] == 's' || line[2] == 'S')) continue;
+      if (!(line[3] == 't' || line[3] == 'T')) continue;
+      if (line[4] != ':' || line[5] != ' ') continue;
+
+      line += 6;
+      hlen = 0;
+      while (line < (__u8 *)http_end && *line != '\r' && *line != '\n'
+             && hlen < LPF_HTTP_HOST_MAX) {
+        host[hlen++] = (char)*line++;
+      }
+      host[hlen] = '\0';
+      *host_len = hlen;
+      return 1;
+    }
+  }
+  return 1;  /* method parsed, host optional */
+}
+
 /* ── L7 policy lookup ───────────────────────────────────────────────────────
    Checks if a domain (DNS QNAME / TLS SNI / HTTP host) matches an L7 rule.
    Tries EXACT match first, then SUFFIX (*.example.com), then PREFIX (www.*). */
@@ -538,9 +611,21 @@ static __always_inline int lpf_l7_lookup(const char *domain, int domain_len,
 }
 
 /* ── service load balancer ──────────────────────────────────────────────────
-   Looks up service VIP and selects a backend via 5-tuple hash.
+   Maglev-consistent hashing: two-hash on-the-fly backend selection.
+   No permutation table needed — pure computation with bounded disruption.
+   Adding/removing one backend changes at most 1/N of existing assignments.
    Populates new_daddr/new_dport with the chosen backend IP/port.
    Returns 1 if a backend was selected, 0 if no service matches. */
+
+static __always_inline __u32 lpf_hash32(__u32 val, __u32 seed) {
+  __u32 hash = seed;
+  hash = ((hash << 5) + hash) + val;
+  hash = ((hash << 5) + hash) + (val >> 16);
+  hash ^= hash >> 13;
+  hash *= 0x9E3779B9;
+  hash ^= hash >> 16;
+  return hash;
+}
 
 static __always_inline int lpf_svc_lookup(__be32 saddr, __be16 sport,
                                            __be32 daddr, __be16 dport,
@@ -566,25 +651,28 @@ static __always_inline int lpf_svc_lookup(__be32 saddr, __be16 sport,
     }
   }
 
-  __u32 hash = 0;
-  hash = ((__u32)saddr * 2654435761U) ^ ((__u32)(saddr >> 32));
-  hash = hash ^ ((__u32)sport * 0x9E3779B9U);
-  hash = hash ^ ((__u32)daddr * 0x85EBCA77U);
-  hash = hash ^ ((__u32)dport * 0xC2B2AE35U);
-  hash = hash ^ ((__u32)proto);
+  __u32 h1 = lpf_hash32((__u32)saddr, 0xDEADBEEF);
+  h1 = lpf_hash32((__u32)sport, h1);
+  h1 = lpf_hash32((__u32)daddr, h1);
+  h1 = lpf_hash32((__u32)dport, h1);
+  h1 = lpf_hash32((__u32)proto, h1);
+
+  __u32 h2 = lpf_hash32((__u32)daddr, 0xCAFEBABE);
+  h2 = lpf_hash32((__u32)dport, h2);
+  h2 = lpf_hash32((__u32)saddr, h2);
+  h2 = lpf_hash32((__u32)sport, h2);
+  h2 = lpf_hash32((__u32)proto, h2);
 
   __u32 count = svc->backend_count;
-  __u32 idx = hash % count;
-  __u32 tries = 0;
+  __u32 offset = h1 % count;
+  __u32 skip = count > 1 ? ((h2 % (count - 1)) + 1) : 1;
 
-  for (__u32 i = 0; i < count && tries < LPF_SVC_BACKENDS_PER_SERVICE; i++) {
+  for (__u32 i = 0; i < count && i < LPF_SVC_BACKENDS_PER_SERVICE; i++) {
+    __u32 idx = (offset + i * skip) % count;
     __u32 bid = svc->backend_ids[idx];
     struct lpf_backend *be = bpf_map_lookup_elem(&lpf_backends, &bid);
-    if (!be || !be->healthy) {
-      idx = (idx + 1) % count;
-      tries++;
-      continue;
-    }
+    if (!be || !be->healthy) continue;
+
     *new_daddr = be->ip;
     *new_dport = be->port;
 
@@ -1207,6 +1295,28 @@ static __always_inline int lpf_cgroup_eval(struct __sk_buff *skb) {
         if (l7_verdict == LPF_VERDICT_DROP || l7_verdict == LPF_VERDICT_REJECT) {
           lpf_emit_event(l7_verdict, -2, proto, dport, saddr, daddr, 2, pkt_len);
           return 0;
+        }
+      }
+    }
+   }
+
+  /* L7 HTTP request filtering: parse method + Host header from first data
+     packet on TCP/80 and TCP/8080. Blocks before the L3/L4 rule engine. */
+  if (proto == LPF_IPPROTO_TCP && (dport == 80 || dport == 8080)) {
+    struct tcphdr *tcp = (void *)((struct iphdr *)(eth + 1)) + ihl;
+    if ((void *)(tcp + 1) <= data_end) {
+      __u32 tcp_doff = tcp->doff * 4;
+      void *http_data = (void *)tcp + tcp_doff;
+      char method[LPF_HTTP_METHOD_MAX] = {};
+      char host[LPF_HTTP_HOST_MAX] = {};
+      int mlen = 0, hlen = 0;
+      if (lpf_parse_http(http_data, data_end, method, &mlen, host, &hlen)) {
+        __u32 l7_verdict = LPF_VERDICT_PASS;
+        if (hlen > 0 && lpf_l7_lookup(host, hlen, proto, dport, &l7_verdict)) {
+          if (l7_verdict == LPF_VERDICT_DROP || l7_verdict == LPF_VERDICT_REJECT) {
+            lpf_emit_event(l7_verdict, -4, proto, dport, saddr, daddr, 2, pkt_len);
+            return 0;
+          }
         }
       }
     }
