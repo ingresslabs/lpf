@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  role_name: lpf
+  author: ingresslabs
+  description: Install and manage lpf — the next-generation Linux firewall
+  license: Apache-2.0
+  min_ansible_version: "2.10"
+  platforms:
+    - name: Debian
+      versions: [bookworm, bullseye]
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: Fedora
+      versions: ["41"]
+    - name: Alpine
+      versions: ["3.23"]
+  galaxy_tags:
+    - firewall
+    - networking
+    - security
+    - nftables
+    - gitops
+    - ebpf
+
+dependencies: []

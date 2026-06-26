@@ -1,0 +1,20 @@
+---
+# Manage dynamic tables after policy is applied
+
+- name: Populate tables
+  command: "{{ lpf_bin_path }} table {{ item.name }} replace {{ item.entries | join(' ') }}"
+  loop: "{{ lpf_tables }}"
+  changed_when: true
+
+- name: Show table counters
+  command: "{{ lpf_bin_path }} table {{ item.name }} counters --json"
+  loop: "{{ lpf_tables }}"
+  register: lpf_table_counters
+  changed_when: false
+  failed_when: false
+
+- name: Report table state
+  debug:
+    msg: "table {{ item.item.name }}: {{ item.stdout }}"
+  loop: "{{ lpf_table_counters.results }}"
+  when: item.stdout is defined

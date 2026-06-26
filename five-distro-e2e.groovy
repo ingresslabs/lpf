@@ -138,6 +138,49 @@ fedora    ocaml/opam:fedora-41-ocaml-5.1           KERNEL_FEDORA   linux-7.1'''.
       }
     }
 
+    stage('Ansible E2E: role validation + playbook tests (5 distros)') {
+      // Run ansible-suite.sh in each distro's CI image.
+      // Tests role structure, playbook syntax, template rendering,
+      // default policy validation, and ansible-lint.
+      parallel {
+        stage('ansible:debian') {
+          steps {
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+              sh 'docker run --rm lpf-ci:debian bash -lc "cd /home/opam/src && LPF_ANSIBLE_JUNIT=junit-lpf-ansible-debian.xml ci/vagabond/ansible-suite.sh"'
+            }
+          }
+        }
+        stage('ansible:ubuntu-22') {
+          steps {
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+              sh 'docker run --rm lpf-ci:ubuntu-22 bash -lc "cd /home/opam/src && LPF_ANSIBLE_JUNIT=junit-lpf-ansible-ubuntu22.xml ci/vagabond/ansible-suite.sh"'
+            }
+          }
+        }
+        stage('ansible:ubuntu-24') {
+          steps {
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+              sh 'docker run --rm lpf-ci:ubuntu-24 bash -lc "cd /home/opam/src && LPF_ANSIBLE_JUNIT=junit-lpf-ansible-ubuntu24.xml ci/vagabond/ansible-suite.sh"'
+            }
+          }
+        }
+        stage('ansible:alpine') {
+          steps {
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+              sh 'docker run --rm lpf-ci:alpine bash -lc "cd /home/opam/src && apk add --no-cache ansible ansible-lint py3-pip && LPF_ANSIBLE_JUNIT=junit-lpf-ansible-alpine.xml ci/vagabond/ansible-suite.sh"'
+            }
+          }
+        }
+        stage('ansible:fedora') {
+          steps {
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+              sh 'docker run --rm lpf-ci:fedora bash -lc "cd /home/opam/src && dnf install -y ansible ansible-lint python3-pip && LPF_ANSIBLE_JUNIT=junit-lpf-ansible-fedora.xml ci/vagabond/ansible-suite.sh"'
+            }
+          }
+        }
+      }
+    }
+
     stage('Real Traffic E2E: eBPF datapath (privileged Docker)') {
       // Run the full 4-layer eBPF conformance suite in privileged Docker
       // containers. No Firecracker needed — containers run with /sys/fs/bpf

@@ -1,0 +1,39 @@
+---
+# Post-apply verification tasks
+
+- name: Check final policy state
+  command: "{{ lpf_bin_path }} check --json {{ lpf_policy_path }}"
+  register: lpf_final_check
+  changed_when: false
+  failed_when: false
+
+- name: Verify policy is active
+  assert:
+    that:
+      - lpf_final_check.rc == 0
+      - (lpf_final_check.stdout | from_json).valid
+    fail_msg: "lpf policy is not active after apply"
+
+- name: Explain test packet
+  command: >
+    {{ lpf_bin_path }} explain
+    in eth0 from 10.0.0.1 to 10.0.0.2 proto tcp port 22
+    {{ lpf_policy_path }}
+  register: lpf_explain_test
+  changed_when: false
+
+- name: Show explain result
+  debug:
+    msg: "explain test: {{ lpf_explain_test.stdout }}"
+
+- name: Run policy test assertions (if fixtures exist)
+  command: "{{ lpf_bin_path }} test {{ lpf_config_dir }}/tests/*.lpf.test"
+  register: lpf_test_result
+  changed_when: false
+  failed_when: false
+  ignore_errors: true
+
+- name: Show test results
+  debug:
+    msg: "policy tests: {{ lpf_test_result.stdout_lines }}"
+  when: lpf_test_result.stdout_lines is defined

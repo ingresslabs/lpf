@@ -1,0 +1,18 @@
+---
+# Conntrack management
+
+- name: List conntrack entries
+  command: "{{ lpf_bin_path }} state list --json"
+  register: lpf_state_list
+  changed_when: false
+  failed_when: false
+
+- name: Flush conntrack if requested
+  command: "{{ lpf_bin_path }} state flush"
+  when: lpf_flush_conntrack | bool
+  changed_when: true
+
+- name: Report conntrack state
+  debug:
+    msg: "conntrack entries: {{ (lpf_state_list.stdout | from_json) | length }}"
+  when: lpf_state_list.stdout is defined

@@ -1,0 +1,60 @@
+---
+# Configure lpf directories and state
+
+- name: Create lpf state directory
+  file:
+    path: "{{ lpf_state_dir }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Create lpf config directory
+  file:
+    path: "{{ lpf_config_dir }}"
+    state: directory
+    mode: "0750"
+    owner: root
+    group: root
+
+- name: Deploy policy from template
+  template:
+    src: "{{ lpf_policy_template }}"
+    dest: "{{ lpf_policy_path }}"
+    mode: "0640"
+    owner: root
+    group: root
+  when: lpf_policy_template != ""
+  notify: reload lpf policy
+
+- name: Deploy policy from content
+  copy:
+    content: "{{ lpf_policy_content }}"
+    dest: "{{ lpf_policy_path }}"
+    mode: "0640"
+    owner: root
+    group: root
+  when:
+    - lpf_policy_template == ""
+    - lpf_policy_content != ""
+  notify: reload lpf policy
+
+- name: Deploy default policy if none specified
+  copy:
+    src: "files/policies/default.lpf"
+    dest: "{{ lpf_policy_path }}"
+    mode: "0640"
+    owner: root
+    group: root
+  when:
+    - lpf_policy_template == ""
+    - lpf_policy_content == ""
+  notify: reload lpf policy
+
+- name: Deploy systemd service
+  template:
+    src: lpf.service.j2
+    dest: /etc/systemd/system/lpf-watchdog.service
+    mode: "0644"
+  when: lpf_watchdog_enabled | bool
+  notify: restart lpf watchdog

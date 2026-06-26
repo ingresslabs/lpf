@@ -1,0 +1,14 @@
+---
+# lpf deploy playbook — deploy and apply a firewall policy
+- name: Deploy lpf policy
+  hosts: all
+  become: true
+  vars:
+    lpf_policy_content: |
+      set default deny
+      interface wan = "eth0"
+      pass out proto tcp from any to any port { 80 443 } keep state
+      pass out proto udp from any to any port 53 keep state
+      block in from any to any
+  roles:
+    - lpf

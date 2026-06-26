@@ -1,0 +1,51 @@
+---
+# lpf Ansible role defaults
+# https://ingresslabs.github.io/lpf
+
+# Installation method: package | source | binary
+lpf_install_method: package
+
+# Package repository / download URL
+lpf_package_url: ""
+lpf_binary_url: ""
+
+# Installation paths
+lpf_bin_path: /usr/local/bin/lpf
+lpf_config_dir: /etc/lpf
+lpf_state_dir: /var/lib/lpf
+lpf_policy_path: "{{ lpf_config_dir }}/policy.lpf"
+
+# Policy content (inline or path to template)
+lpf_policy_content: ""
+lpf_policy_template: ""
+
+# Guarded apply settings
+lpf_apply_confirm_seconds: 60
+lpf_apply_dry_run: false
+
+# Rollback on failure
+lpf_rollback_on_failure: true
+
+# Systemd watchdog
+lpf_watchdog_enabled: true
+lpf_watchdog_health_check: "ss -tlnp | grep -q :22"
+
+# Verify expected state after apply
+lpf_verify_after_apply: false
+
+# Tables to populate after apply
+lpf_tables: []
+# Example:
+# lpf_tables:
+#   - name: blocked_hosts
+#     entries:
+#       - 10.0.0.66
+#       - 10.0.0.67
+
+# Conntrack management
+lpf_flush_conntrack: false
+
+# GitOps mode: keep policy in git and diff before apply
+lpf_gitops_enabled: false
+lpf_gitops_repo: ""
+lpf_gitops_policy_path: ""

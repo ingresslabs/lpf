@@ -1,0 +1,18 @@
+[Unit]
+Description=lpf Firewall Watchdog — guarded apply with auto-rollback
+Documentation=https://ingresslabs.github.io/lpf
+After=network.target nftables.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart={{ lpf_bin_path }} apply --confirm {{ lpf_apply_confirm_seconds }}s {{ lpf_policy_path }}
+ExecStartPost=/bin/bash -c 'sleep {{ lpf_apply_confirm_seconds | int // 2 }} && {{ lpf_health_check | default("true") }} && {{ lpf_bin_path }} confirm || {{ lpf_bin_path }} rollback --now'
+ExecStop={{ lpf_bin_path }} rollback --now
+ExecReload={{ lpf_bin_path }} apply --confirm {{ lpf_apply_confirm_seconds }}s {{ lpf_policy_path }}
+Environment=LPF_VAR_DIR={{ lpf_state_dir }}
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

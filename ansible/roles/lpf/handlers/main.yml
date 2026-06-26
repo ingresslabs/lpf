@@ -1,0 +1,20 @@
+---
+# lpf handlers
+
+- name: reload lpf policy
+  command: "{{ lpf_bin_path }} apply --confirm {{ lpf_apply_confirm_seconds }}s {{ lpf_policy_path }}"
+  register: lpf_reload
+  changed_when: true
+  notify: confirm lpf policy
+
+- name: confirm lpf policy
+  command: "{{ lpf_bin_path }} confirm"
+  changed_when: false
+
+- name: restart lpf watchdog
+  systemd:
+    name: lpf-watchdog
+    state: restarted
+    daemon_reload: true
+    enabled: true
+  when: lpf_watchdog_enabled | bool

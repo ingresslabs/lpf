@@ -1,0 +1,30 @@
+---
+# lpf role — main tasks
+
+- name: Include OS-specific variables
+  include_vars: "{{ ansible_os_family | lower }}.yml"
+  ignore_errors: true
+
+- name: Install lpf
+  include_tasks: install.yml
+
+- name: Configure directories
+  include_tasks: configure.yml
+
+- name: Run pre-apply validation
+  include_tasks: validate.yml
+
+- name: Apply policy
+  include_tasks: apply.yml
+
+- name: Run post-apply verification
+  include_tasks: verify.yml
+  when: lpf_verify_after_apply | bool
+
+- name: Populate dynamic tables
+  include_tasks: tables.yml
+  when: lpf_tables | length > 0
+
+- name: Manage conntrack
+  include_tasks: conntrack.yml
+  when: lpf_flush_conntrack | bool
