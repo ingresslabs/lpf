@@ -1342,6 +1342,172 @@ let handle_tools args =
         Printf.printf "[%s]\n" (String.concat ",\n " schemas);
         exit 0
 
+let handle_verify args =
+  let is_option a = String.length a > 0 && a.[0] = '-' in
+  let rec collect_policies acc = function
+    | [] ->
+        (List.rev acc, List.rev args |> List.filter is_option)
+    | a :: rest ->
+        if String.ends_with ~suffix:".lpf" a then
+          collect_policies (a :: acc) rest
+        else collect_policies acc rest
+  in
+  let policies, options = collect_policies [] args in
+  let sub =
+    List.find_opt
+      (fun a -> not (is_option a) && not (String.ends_with ~suffix:".lpf" a))
+      args
+  in
+  let read_ir path =
+    match Lpf.check_policy_text ~file:path (read_file path) with
+    | { Lpf.Policy.policy = Some ir; _ } -> Some ir
+    | _ -> None
+  in
+  let parse_flag flag args =
+    let rec loop = function
+      | [] -> None
+      | f :: v :: _ when String.equal f flag -> Some v
+      | _ :: rest -> loop rest
+    in
+    loop args
+  in
+  match sub with
+  | Some "check" -> (
+      match policies with
+      | [ path ] -> (
+          match read_ir path with
+          | Some ir ->
+              let dead = Lpf.Z3_verify.check_consistency ir in
+              if dead = [] then (
+                Printf.printf "%s is consistent (no dead rules)\n" path;
+                exit 0)
+              else (
+                List.iter
+                  (fun (d : Lpf.Z3_verify.dead_rule) ->
+                    Printf.printf "  line %d (%s): %s\n" d.line d.action
+                      d.reason)
+                  dead;
+                Printf.printf "%d dead rule(s) found\n" (List.length dead);
+                exit 1)
+          | None ->
+              prerr_endline "policy validation failed";
+              exit 1)
+      | _ ->
+          prerr_endline "usage: lpf verify check <policy>";
+          exit 64)
+  | Some "equiv" -> (
+      match policies with
+      | [ p1; p2 ] -> (
+          match (read_ir p1, read_ir p2) with
+          | Some ir1, Some ir2 -> (
+              match Lpf.Z3_verify.check_equivalence ir1 ir2 with
+              | Equivalent ->
+                  Printf.printf "%s and %s are equivalent\n" p1 p2;
+                  exit 0
+              | Not_equivalent { counterexample; decision_in_first; decision_in_second }
+                ->
+                  Printf.printf
+                    "%s and %s differ:\n  packet: %s:%d -> %s:%d\n  %s: %s\n  %s: %s\n"
+                    p1 p2 counterexample.source
+                    (Option.value ~default:0 counterexample.port)
+                    counterexample.destination
+                    (Option.value ~default:0 counterexample.port)
+                    p1 decision_in_first p2 decision_in_second;
+                  exit 1)
+          | _ ->
+              prerr_endline "one or both policies failed validation";
+              exit 1)
+      | _ ->
+          prerr_endline "usage: lpf verify equiv <policy1> <policy2>";
+          exit 64)
+  | Some "reachable" -> (
+      match policies with
+      | [ path ] -> (
+          match read_ir path with
+          | Some ir ->
+              let constraints =
+                let src = parse_flag "--src" options in
+                let dst = parse_flag "--dst" options in
+                let dport = parse_flag "--dport" options in
+                List.filter_map Fun.id
+                  [
+                    Option.map (fun v -> ("src", v)) src;
+                    Option.map (fun v -> ("dst", v)) dst;
+                    Option.map (fun v -> ("dport", v)) dport;
+                  ]
+              in
+              (match
+                 Lpf.Z3_verify.check_reachable ir ~constraints
+                   ~target_action:Lpf.Policy.Pass
+               with
+              | Reachable ce ->
+                  Printf.printf "reachable: %s:%d -> %s:%d (decision: %s)\n"
+                    ce.source
+                    (Option.value ~default:0 ce.port)
+                    ce.destination
+                    (Option.value ~default:0 ce.port)
+                    ce.decision;
+                  exit 0
+              | Unreachable ->
+                  Printf.printf "unreachable\n";
+                  exit 1)
+          | None ->
+              prerr_endline "policy validation failed";
+              exit 1)
+      | _ ->
+          prerr_endline
+            "usage: lpf verify reachable [--src <ip>] [--dst <ip>] [--dport \
+             <port>] <policy>";
+          exit 64)
+  | Some "invariant" -> (
+      match policies with
+      | [ path ] -> (
+          match read_ir path with
+          | Some ir ->
+              let conditions =
+                let dst = parse_flag "--dst" options in
+                let dport = parse_flag "--dport" options in
+                let src = parse_flag "--src" options in
+                let proto = parse_flag "--proto" options in
+                let flat =
+                  List.filter_map Fun.id
+                    [
+                      Option.map (fun v -> ("dst", "=>", v)) dst;
+                      Option.map (fun v -> ("dport", "=>", v)) dport;
+                      Option.map (fun v -> ("src", "=>", v)) src;
+                      Option.map (fun v -> ("proto", "=>", v)) proto;
+                    ]
+                in
+                List.map
+                  (fun (field, _op, value) ->
+                    Lpf.Z3_verify.Field (field, "=>", value))
+                  flat
+              in
+              (match Lpf.Z3_verify.check_invariant ir conditions with
+              | Holds ->
+                  Printf.printf "invariant holds: no matching packet passes\n";
+                  exit 0
+              | Violated ce ->
+                  Printf.printf
+                    "invariant violated: %s:%d -> %s:%d (decision: %s)\n"
+                    ce.source
+                    (Option.value ~default:0 ce.port)
+                    ce.destination
+                    (Option.value ~default:0 ce.port)
+                    ce.decision;
+                  exit 1)
+          | None ->
+              prerr_endline "policy validation failed";
+              exit 1)
+      | _ ->
+          prerr_endline
+            "usage: lpf verify invariant [--dst <ip>] [--dport <port>] <policy>";
+          exit 64)
+  | _ ->
+      prerr_endline
+        "usage: lpf verify <check|equiv|reachable|invariant> [options] <policy>";
+      exit 64
+
 let () =
   match Array.to_list Sys.argv with
   | [ _ ] | [ _; "--help" ] | [ _; "-h" ] | [ _; "help" ] ->
@@ -1370,6 +1536,7 @@ let () =
   | _ :: "man" :: args -> handle_man args
   | _ :: "tools" :: args -> handle_tools args
   | _ :: "sysctl" :: args -> handle_sysctl args
+  | _ :: "verify" :: args -> handle_verify args
   | _ :: "completion" :: args -> handle_completion args
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with

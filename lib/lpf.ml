@@ -19,6 +19,7 @@ type command = Command.command =
   | Completion
   | Version
   | Help
+  | Verify
 
 type command_doc = Command.command_doc = {
   command : command;
@@ -60,6 +61,7 @@ module Sysctl = Sysctl
 module Lpf_conf = Lpf_conf
 module Process = Process
 module File_util = File_util
+module Z3_verify = Z3_verify
 
 let version = Command.version
 let all_commands = Command.all_commands

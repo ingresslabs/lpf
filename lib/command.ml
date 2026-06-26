@@ -19,6 +19,7 @@ type command =
   | Completion
   | Version
   | Help
+  | Verify
 
 type command_doc = {
   command : command;
@@ -56,6 +57,7 @@ let all_commands =
     ("completion", Completion, "emit shell completion script");
     ("version", Version, "print lpf version");
     ("help", Help, "print general or command-specific help");
+    ("verify", Verify, "formally verify policy properties with Z3");
   ]
 
 let command_name = function
@@ -79,6 +81,7 @@ let command_name = function
   | Completion -> "completion"
   | Version -> "version"
   | Help -> "help"
+  | Verify -> "verify"
 
 let command_of_string name =
   all_commands
@@ -571,7 +574,7 @@ let help () =
     @ [
         "";
         "Read-only flows (check, fmt, plan, diff, explain, rules, man, tools, \
-         sysctl, completion) are implemented. Host mutation (apply, rollback, \
+         sysctl, verify, completion) are implemented. Host mutation (apply, rollback, \
          table, state) and per-backend rollback (nftables, tc, routing) are \
          supported.";
       ])
@@ -581,6 +584,7 @@ let command_status = function
   | Table | State | Rules | History | Man | Tools | Sysctl | Completion ->
       "implemented"
   | Ebpf -> "implemented"
+  | Verify -> "implemented"
   | Version | Help -> "implemented"
 
 let command_help command =

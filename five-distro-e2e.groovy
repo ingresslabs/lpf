@@ -138,6 +138,88 @@ fedora    ocaml/opam:fedora-41-ocaml-5.1           KERNEL_FEDORA   linux-7.1'''.
       }
     }
 
+    stage('Real Traffic E2E: eBPF datapath (privileged Docker)') {
+      // Run the full 4-layer eBPF conformance suite in privileged Docker
+      // containers. No Firecracker needed — containers run with /sys/fs/bpf
+      // mounted and --privileged for BPF program loading.
+      // Layer 0: prog_test_run verdict checks
+      // Layer 1: map state (conntrack, counters, ringbuf)
+      // Layer 2: userspace toolchain (lpf ebpf load/diff/explain)
+      // Layer 3: live veth pair + ping/iperf3 real traffic
+      parallel {
+        stage('ebpf:debian') {
+          steps {
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+              timeout(time: 20, unit: 'MINUTES') {
+                sh '''docker run --rm --privileged --user root \
+                  -v /sys/fs/bpf:/sys/fs/bpf \
+                  -v /sys/kernel/btf:/sys/kernel/btf:ro \
+                  --tmpfs /tmp \
+                  lpf-ci:debian \
+                  bash -lc "cd /home/opam/src && LPF_KERNEL_LABEL=debian-docker LPF_EBPF_LAYERS=0,1,2,3 LPF_EBPF_STRICT=1 ci/vagabond/ebpf-e2e-suite.sh"'''
+              }
+            }
+          }
+        }
+        stage('ebpf:ubuntu-22') {
+          steps {
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+              timeout(time: 20, unit: 'MINUTES') {
+                sh '''docker run --rm --privileged --user root \
+                  -v /sys/fs/bpf:/sys/fs/bpf \
+                  -v /sys/kernel/btf:/sys/kernel/btf:ro \
+                  --tmpfs /tmp \
+                  lpf-ci:ubuntu-22 \
+                  bash -lc "cd /home/opam/src && LPF_KERNEL_LABEL=ubuntu22-docker LPF_EBPF_LAYERS=0,1,2,3 LPF_EBPF_STRICT=1 ci/vagabond/ebpf-e2e-suite.sh"'''
+              }
+            }
+          }
+        }
+        stage('ebpf:ubuntu-24') {
+          steps {
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+              timeout(time: 20, unit: 'MINUTES') {
+                sh '''docker run --rm --privileged --user root \
+                  -v /sys/fs/bpf:/sys/fs/bpf \
+                  -v /sys/kernel/btf:/sys/kernel/btf:ro \
+                  --tmpfs /tmp \
+                  lpf-ci:ubuntu-24 \
+                  bash -lc "cd /home/opam/src && LPF_KERNEL_LABEL=ubuntu24-docker LPF_EBPF_LAYERS=0,1,2,3 LPF_EBPF_STRICT=1 ci/vagabond/ebpf-e2e-suite.sh"'''
+              }
+            }
+          }
+        }
+        stage('ebpf:alpine') {
+          steps {
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+              timeout(time: 20, unit: 'MINUTES') {
+                sh '''docker run --rm --privileged --user root \
+                  -v /sys/fs/bpf:/sys/fs/bpf \
+                  -v /sys/kernel/btf:/sys/kernel/btf:ro \
+                  --tmpfs /tmp \
+                  lpf-ci:alpine \
+                  bash -lc "cd /home/opam/src && LPF_KERNEL_LABEL=alpine-docker LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"'''
+              }
+            }
+          }
+        }
+        stage('ebpf:fedora') {
+          steps {
+            catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+              timeout(time: 20, unit: 'MINUTES') {
+                sh '''docker run --rm --privileged --user root \
+                  -v /sys/fs/bpf:/sys/fs/bpf \
+                  -v /sys/kernel/btf:/sys/kernel/btf:ro \
+                  --tmpfs /tmp \
+                  lpf-ci:fedora \
+                  bash -lc "cd /home/opam/src && LPF_KERNEL_LABEL=fedora-docker LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"'''
+              }
+            }
+          }
+        }
+      }
+    }
+
     stage('Firecracker E2E: eBPF conformance (5 distros × 5 kernels)') {
       when {
         expression { return params.RUN_FIRECRACKER && params.FIRECRACKER_ROOTFS?.trim() }
