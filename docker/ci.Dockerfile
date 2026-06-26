@@ -22,15 +22,15 @@ FROM ${BASE} AS ci
 USER root
 RUN if command -v apt-get >/dev/null 2>&1; then \
       apt-get update && \
-      apt-get install -y --no-install-recommends bash make python3 ca-certificates iproute2 nftables conntrack && \
+      apt-get install -y --no-install-recommends bash make python3 ca-certificates iproute2 nftables conntrack pkg-config libgmp-dev && \
       (apt-get install -y --no-install-recommends clang llvm libbpf-dev bpftool || true) && \
       rm -rf /var/lib/apt/lists/*; \
     elif command -v dnf >/dev/null 2>&1; then \
-      dnf install -y bash make python3 ca-certificates iproute iproute-tc nftables conntrack-tools && \
+      dnf install -y bash make python3 ca-certificates iproute iproute-tc nftables conntrack-tools pkg-config gmp-devel && \
       (dnf install -y clang llvm libbpf-devel bpftool || true) && \
       dnf clean all; \
     elif command -v apk >/dev/null 2>&1; then \
-      apk add --no-cache bash make python3 ca-certificates iproute2 nftables conntrack-tools && \
+      apk add --no-cache bash make python3 ca-certificates iproute2 nftables conntrack-tools pkgconfig gmp-dev && \
       (apk add --no-cache clang llvm libbpf-dev bpftool || true); \
     fi
 
