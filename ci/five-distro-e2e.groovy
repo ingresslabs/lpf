@@ -237,11 +237,12 @@ fedora    ocaml/opam:fedora-41-ocaml-5.1           KERNEL_FEDORA   linux-7.1'''.
             catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
               timeout(time: 20, unit: 'MINUTES') {
                 sh '''docker run --rm --privileged --user root \
+                  --entrypoint /bin/bash \
                   -v /sys/fs/bpf:/sys/fs/bpf \
                   -v /sys/kernel/btf:/sys/kernel/btf:ro \
                   --tmpfs /tmp \
                   lpf-ci:alpine \
-                  bash -lc "cd /home/opam/src && LPF_KERNEL_LABEL=alpine-docker LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"'''
+                  -lc "cd /home/opam/src && LPF_KERNEL_LABEL=alpine-docker LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"'''
               }
             }
           }
