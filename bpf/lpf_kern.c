@@ -42,6 +42,22 @@
 #define LPF_IPPROTO_ICMPV6 58
 #define LPF_IPPROTO_SCTP 132
 
+#ifndef TC_ACT_OK
+#define TC_ACT_OK 0
+#endif
+
+#ifndef TC_ACT_SHOT
+#define TC_ACT_SHOT 2
+#endif
+
+#ifndef AF_INET
+#define AF_INET 2
+#endif
+
+#ifndef EPERM
+#define EPERM 1
+#endif
+
 #define LPF_VERDICT_PASS 1
 #define LPF_VERDICT_DROP 2
 #define LPF_VERDICT_REJECT 3
@@ -528,7 +544,7 @@ static __always_inline int lpf_send_rst(struct __sk_buff *skb,
   __be32 tmp_seq = tcp->seq;
   tcp->seq = tcp->ack_seq;
   tcp->ack_seq = tmp_seq;
-  __be32_sum_add_word(tcp->ack_seq, 1);
+  tcp->ack_seq = bpf_htonl(bpf_ntohl(tcp->ack_seq) + 1);
 
   /* Reset flags: RST+ACK, clear everything else */
   tcp->fin = 0;
@@ -548,10 +564,21 @@ static __always_inline int lpf_send_rst(struct __sk_buff *skb,
 
   /* Shrink packet to headers only */
   __u32 ihl = ip->ihl * 4;
-  __u32 tcp_hdr_len = tcp->doff * 4;
+  if (ihl != sizeof(struct iphdr)) return TC_ACT_SHOT;
+  __u32 tcp_hdr_len = sizeof(struct tcphdr);
   __u32 new_len = sizeof(struct ethhdr) + ihl + tcp_hdr_len;
   long ret = bpf_skb_adjust_room(skb, -((long)skb->len - new_len), 0, 0);
   if (ret) return TC_ACT_SHOT;
+
+  void *data = (void *)(long)skb->data;
+  void *data_end = (void *)(long)skb->data_end;
+  eth = data;
+  if ((void *)(eth + 1) > data_end) return TC_ACT_SHOT;
+  ip = (void *)(eth + 1);
+  if ((void *)(ip + 1) > data_end) return TC_ACT_SHOT;
+  if ((void *)ip + ihl > data_end) return TC_ACT_SHOT;
+  tcp = (void *)ip + ihl;
+  if ((void *)(tcp + 1) > data_end) return TC_ACT_SHOT;
 
   /* Update IP total length */
   ip->tot_len = bpf_htons((__u16)(ihl + tcp_hdr_len));
@@ -826,8 +853,7 @@ int lpf_egress(struct __sk_buff *skb) {
    Hook 3: cgroup_skb ingress (per-cgroup identity, runs after XDP)
    ══════════════════════════════════════════════════════════════════════════ */
 
-SEC("cgroup_skb/ingress")
-int lpf_cgroup_ingress(struct __sk_buff *skb) {
+static __always_inline int lpf_cgroup_eval(struct __sk_buff *skb) {
   void *data = (void *)(long)skb->data;
   void *data_end = (void *)(long)skb->data_end;
   __u32 pkt_len = skb->len;
@@ -862,13 +888,18 @@ int lpf_cgroup_ingress(struct __sk_buff *skb) {
   return m.verdict == LPF_VERDICT_PASS ? 1 : 0;
 }
 
+SEC("cgroup_skb/ingress")
+int lpf_cgroup_ingress(struct __sk_buff *skb) {
+  return lpf_cgroup_eval(skb);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Hook 4: cgroup_skb egress
    ══════════════════════════════════════════════════════════════════════════ */
 
 SEC("cgroup_skb/egress")
 int lpf_cgroup_egress(struct __sk_buff *skb) {
-  return lpf_cgroup_ingress(skb); /* same logic, different hook */
+  return lpf_cgroup_eval(skb);
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -878,7 +909,7 @@ int lpf_cgroup_egress(struct __sk_buff *skb) {
 SEC("lsm/socket_connect")
 int BPF_PROG(lpf_lsm_connect, struct socket *sock, struct sockaddr *address,
               int addrlen) {
-  if (address->sa_family != AF_INET) return 1;
+  if (address->sa_family != AF_INET) return 0;
 
   struct sockaddr_in *addr = (struct sockaddr_in *)address;
   __be32 daddr = addr->sin_addr.s_addr;
@@ -895,8 +926,6 @@ int BPF_PROG(lpf_lsm_connect, struct socket *sock, struct sockaddr *address,
 
   __u32 rc = lpf_rule_count();
   __u32 dv = lpf_default_action();
-  __u64 pid_tgid = bpf_get_current_pid_tgid();
-
   struct lpf_match_ctx m = {
     .default_verdict = dv, .rule_count = rc, .proto = proto,
     .dport = dport, .saddr_mask = 0,
@@ -911,7 +940,7 @@ int BPF_PROG(lpf_lsm_connect, struct socket *sock, struct sockaddr *address,
   lpf_emit_event(m.verdict, m.matched, proto, dport,
                   zero, daddr, 3, 0);
 
-  return m.verdict == LPF_VERDICT_PASS ? 1 : -EPERM;
+  return m.verdict == LPF_VERDICT_PASS ? 0 : -EPERM;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -922,7 +951,7 @@ SEC("lsm/socket_bind")
 int BPF_PROG(lpf_lsm_bind, struct socket *sock, struct sockaddr *address,
               int addrlen) {
   /* reserved for egress source IP enforcement */
-  return 1;
+  return 0;
 }
 
 char _license[] SEC("license") = "GPL";

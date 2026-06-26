@@ -5,6 +5,7 @@
 #
 # XDP return codes: ABORTED=0, DROP=1, PASS=2.
 
+import atexit
 import os
 import json
 import re
@@ -13,7 +14,8 @@ import subprocess
 import sys
 
 PIN = "/sys/fs/bpf/lpftest"
-PROG = f"{PIN}/prog/lpf_ingress"
+PROG_ROOT = f"{PIN}/prog"
+PROG = f"{PROG_ROOT}/lpf_ingress"
 META = f"{PIN}/lpf_meta"
 RULES = f"{PIN}/lpf_rules"
 COUNTERS = f"{PIN}/lpf_counters"
@@ -30,6 +32,23 @@ DATA_OUT = "/tmp/lpf_pkt_out.bin"
 def sh(args):
     r = subprocess.run(args, capture_output=True, text=True)
     return r.returncode, r.stdout + r.stderr
+
+
+def cleanup():
+    sh(["rm", "-rf", PIN])
+
+
+def load_bpf():
+    cleanup()
+    os.makedirs(PROG_ROOT, exist_ok=True)
+    rc, out = sh(["bpftool", "prog", "loadall", "bpf/lpf_kern.o",
+                  PROG_ROOT, "pinmaps", PIN])
+    if rc != 0:
+        raise RuntimeError(f"bpftool loadall failed: {out}")
+
+
+load_bpf()
+atexit.register(cleanup)
 
 
 def u32le(n):
@@ -266,7 +285,7 @@ check("dst in set1 src outside", False, both,
 configure(False, [(PASS_V, TCP, 443, 443, 0, 0, 1)])  # keep_state=1
 pkt_ct = craft(TCP, 443)
 # Run once to create conntrack entry (via keep_state)
-run_xdp(pkt_ct)
+run_prog(pkt_ct)
 # Second run should hit ESTABLISHED fastpath and PASS
 check("ct: keep_state+established pass", False, [(PASS_V, TCP, 443, 443, 0, 0, 1)],
       P(TCP, 443), XDP_PASS)

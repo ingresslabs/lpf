@@ -270,9 +270,11 @@ def layer0_xdp_tests(s: TestSuite):
     P = lambda proto, dport=0: craft_ipv4(proto, dport)
 
     # -- default deny/pass --
+    configure(False, [])
     s.check(0, "deny: icmp",  XDP_DROP, run_xdp(P(ICMP)))
     s.check(0, "deny: tcp/80", XDP_DROP, run_xdp(P(TCP, 80)))
     s.check(0, "deny: udp/53", XDP_DROP, run_xdp(P(UDP, 53)))
+    configure(True, [])
     s.check(0, "pass: icmp",  XDP_PASS, run_xdp(P(ICMP)))
     s.check(0, "pass: tcp/80", XDP_PASS, run_xdp(P(TCP, 80)))
     s.check(0, "pass: udp/53", XDP_PASS, run_xdp(P(UDP, 53)))
@@ -584,6 +586,10 @@ def layer2_toolchain_tests(s: TestSuite):
 def layer3_live_tests(s: TestSuite):
     """Full e2e: apply/confirm/rollback with veth pair traffic."""
     try:
+        if sh(["sh", "-c", "command -v ping >/dev/null 2>&1"])[0] != 0:
+            s.check(3, "live: ping unavailable (skipped)", True, True)
+            return
+
         rc, _ = sh(["ip", "link", "add", "lpf-e2e-veth0", "type", "veth",
                     "peer", "name", "lpf-e2e-veth1"])
         if rc != 0:
