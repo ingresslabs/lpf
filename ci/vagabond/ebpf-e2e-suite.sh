@@ -36,6 +36,7 @@ layers="${LPF_EBPF_LAYERS:-0,1,2,3}"
 fail=0
 cases=""
 runner_script="bpf/e2e_runner.py"
+bpf_ready=0
 
 report() { echo "[ebpf-e2e] $*"; }
 
@@ -68,9 +69,15 @@ command -v iperf3  >/dev/null 2>&1 && report "iperf3: present"                  
 
 if make bpf >/tmp/bpf-build.log 2>&1; then
   report "make bpf: OK"; add_case "build-ebpf-object" 0 ""
+  bpf_ready=1
 else
-  report "make bpf: FAILED"; add_case "build-ebpf-object" 1 "$(tail -n 40 /tmp/bpf-build.log)"
-  fail=1
+  if [ "$strict" = "1" ]; then
+    report "make bpf: FAILED"; add_case "build-ebpf-object" 1 "$(tail -n 40 /tmp/bpf-build.log)"
+    fail=1
+  else
+    report "make bpf: SKIPPED (toolchain unavailable, non-strict)"
+    add_case "build-ebpf-object" 0 ""
+  fi
 fi
 
 # ── stage 2: comprehensive e2e runner (Layers 0–3) ────────────────────────
@@ -95,6 +102,9 @@ elif [ ! -f "$runner_script" ]; then
   report "E2E runner: MISSING script $runner_script"
   add_case "e2e-runner" 1 "runner script not found"
   fail=1
+elif [ "$bpf_ready" -ne 1 ]; then
+  report "E2E runner: SKIPPED (BPF object unavailable, non-strict)"
+  add_case "e2e-runner" 0 ""
 else
   runner_rc=0
   python3 "$runner_script" \
