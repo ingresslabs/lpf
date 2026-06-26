@@ -277,6 +277,24 @@ post-remove readback where applicable. Kernel-matrix jobs must keep requested,
 available, covered, and missing kernel labels separate; missing kernel images
 must never be counted as covered.
 
+### `lpf verify`
+
+Formally verify lpf policy properties using Z3 theorem proving. Requires the
+optional `lpf-verify` binary built with Z3 support (`opam install z3`).
+
+Commands (delegated to `lpf-verify`):
+- `consistency` — find dead/shadowed rules via SMT solving
+- `equivalence` — prove two policies semantically equivalent
+- `reachable` — check if a target action is reachable from constraints
+- `invariant` — prove a logical invariant holds for all packets
+- `minimize` — find minimal semantically-equivalent rule set
+- `coverage` — symbolic reverse-explanation of rule coverage
+- `gen-tests` — auto-generate boundary test fixtures
+- `backend-ebpf` — prove eBPF backend is semantically equivalent
+- `check-all` — run all verification passes
+
+Without Z3 installed, `lpf verify` prints installation instructions.
+
 ### `lpf man <operation>`
 
 Generate, check, and install man pages from OCaml command metadata.

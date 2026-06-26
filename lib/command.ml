@@ -574,9 +574,9 @@ let help () =
     @ [
         "";
         "Read-only flows (check, fmt, plan, diff, explain, rules, man, tools, \
-         sysctl, verify, completion) are implemented. Host mutation (apply, rollback, \
-         table, state) and per-backend rollback (nftables, tc, routing) are \
-         supported.";
+         sysctl, verify, completion) are implemented. Host mutation (apply, \
+         rollback, table, state) and per-backend rollback (nftables, tc, \
+         routing) are supported.";
       ])
 
 let command_status = function

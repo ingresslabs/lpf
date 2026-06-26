@@ -58,7 +58,7 @@ fi
 if bad_files=$(git ls-files | while IFS= read -r path; do
   [ -e "$path" ] || continue
   printf '%s\n' "$path"
-done | grep -E '(^ci/jenkins/|(^|/)(aero-install-support-[0-9-]+\.json|create_job[0-9]*\.py|disable_csrf\.groovy|security\.groovy|mini-e2e\.xml|lpf-[0-9a-f].*\.tar\.gz|lpf-firecracker.*\.xml|jenkins-.*\.(xml|json))$)' || true); then
+done | grep -E '(^ci/jenkins/(?!.*\.(sh|groovy)$)(?!README\.md).*|(^|/)(aero-install-support-[0-9-]+\.json|create_job[0-9]*\.py|disable_csrf\.groovy|security\.groovy|mini-e2e\.xml|lpf-[0-9a-f].*\.tar\.gz|lpf-firecracker.*\.xml|jenkins-.*\.(xml|json))$)' || true); then
   if [ -n "$bad_files" ]; then
     echo "::error::transient lab/helper artifacts are tracked"
     printf '%s\n' "$bad_files"

@@ -27,11 +27,7 @@ type counterexample = {
   rdr_applied : int option;
 }
 
-type dead_rule = {
-  line : int;
-  action : string;
-  reason : string;
-}
+type dead_rule = { line : int; action : string; reason : string }
 
 type equiv_result =
   | Equivalent
@@ -41,19 +37,15 @@ type equiv_result =
       decision_in_second : string;
     }
 
-type reachable_result =
-  | Reachable of counterexample
-  | Unreachable
+type reachable_result = Reachable of counterexample | Unreachable
 
 type invariant_clause =
-  | Field of string * string * string  (* field, op, value *)
+  | Field of string * string * string (* field, op, value *)
   | And of invariant_clause * invariant_clause
   | Or of invariant_clause * invariant_clause
   | Not of invariant_clause
 
-type invariant_result =
-  | Holds
-  | Violated of counterexample
+type invariant_result = Holds | Violated of counterexample
 
 (* Policy consistency: find dead/shadowed rules. *)
 val check_consistency : Ir.t -> dead_rule list
@@ -72,8 +64,7 @@ val check_reachable :
 
 (* Prove an invariant holds for ALL packets. The invariant is a
    tree of field conditions with AND/OR/NOT. *)
-val check_invariant :
-  Ir.t -> invariant_clause list -> invariant_result
+val check_invariant : Ir.t -> invariant_clause list -> invariant_result
 
 (* Find the minimal semantically-equivalent rule set. Uses Z3
    to determine which rules are redundant. *)
@@ -88,8 +79,9 @@ type rule_coverage = {
   action : string;
   reachable : bool;
   example : counterexample option;
-  (* If reachable, example is a concrete packet that hits this rule *)
+      (* If reachable, example is a concrete packet that hits this rule *)
 }
+
 val check_rule_coverage : Ir.t -> rule_coverage list
 
 (* Automated test generation: produce test fixtures that guarantee
@@ -103,12 +95,11 @@ type generated_test = {
   expected_action : string;
   rule_line : int option;
 }
+
 val generate_tests : Ir.t -> generated_test list
 
 (* Prove that the eBPF backend produces semantically identical
    results to the concrete explain engine for a given policy.
    This verifies the eBPF compilation pipeline is correct. *)
 val check_backend_equivalence :
-  ir:Ir.t ->
-  ebpf_rules:(Ir.rule -> bool) ->
-  equiv_result
+  ir:Ir.t -> ebpf_rules:(Ir.rule -> bool) -> equiv_result

@@ -150,8 +150,20 @@ val parse_per_cpu_counters : string -> counter list
    are emitted to a BPF ring buffer for userspace consumption. *)
 
 type ring_event =
-  | Rule_match of { rule_index : int; src : string; dst : string; port : int; verdict : string }
-  | Conntrack_new of { src : string; dst : string; sport : int; dport : int; proto : string }
+  | Rule_match of {
+      rule_index : int;
+      src : string;
+      dst : string;
+      port : int;
+      verdict : string;
+    }
+  | Conntrack_new of {
+      src : string;
+      dst : string;
+      sport : int;
+      dport : int;
+      proto : string;
+    }
   | Conntrack_expire of { src : string; dst : string; sport : int; dport : int }
   | Error_event of { message : string }
 

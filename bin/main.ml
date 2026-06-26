@@ -1349,24 +1349,23 @@ let handle_tools args =
 let handle_verify args =
   match Sys.getenv_opt "LPF_VERIFY_BIN" with
   | Some bin when Sys.file_exists bin ->
-    let cmd = Printf.sprintf "%s %s" bin (String.concat " " args) in
-    exit (Sys.command cmd)
-  | _ ->
-    if Sys.file_exists "lpf-verify" then begin
-      let cmd = Printf.sprintf "lpf-verify %s" (String.concat " " args) in
+      let cmd = Printf.sprintf "%s %s" bin (String.concat " " args) in
       exit (Sys.command cmd)
-    end else begin
-      prerr_endline "lpf verify: Z3 solver not available";
-      prerr_endline "";
-      prerr_endline "Install Z3 and build lpf-verify:";
-      prerr_endline "  brew install z3         # macOS";
-      prerr_endline "  apt install libz3-dev   # Debian/Ubuntu";
-      prerr_endline "  opam install z3";
-      prerr_endline "  dune build @install";
-      prerr_endline "";
-      prerr_endline "Then run: lpf-verify check policy.lpf";
-      exit 1
-    end
+  | _ ->
+      if Sys.file_exists "lpf-verify" then
+        let cmd = Printf.sprintf "lpf-verify %s" (String.concat " " args) in
+        exit (Sys.command cmd)
+      else (
+        prerr_endline "lpf verify: Z3 solver not available";
+        prerr_endline "";
+        prerr_endline "Install Z3 and build lpf-verify:";
+        prerr_endline "  brew install z3         # macOS";
+        prerr_endline "  apt install libz3-dev   # Debian/Ubuntu";
+        prerr_endline "  opam install z3";
+        prerr_endline "  dune build @install";
+        prerr_endline "";
+        prerr_endline "Then run: lpf-verify check policy.lpf";
+        exit 1)
 
 let () =
   match Array.to_list Sys.argv with
