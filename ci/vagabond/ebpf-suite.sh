@@ -24,6 +24,10 @@ set -uo pipefail
 
 # Make dune/opam tooling available when present (rootfs may ship an opam env).
 eval "$(opam env 2>/dev/null)" || true
+for opam_bin in /home/opam/.opam/*/bin; do
+  [ -d "$opam_bin" ] && PATH="$opam_bin:$PATH"
+done
+export PATH
 
 label="${LPF_KERNEL_LABEL:-$(uname -r)}"
 strict="${LPF_EBPF_STRICT:-0}"
@@ -114,7 +118,7 @@ fi
 # ── 4) OCaml eBPF conformance unit tests. ──────────────────────────────────
 
 if command -v dune >/dev/null 2>&1; then
-  if opam exec -- dune build @runtest >/tmp/ebpf-unit.log 2>&1; then
+  if dune build @runtest >/tmp/ebpf-unit.log 2>&1; then
     report "dune eBPF unit tests: OK"; add_case "ocaml-ebpf-unit" 0 ""
   else
     report "dune eBPF unit tests: FAILED"; add_case "ocaml-ebpf-unit" 1 "$(tail -n 40 /tmp/ebpf-unit.log)"; fail=1

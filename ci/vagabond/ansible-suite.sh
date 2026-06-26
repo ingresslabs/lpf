@@ -21,10 +21,11 @@ fail() { echo -e "${RED}FAIL${NC}: $*"; fail_count=$((fail_count + 1)); }
 
 ROLE_DIR="ansible/roles/lpf"
 PLAYBOOK_DIR="ansible/playbooks"
+export ANSIBLE_ROLES_PATH="${PWD}/ansible/roles${ANSIBLE_ROLES_PATH:+:${ANSIBLE_ROLES_PATH}}"
 
 # Ensure ansible is installed
 command -v ansible-playbook >/dev/null 2>&1 || {
-  pip3 install ansible ansible-lint 2>/dev/null || true
+  echo "ansible-playbook not found; install ansible in the CI image"
 }
 
 # Test 1: Role structure validation
@@ -84,7 +85,8 @@ EOF
     lpf_binary_url: ""
     lpf_policy_content: |
       set default deny
-      pass out proto tcp from any to any port { 80 443 } keep state
+      pass out proto tcp from any to any port 80 keep state
+      pass out proto tcp from any to any port 443 keep state
       pass out proto udp from any to any port 53 keep state
       block in from any to any
     lpf_apply_dry_run: true
@@ -101,7 +103,7 @@ EOF
 
     - name: Include lpf role tasks (check mode)
       include_role:
-        name: "ansible/roles/lpf"
+        name: lpf
         tasks_from: validate.yml
 
     - name: Test check command
@@ -172,8 +174,8 @@ fi
 # Test 7: Service template renders
 echo "=== Test 7: Service template ==="
 if [ -f "${ROLE_DIR}/templates/lpf.service.j2" ]; then
-  if grep -q "lpf-watchdog" "${ROLE_DIR}/templates/lpf.service.j2" && \
-     grep -q "ExecStart" "${ROLE_DIR}/templates/lpf.service.j2"; then
+  if grep -q "Firewall Watchdog" "${ROLE_DIR}/templates/lpf.service.j2" && \
+     grep -q "ExecStart=" "${ROLE_DIR}/templates/lpf.service.j2"; then
     pass "service template has required directives"
   else
     fail "service template incomplete"
@@ -190,7 +192,7 @@ while IFS= read -r -d '' file; do
     *.yml|*.j2|*.lpf|*.cfg|*.ini)
       ;;
     *)
-      unless [[ "$file" == *"README"* ]] || [[ "$file" == *".git"* ]]; then
+      if [[ "$file" != *"README"* ]] && [[ "$file" != *".git"* ]]; then
         echo "unexpected file: $file"
         errors=$((errors + 1))
       fi
