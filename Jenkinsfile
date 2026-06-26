@@ -1,23 +1,26 @@
-// lpf CI/CD pipeline — comprehensive Vagabond test matrix.
+// lpf CI/CD pipeline — end-to-end test matrix covering every subsystem.
 //
-// Exercises lpf across three axes using the Vagabond Jenkins plugin:
+// Exercises lpf across six axes:
 //
-//   * IMAGE matrix   — userspace feature suite (feature-suite.sh) in isolated
-//     Vagabond Docker sandboxes (nomad.container) across Debian/Ubuntu/Alpine.
-//   * KERNEL matrix  — eBPF datapath conformance (ebpf-suite.sh) in Vagabond
-//     Firecracker microVMs (nomad.firecracker), one per kernel from
-//     ci/kernels/kernel-matrix.tsv. Includes basic progrun (80 checks) and
-//     comprehensive 4-layer E2E runner (conntrack, IPv6, ringbuf, live veth).
-//   * E2E matrix     — full Firecracker E2E (ebpf-e2e-suite.sh): live veth
-//     traffic, apply/confirm/rollback cycle, conntrack listing, iperf3
-//     throughput under XDP filtering. Runs on a subset of kernels (LTS only).
+//   * IMAGE matrix      — userspace feature suite in Docker sandboxes (Debian/Ubuntu/Alpine)
+//   * UNIT+VAGABOND      — OCaml unit tests + feature suite in Vagabond isolation
+//   * eBPF conformance   — privileged Docker: BPF prog_run, kernel datapath
+//   * KERNEL matrix     — eBPF datapath in Firecracker microVMs (one per kernel)
+//   * E2E matrix        — full Firecracker E2E: live veth, apply/rollback, iperf3
+//   * CNI SANDBOX        — Docker CNI ADD/DEL/CHECK lifecycle with real traffic
+//   * CNI k3s E2E        — k3d cluster: pod-to-pod policy, NetworkPolicy translation
+//   * CNI kind E2E       — kind multi-node: cross-node traffic, 500-pod stress
+//   * L7 BPF filter      — DNS QNAME, HTTP host/method, TLS SNI in BPF
+//   * Service LB         — Maglev backend selection, connection affinity
+//   * Z3 VERIFICATION    — formal proof: consistency, coverage, minimize, eBPF equiv
 //
-// Security scanning (tsunami) is included as one optional example use case.
+// Stages are conditionally enabled via parameters with sensible defaults.
+
 pipeline {
   agent any
 
   options {
-    timeout(time: 120, unit: 'MINUTES')
+    timeout(time: 180, unit: 'MINUTES')
     disableConcurrentBuilds()
   }
 
@@ -33,15 +36,31 @@ pipeline {
     string(name: 'AVAILABLE_KERNELS', defaultValue: '',
            description: 'Kernel image mappings: "label=/path;label2=/path". Empty disables kernel matrix.')
     string(name: 'E2E_KERNELS', defaultValue: '',
-           description: 'Kernel subset for full E2E (veth+iperf3): "label=/path;label2=/path". Empty disables E2E matrix.')
+           description: 'Kernel subset for full E2E (veth+iperf3)')
     string(name: 'FIRECRACKER_ROOTFS', defaultValue: '',
            description: 'Path to the lpf rootfs image for Firecracker microVMs')
+
+    booleanParam(name: 'RUN_CNI_SANDBOX', defaultValue: true,
+           description: 'Run Docker CNI ADD/DEL/CHECK lifecycle tests')
+    booleanParam(name: 'RUN_CNI_K3S', defaultValue: false,
+           description: 'Run k3d cluster CNI E2E tests (requires k3d installed)')
+    booleanParam(name: 'RUN_CNI_KIND', defaultValue: false,
+           description: 'Run kind 3-node CNI E2E tests (requires kind installed)')
+    booleanParam(name: 'RUN_L7_BPF', defaultValue: true,
+           description: 'Run L7 BPF filtering tests (DNS/HTTP/TLS)')
+    booleanParam(name: 'RUN_SVC_LB', defaultValue: true,
+           description: 'Run Maglev service LB tests in BPF')
+    booleanParam(name: 'RUN_VERIFY', defaultValue: false,
+           description: 'Run Z3 formal verification on all policies (requires z3 installed)')
     booleanParam(name: 'RUN_SECURITY_SCAN', defaultValue: false,
-           description: 'Optional: run a security scan (tsunami) as example use case')
+           description: 'Optional: run a security scan (tsunami)')
   }
 
   stages {
-    stage('Image matrix: lpf features in isolated Vagabond sandboxes') {
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 1: Build all CI images (shared across subsequent stages)
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('Build CI images') {
       steps {
         script {
           def bases = [
@@ -50,49 +69,46 @@ pipeline {
             alpine: 'ocaml/opam:alpine-ocaml-5.1',
           ]
           def labels = params.IMAGE_MATRIX.split(',').collect { it.trim() }.findAll { it }
-          def branches = [:]
+          def builds = [:]
           for (lbl in labels) {
             def label = lbl
             def base = bases[label]
-            if (base == null) {
-              echo "skipping unknown image label '${label}'"
-              continue
+            if (base == null) continue
+            builds["build:${label}"] = {
+              sh "docker build -f Dockerfile.ci --build-arg BASE=${base} -t lpf-ci:${label} ."
             }
-            branches["image:${label}"] = {
-              stage("build lpf-ci:${label}") {
-                sh "docker build -f Dockerfile.ci --build-arg BASE=${base} -t lpf-ci:${label} ."
-              }
-              stage("unit + feature suite on ${label} (gate)") {
+          }
+          parallel builds
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 2: Unit tests + feature suite per image (gate)
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('Unit tests + feature suite (gate)') {
+      steps {
+        script {
+          def labels = params.IMAGE_MATRIX.split(',').collect { it.trim() }.findAll { it }
+          def branches = [:]
+          for (lbl in labels) {
+            def label = lbl
+            branches["gate:${label}"] = {
+              catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                 sh "docker run --rm lpf-ci:${label} opam exec -- dune runtest"
                 sh "docker run --rm lpf-ci:${label} bash -lc 'cd /home/opam/src && ci/vagabond/feature-suite.sh'"
               }
-              stage("feature suite in Vagabond isolation (${label})") {
-                def r = vagabondRun(
-                  image: "lpf-ci:${label}",
-                  target: params.SCAN_TARGET,
-                  runtime: 'nomad.container',
-                  network: 'none',
-                  dryRun: false,
-                  waitForCompletion: false,
-                  apiUrl: params.VAGABOND_API_URL,
-                  credentialsId: params.VAGABOND_CREDENTIALS_ID,
-                  command: ['bash', '-lc', 'cd /home/opam/src && ci/vagabond/feature-suite.sh'])
-                echo "launched feature suite in Vagabond (${label}): job=${r.jobId}"
-              }
             }
-          }
-          if (branches.isEmpty()) {
-            error "IMAGE_MATRIX produced no valid labels: '${params.IMAGE_MATRIX}'"
           }
           parallel branches
         }
       }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 3: eBPF conformance in privileged Docker
+    // ═══════════════════════════════════════════════════════════════════════
     stage('eBPF conformance (Docker, privileged)') {
-      // Run the full eBPF suite directly in the Docker CI container.
-      // Container runs privileged with /sys/fs/bpf mounted — no Firecracker VM needed.
-      // This avoids Vagabond VM timeout issues and gives results in ~3 min.
       steps {
         script {
           catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
@@ -109,7 +125,124 @@ pipeline {
       }
     }
 
-    stage('Kernel matrix: eBPF datapath in Firecracker microVMs') {
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 4: L7 BPF filtering tests (DNS QNAME, HTTP host, TLS SNI)
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('L7 BPF filtering (DNS / HTTP / TLS)') {
+      when { expression { return params.RUN_L7_BPF } }
+      steps {
+        script {
+          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+            sh '''
+              docker run --rm --privileged --user root \
+                -v /sys/fs/bpf:/sys/fs/bpf \
+                -v /sys/kernel/btf:/sys/kernel/btf:ro \
+                --tmpfs /tmp \
+                lpf-ci:debian \
+                bash -lc "cd /home/opam/src && bash ci/jenkins/l7-bpf-suite.sh"
+            '''
+          }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 5: Maglev service LB tests
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('Service LB (Maglev consistent hashing)') {
+      when { expression { return params.RUN_SVC_LB } }
+      steps {
+        script {
+          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+            sh '''
+              docker run --rm --privileged --user root \
+                -v /sys/fs/bpf:/sys/fs/bpf \
+                -v /sys/kernel/btf:/sys/kernel/btf:ro \
+                --tmpfs /tmp \
+                lpf-ci:debian \
+                bash -lc "cd /home/opam/src && bash ci/jenkins/svc-lb-suite.sh"
+            '''
+          }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 6: CNI sandbox tests (Docker ADD/DEL/CHECK lifecycle)
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('CNI sandbox (ADD/DEL/CHECK lifecycle)') {
+      when { expression { return params.RUN_CNI_SANDBOX } }
+      steps {
+        script {
+          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+            sh '''
+              docker run --rm --privileged --user root \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -v /sys/fs/bpf:/sys/fs/bpf \
+                -v /sys/kernel/btf:/sys/kernel/btf:ro \
+                --tmpfs /tmp \
+                --network host \
+                lpf-ci:debian \
+                bash -lc "cd /home/opam/src && bash ci/jenkins/cni-sandbox-suite.sh"
+            '''
+          }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 7: Z3 formal verification on all policy files
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('Z3 formal verification') {
+      when { expression { return params.RUN_VERIFY } }
+      steps {
+        script {
+          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+            sh '''
+              docker run --rm lpf-ci:debian \
+                bash -lc "cd /home/opam/src && bash ci/jenkins/verify-suite.sh"
+            '''
+          }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 8: CNI k3s cluster E2E (pod-to-pod, NetworkPolicy translation)
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('CNI k3s E2E (pod policy, NP translation)') {
+      when { expression { return params.RUN_CNI_K3S } }
+      steps {
+        script {
+          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+            timeout(time: 30, unit: 'MINUTES') {
+              sh 'bash ci/cni/k3s-e2e.sh'
+            }
+          }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 9: CNI kind 3-node E2E (cross-node, stress)
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('CNI kind 3-node E2E (cross-node, stress)') {
+      when { expression { return params.RUN_CNI_KIND } }
+      steps {
+        script {
+          catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+            timeout(time: 45, unit: 'MINUTES') {
+              sh 'bash ci/cni/kind-e2e.sh'
+            }
+          }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 10: Kernel matrix — eBPF in Firecracker microVMs
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('Kernel matrix: eBPF in Firecracker microVMs') {
       when { expression { return params.AVAILABLE_KERNELS?.trim() } }
       steps {
         script {
@@ -128,13 +261,8 @@ pipeline {
           for (k in desired) {
             def label = k
             def kernelImage = mapping[label]
-            if (kernelImage == null) {
-              echo "kernel ${label}: requested in matrix, no mapping; skipping"
-              continue
-            }
+            if (kernelImage == null) continue
             branches["kernel:${label}"] = {
-              // Batch-run mode: wait for Firecracker VM to complete eBPF suite,
-              // then gate on the JUnit result. Timeout 15min for VM boot + tests.
               stage("eBPF on kernel:${label}") {
                 timeout(time: 15, unit: 'MINUTES') {
                   def f = vagabondRun(
@@ -150,7 +278,7 @@ pipeline {
                     apiUrl: params.VAGABOND_API_URL,
                     credentialsId: params.VAGABOND_CREDENTIALS_ID,
                     command: ['bash', '-lc', "cd /home/opam/src && LPF_KERNEL_LABEL=${label} LPF_EBPF_LAYERS=0,1,2 ci/vagabond/ebpf-suite.sh"])
-                  echo "lpf eBPF on kernel ${label}: job=${f.jobId} status=${f.status}"
+                  echo "eBPF on kernel ${label}: job=${f.jobId} status=${f.status}"
                 }
               }
             }
@@ -164,11 +292,13 @@ pipeline {
       }
     }
 
-    stage('E2E matrix: full Firecracker e2e (live veth + apply/rollback)') {
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 11: Full E2E — live veth + apply/rollback + iperf3
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('E2E matrix: live veth + apply/rollback') {
       when { expression { return params.E2E_KERNELS?.trim() } }
       steps {
         script {
-          // Only run full E2E on LTS kernels (5.10, 5.15, 6.1, 6.6)
           def e2e_mapping = [:]
           params.E2E_KERNELS.split(';').each { pair ->
             def kv = pair.split('=')
@@ -181,7 +311,6 @@ pipeline {
             if (kernelImage == null) continue
             branches["e2e:${label}"] = {
               catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-                // Run full E2E: all 4 layers including live veth + iperf3
                 def f = vagabondRun(
                   image: 'lpf-ci:debian',
                   target: params.SCAN_TARGET,
@@ -189,14 +318,14 @@ pipeline {
                   kernel: kernelImage,
                   rootfs: params.FIRECRACKER_ROOTFS,
                   vcpu: 2,
-                  memoryMiB: 2048,        // more RAM for live traffic tests
-                  network: 'host',         // allow veth pair creation
+                  memoryMiB: 2048,
+                  network: 'host',
                   dryRun: false,
                   waitForCompletion: false,
                   apiUrl: params.VAGABOND_API_URL,
                   credentialsId: params.VAGABOND_CREDENTIALS_ID,
                   command: ['bash', '-lc', "cd /home/opam/src && LPF_KERNEL_LABEL=${label} LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"])
-                echo "lpf e2e on kernel ${label}: job=${f.jobId} status=${f.status}"
+                echo "e2e on kernel ${label}: job=${f.jobId} status=${f.status}"
               }
             }
           }
@@ -209,7 +338,43 @@ pipeline {
       }
     }
 
-    stage('Vagabond: security scan (optional example)') {
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 12: Vagabond feature suite in isolated sandboxes
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('Vagabond isolation: feature suite') {
+      steps {
+        script {
+          def labels = params.IMAGE_MATRIX.split(',').collect { it.trim() }.findAll { it }
+          def branches = [:]
+          for (lbl in labels) {
+            def label = lbl
+            branches["vagabond:${label}"] = {
+              def r = vagabondRun(
+                image: "lpf-ci:${label}",
+                target: params.SCAN_TARGET,
+                runtime: 'nomad.container',
+                network: 'none',
+                dryRun: false,
+                waitForCompletion: false,
+                apiUrl: params.VAGABOND_API_URL,
+                credentialsId: params.VAGABOND_CREDENTIALS_ID,
+                command: ['bash', '-lc', 'cd /home/opam/src && ci/vagabond/feature-suite.sh'])
+              echo "Vagabond feature suite (${label}): job=${r.jobId}"
+            }
+          }
+          if (branches.isEmpty()) {
+            echo 'No images for Vagabond isolation.'
+          } else {
+            parallel branches
+          }
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STAGE 13: Security scan (optional)
+    // ═══════════════════════════════════════════════════════════════════════
+    stage('Security scan (tsunami)') {
       when { expression { return params.RUN_SECURITY_SCAN } }
       steps {
         script {
@@ -231,11 +396,14 @@ pipeline {
 
   post {
     always {
-      junit testResults: 'junit-lpf-*.xml', allowEmptyResults: true
-      archiveArtifacts artifacts: 'vagabond-report-*.json, vagabond-artifacts/**', allowEmptyArchive: true, fingerprint: true
+      junit testResults: 'junit-lpf-*.xml, junit-cni-*.xml, junit-l7-*.xml, junit-svc-lb-*.xml, junit-verify-*.xml', allowEmptyResults: true
+      archiveArtifacts artifacts: 'vagabond-report-*.json, vagabond-artifacts/**, verify-report-*.json, cni-report-*.json, l7-report-*.json, svc-lb-report-*.json', allowEmptyArchive: true, fingerprint: true
     }
     success {
-      echo "lpf matrix OK -> images=[${params.IMAGE_MATRIX}]; kernels via nomad.firecracker when mapped; e2e via E2E_KERNELS"
+      echo "lpf matrix OK — images=[${params.IMAGE_MATRIX}] cni_sandbox=${params.RUN_CNI_SANDBOX} l7=${params.RUN_L7_BPF} svc_lb=${params.RUN_SVC_LB} cni_k3s=${params.RUN_CNI_K3S} cni_kind=${params.RUN_CNI_KIND} verify=${params.RUN_VERIFY}"
+    }
+    failure {
+      echo "lpf pipeline FAILED — check stage logs"
     }
   }
 }

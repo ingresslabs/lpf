@@ -9,7 +9,36 @@ If using `jc` CLI, create the folder then register jobs underneath it.
 |---|---|---|
 | `lpf/lpf-main` | `Jenkinsfile` | OCaml build, tests, Docker image, Vagabond runs |
  | `lpf/lpf-five-distro-e2e` | `ci/five-distro-e2e.groovy` | 5-distro Docker + Ansible + eBPF E2E pipeline |
-| `lpf/lpf-auto-release` | `ci/jenkins/auto-release.groovy` | Auto-release on merge to main: tags, pushes, cleans old GitHub Releases |
+ | `lpf/lpf-auto-release` | `ci/jenkins/auto-release.groovy` | Auto-release on merge to main: tags, pushes, cleans old GitHub Releases |
+
+## Pipeline stages (lpf-main, 13 stages)
+
+The `Jenkinsfile` runs every subsystem end-to-end:
+
+| # | Stage | Default | Tests |
+|---|-------|---------|-------|
+| 1 | Build CI images | `debian,alpine` | Parallel docker build per distro |
+| 2 | Unit + feature gate | on | `dune runtest` + `feature-suite.sh` per image |
+| 3 | eBPF conformance | on | BPF prog_test_run, kernel datapath in privileged Docker |
+| 4 | L7 BPF filtering | on | DNS QNAME, HTTP host/method, TLS SNI BPF sections |
+| 5 | Service LB | on | Maglev consistent hashing, connection affinity, backend health |
+| 6 | CNI sandbox | on | Docker CNI ADD/DEL/CHECK lifecycle, config parsing, error handling |
+| 7 | Z3 formal verification | off | `lpf-verify check-all` on all `.lpf` policy files |
+| 8 | CNI k3s E2E | off | k3d cluster: pod-to-pod, NetworkPolicy translation |
+| 9 | CNI kind E2E | off | kind 3-node: cross-node traffic, 500-pod stress |
+| 10 | Kernel matrix | on (when mapped) | eBPF in Firecracker microVMs, one per kernel version |
+| 11 | E2E matrix | on (when mapped) | Live veth + apply/rollback + iperf3 in Firecracker |
+| 12 | Vagabond isolation | on | Feature suite in Vagabond sandbox (nomad.container) |
+| 13 | Security scan | off | tsunami-dry-run in Vagabond |
+
+### Suite scripts (invoked by Jenkins stages)
+
+| Script | Purpose | JUnit output |
+|--------|---------|-------------|
+| `ci/jenkins/cni-sandbox-suite.sh` | CNI binary: VERSION, config parse, ADD/DEL/CHECK, error handling | `junit-cni-sandbox.xml` |
+| `ci/jenkins/l7-bpf-suite.sh` | L7 BPF: DNS/HTTP/TLS parsers, ELF sections, map definitions | `junit-l7-bpf.xml` |
+| `ci/jenkins/svc-lb-suite.sh` | Service LB: Maglev hash, lpf_svc_lookup, backend health, XDP integration | `junit-svc-lb.xml` |
+| `ci/jenkins/verify-suite.sh` | Z3 verification: consistency + coverage on all policies | `junit-verify.xml` |
 
 ## Setup via Jenkins UI
 
