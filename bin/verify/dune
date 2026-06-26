@@ -1,0 +1,6 @@
+(executable
+ (enabled_if
+  (= %{env:ENABLE_LPF_VERIFY=0} 1))
+ (public_name lpf-verify)
+ (name main)
+ (libraries lpf lpf_z3 unix))

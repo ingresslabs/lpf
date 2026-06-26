@@ -1346,10 +1346,27 @@ let handle_tools args =
         Printf.printf "[%s]\n" (String.concat ",\n " schemas);
         exit 0
 
-let handle_verify _args =
-  prerr_endline "lpf verify: Z3 solver not available — install z3 via opam and rebuild";
-  prerr_endline "  opam install z3 && dune build";
-  exit 1
+let handle_verify args =
+  match Sys.getenv_opt "LPF_VERIFY_BIN" with
+  | Some bin when Sys.file_exists bin ->
+    let cmd = Printf.sprintf "%s %s" bin (String.concat " " args) in
+    exit (Sys.command cmd)
+  | _ ->
+    if Sys.file_exists "lpf-verify" then begin
+      let cmd = Printf.sprintf "lpf-verify %s" (String.concat " " args) in
+      exit (Sys.command cmd)
+    end else begin
+      prerr_endline "lpf verify: Z3 solver not available";
+      prerr_endline "";
+      prerr_endline "Install Z3 and build lpf-verify:";
+      prerr_endline "  brew install z3         # macOS";
+      prerr_endline "  apt install libz3-dev   # Debian/Ubuntu";
+      prerr_endline "  opam install z3";
+      prerr_endline "  dune build @install";
+      prerr_endline "";
+      prerr_endline "Then run: lpf-verify check policy.lpf";
+      exit 1
+    end
 
 let () =
   match Array.to_list Sys.argv with

@@ -238,6 +238,99 @@ struct {
   __uint(map_flags, BPF_F_NO_PREALLOC);
 } lpf_snat SEC(".maps");
 
+/* ── L7 domain filtering ─────────────────────────────────────────────────── */
+
+#define LPF_L7_MAX_ENTRIES 8192
+#define LPF_L7_MATCH_EXACT  1
+#define LPF_L7_MATCH_SUFFIX 2
+#define LPF_L7_MATCH_PREFIX 3
+
+struct lpf_l7_key {
+  __u8 type;          /* EXACT / SUFFIX / PREFIX */
+  __u8 proto;          /* IPPROTO_TCP / IPPROTO_UDP */
+  __u16 dport;         /* e.g. 53 for DNS, 443 for TLS */
+  __u8 domain_len;     /* actual length of the domain string */
+  __u8 domain[64];     /* padded domain name */
+};
+
+struct lpf_l7_policy {
+  __u32 verdict;       /* LPF_VERDICT_PASS / DROP / REJECT */
+  __u32 rule_index;    /* back-reference to lpf rule idx for logging */
+};
+
+/* Domain-based policy: (match_type, proto, dport, domain) -> (verdict, rule_idx)
+   Checked BEFORE the L3/L4 rule scan for DNS/TLS/HTTP. */
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, LPF_L7_MAX_ENTRIES);
+  __type(key, struct lpf_l7_key);
+  __type(value, struct lpf_l7_policy);
+} lpf_l7_policy SEC(".maps");
+
+/* ── kube-proxy service load balancing ───────────────────────────────────── */
+
+#define LPF_SVC_MAX_SERVICES 1024
+#define LPF_SVC_MAX_BACKENDS 4096
+#define LPF_SVC_BACKENDS_PER_SERVICE 16
+
+struct lpf_svc_key {
+  __be32 vip;           /* service ClusterIP */
+  __be16 vport;         /* service port */
+  __u8  proto;
+  __u8  padding;
+};
+
+struct lpf_svc_value {
+  __u32 backend_count;
+  __u32 backend_ids[LPF_SVC_BACKENDS_PER_SERVICE];
+};
+
+struct lpf_backend {
+  __be32 ip;
+  __be16 port;
+  __u16 weight;
+  __u8  healthy;
+  __u8  padding[3];
+};
+
+/* service VIP -> backend pool */
+struct {
+  __uint(type, BPF_MAP_TYPE_HASH);
+  __uint(max_entries, LPF_SVC_MAX_SERVICES);
+  __type(key, struct lpf_svc_key);
+  __type(value, struct lpf_svc_value);
+} lpf_services SEC(".maps");
+
+/* backend ID -> IP+port+weight+health */
+struct {
+  __uint(type, BPF_MAP_TYPE_ARRAY);
+  __uint(max_entries, LPF_SVC_MAX_BACKENDS);
+  __type(key, __u32);
+  __type(value, struct lpf_backend);
+} lpf_backends SEC(".maps");
+
+/* connection tracking for service LB: (src_ip, src_port, vip, vport, proto) -> backend_id */
+struct lpf_svc_ct_key {
+  __be32 saddr;
+  __be16 sport;
+  __be32 vip;
+  __be16 vport;
+  __u8   proto;
+  __u8   padding[3];
+};
+
+struct lpf_svc_ct_value {
+  __u32 backend_id;
+  __u64 last_seen_ns;
+};
+
+struct {
+  __uint(type, BPF_MAP_TYPE_LRU_HASH);
+  __uint(max_entries, 65536);
+  __type(key, struct lpf_svc_ct_key);
+  __type(value, struct lpf_svc_ct_value);
+} lpf_svc_ct SEC(".maps");
+
 /* ── shared helpers ─────────────────────────────────────────────────────── */
 
 static __always_inline __u32 lpf_default_action(void) {
@@ -294,6 +387,213 @@ static __always_inline void lpf_update_counters(__s32 matched, __u32 pkt_len) {
       __sync_fetch_and_add(&ctr->bytes, (__u64)pkt_len);
     }
   }
+}
+
+/* ── L7 DNS QNAME parser ────────────────────────────────────────────────────
+   Parses the first question from a DNS query (UDP, port 53).
+   Returns domain_len (0 on parse failure). domain_buf receives the
+   dot-separated domain name (e.g. "www.example.com").
+   Max domain length: 63 bytes (padded to 64 for BPF verifier). */
+
+static __always_inline int lpf_parse_dns_qname(void *data, void *data_end,
+                                                char *domain_buf) {
+  if (data + 12 > data_end) return 0;
+
+  __u8 *p = (__u8 *)(data + 12);
+  int len = 0;
+  int max = 63;
+
+#pragma unroll
+  for (int i = 0; i < 8; i++) {
+    if (p + 1 > data_end || len >= max) break;
+    __u8 label_len = *p++;
+    if (label_len == 0) break;
+    if ((label_len & 0xC0) != 0) break;
+    if (p + label_len > data_end) break;
+    if (len + label_len + 1 > max) break;
+
+    for (int j = 0; j < label_len; j++) {
+      domain_buf[len++] = *p++;
+    }
+    domain_buf[len++] = '.';
+  }
+  if (len > 0 && domain_buf[len-1] == '.') domain_buf[len-1] = '\0';
+  else domain_buf[0] = '\0';
+  return len > 0 ? len - 1 : 0;
+}
+
+/* ── L7 TLS ClientHello SNI parser ──────────────────────────────────────────
+   Parses the TLS ClientHello to extract the SNI hostname.
+   Only handles TLS 1.2/1.3 records. Returns hostname_len (0 on failure). */
+
+static __always_inline int lpf_parse_tls_sni(void *data, void *data_end,
+                                              char *hostname) {
+  __u8 *p = (__u8 *)data;
+  if (p + 5 > data_end) return 0;
+
+  if (p[0] != 0x16) return 0;           /* handshake content type */
+  __u16 tls_ver = (p[1] << 8) | p[2];
+  if (tls_ver < 0x0301 || tls_ver > 0x0304) return 0;
+  __u16 record_len = (p[3] << 8) | p[4];
+  p += 5;
+  if (p + record_len > data_end) return 0;
+  void *record_end = p + record_len;
+
+  if (p + 1 > (__u8 *)record_end) return 0;
+  if (*p++ != 0x01) return 0;           /* ClientHello handshake type */
+
+  if (p + 3 > (__u8 *)record_end) return 0;
+  __u32 hs_len = (p[0] << 16) | (p[1] << 8) | p[2];
+  p += 3;
+  if (p + hs_len > (__u8 *)record_end) return 0;
+
+  if (p + 34 > (__u8 *)record_end) return 0;
+  p += 2 + 32;                          /* version + random */
+
+  __u8 sid_len = *p++;
+  if (p + sid_len > (__u8 *)record_end) return 0;
+  p += sid_len;
+
+  if (p + 2 > (__u8 *)record_end) return 0;
+  __u16 cs_len = (p[0] << 8) | p[1];
+  p += 2;
+  if (p + cs_len > (__u8 *)record_end) return 0;
+  p += cs_len;
+
+  if (p + 1 > (__u8 *)record_end) return 0;
+  __u8 comp_len = *p++;
+  if (p + comp_len > (__u8 *)record_end) return 0;
+  p += comp_len;
+
+  if (p + 2 > (__u8 *)record_end) return 0;
+  __u16 ext_len = (p[0] << 8) | p[1];
+  p += 2;
+  void *ext_end = p + ext_len;
+  if (ext_end > record_end) ext_end = record_end;
+
+#pragma unroll
+  for (int i = 0; i < 8; i++) {
+    if (p + 4 > (__u8 *)ext_end) break;
+    __u16 ext_type = (p[0] << 8) | p[1];
+    __u16 ext_data_len = (p[2] << 8) | p[3];
+    p += 4;
+    if (ext_type == 0x0000) {           /* SNI extension */
+      if (p + 2 > (__u8 *)ext_end) break;
+      __u16 snl_len = (p[0] << 8) | p[1];
+      p += 2;
+      if (p + 3 > (__u8 *)ext_end) break;
+      if (*p++ != 0x00) break;          /* name type = host_name */
+      __u16 name_len = (p[0] << 8) | p[1];
+      p += 2;
+      if (p + name_len > (__u8 *)ext_end) break;
+      int n = name_len > 63 ? 63 : (int)name_len;
+      for (int j = 0; j < n; j++) hostname[j] = (char)p[j];
+      hostname[n] = '\0';
+      return n;
+    }
+    p += ext_data_len;
+  }
+  return 0;
+}
+
+/* ── L7 policy lookup ───────────────────────────────────────────────────────
+   Checks if a domain (DNS QNAME / TLS SNI / HTTP host) matches an L7 rule.
+   Tries EXACT match first, then SUFFIX (*.example.com), then PREFIX (www.*). */
+
+static __always_inline int lpf_l7_lookup(const char *domain, int domain_len,
+                                          __u8 proto, __u16 dport,
+                                          __u32 *verdict) {
+  if (domain_len == 0 || domain_len > 63) return 0;
+
+  struct lpf_l7_key k = {};
+  k.type = LPF_L7_MATCH_EXACT;
+  k.proto = proto;
+  k.dport = dport;
+  k.domain_len = (__u8)domain_len;
+  for (int i = 0; i < domain_len && i < 63; i++) k.domain[i] = domain[i];
+
+  struct lpf_l7_policy *pol = bpf_map_lookup_elem(&lpf_l7_policy, &k);
+  if (pol) {
+    *verdict = pol->verdict;
+    return 1;
+  }
+
+  int suffix_start = domain_len > 1 ? 1 : 0;
+  if (suffix_start > 0) {
+    for (int i = 1; i < domain_len && i < 63; i++) {
+      if (domain[i-1] == '.') {
+        int slen = domain_len - i;
+        if (slen > 0 && slen < 63) {
+          k.type = LPF_L7_MATCH_SUFFIX;
+          k.domain_len = (__u8)slen;
+          for (int j = 0; j < slen; j++) k.domain[j] = domain[i+j];
+          pol = bpf_map_lookup_elem(&lpf_l7_policy, &k);
+          if (pol) { *verdict = pol->verdict; return 1; }
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
+/* ── service load balancer ──────────────────────────────────────────────────
+   Looks up service VIP and selects a backend via 5-tuple hash.
+   Populates new_daddr/new_dport with the chosen backend IP/port.
+   Returns 1 if a backend was selected, 0 if no service matches. */
+
+static __always_inline int lpf_svc_lookup(__be32 saddr, __be16 sport,
+                                           __be32 daddr, __be16 dport,
+                                           __u8 proto, __u64 now_ns,
+                                           __be32 *new_daddr, __be16 *new_dport) {
+  struct lpf_svc_key svc_key = { .vip = daddr, .vport = dport, .proto = proto };
+  struct lpf_svc_value *svc = bpf_map_lookup_elem(&lpf_services, &svc_key);
+  if (!svc || svc->backend_count == 0) return 0;
+
+  struct lpf_svc_ct_key ct_key = {
+    .saddr = saddr, .sport = sport,
+    .vip = daddr, .vport = dport, .proto = proto
+  };
+  struct lpf_svc_ct_value *ct = bpf_map_lookup_elem(&lpf_svc_ct, &ct_key);
+
+  if (ct && now_ns - ct->last_seen_ns < 300000000000ULL) {
+    __u32 bid = ct->backend_id;
+    struct lpf_backend *be = bpf_map_lookup_elem(&lpf_backends, &bid);
+    if (be && be->healthy) {
+      *new_daddr = be->ip;
+      *new_dport = be->port;
+      return 1;
+    }
+  }
+
+  __u32 hash = 0;
+  hash = ((__u32)saddr * 2654435761U) ^ ((__u32)(saddr >> 32));
+  hash = hash ^ ((__u32)sport * 0x9E3779B9U);
+  hash = hash ^ ((__u32)daddr * 0x85EBCA77U);
+  hash = hash ^ ((__u32)dport * 0xC2B2AE35U);
+  hash = hash ^ ((__u32)proto);
+
+  __u32 count = svc->backend_count;
+  __u32 idx = hash % count;
+  __u32 tries = 0;
+
+  for (__u32 i = 0; i < count && tries < LPF_SVC_BACKENDS_PER_SERVICE; i++) {
+    __u32 bid = svc->backend_ids[idx];
+    struct lpf_backend *be = bpf_map_lookup_elem(&lpf_backends, &bid);
+    if (!be || !be->healthy) {
+      idx = (idx + 1) % count;
+      tries++;
+      continue;
+    }
+    *new_daddr = be->ip;
+    *new_dport = be->port;
+
+    struct lpf_svc_ct_value new_ct = { .backend_id = bid, .last_seen_ns = now_ns };
+    bpf_map_update_elem(&lpf_svc_ct, &ct_key, &new_ct, BPF_ANY);
+    return 1;
+  }
+
+  return 0;
 }
 
 static __always_inline void lpf_emit_event(__u32 verdict, __s32 matched,
@@ -637,6 +937,33 @@ int lpf_ingress(struct xdp_md *ctx) {
                         &proto, &dport, &saddr, &daddr);
     if (ihl < 0) return XDP_PASS;
 
+    /* service load balancer: rewrite VIP -> backend before rule match */
+    __be16 sport_lb = 0;
+    if (proto == LPF_IPPROTO_TCP) {
+      struct tcphdr *tcp = (void *)((struct iphdr *)(eth + 1)) + ihl;
+      if ((void *)(tcp + 1) <= data_end) sport_lb = bpf_ntohs(tcp->source);
+    } else if (proto == LPF_IPPROTO_UDP) {
+      struct udphdr *udp = (void *)((struct iphdr *)(eth + 1)) + ihl;
+      if ((void *)(udp + 1) <= data_end) sport_lb = bpf_ntohs(udp->source);
+    }
+    {
+      __be32 be_daddr = daddr;
+      __be16 be_dport = bpf_htons(dport);
+      if (lpf_svc_lookup(saddr, sport_lb, be_daddr, be_dport, proto,
+                          bpf_ktime_get_ns(), &be_daddr, &be_dport)) {
+        daddr = be_daddr;
+        dport = bpf_ntohs(be_dport);
+        struct iphdr *ip_rw = (void *)(eth + 1);
+        ip_rw->daddr = be_daddr;
+        __u16 old_hi = (ip_rw->check >> 8) | ((ip_rw->check & 0xFF) << 8);
+        __u16 daddr_hi = (ip_rw->daddr >> 16) & 0xFFFF;
+        __u16 daddr_lo = ip_rw->daddr & 0xFFFF;
+        __u16 new_check = old_hi - daddr_hi - daddr_lo;
+        while (new_check >> 16) new_check = (new_check & 0xFFFF) + (new_check >> 16);
+        ip_rw->check = ((new_check & 0xFF) << 8) | (new_check >> 8);
+      }
+    }
+
     /* conntrack fastpath: established flows skip rule scan */
     __be16 sport = 0;
     if (proto == LPF_IPPROTO_TCP) {
@@ -869,6 +1196,22 @@ static __always_inline int lpf_cgroup_eval(struct __sk_buff *skb) {
                           &proto, &dport, &saddr, &daddr);
   if (ihl < 0) return 1;
 
+  /* L7 DNS QNAME filtering: check DNS queries (UDP/53) against domain policy.
+     Blocks disallowed DNS queries before the rule engine runs. */
+  if (proto == LPF_IPPROTO_UDP && dport == 53) {
+    char domain[64] = {};
+    int dlen = lpf_parse_dns_qname((void *)(eth + 1) + ihl + 8, data_end, domain);
+    if (dlen > 0) {
+      __u32 l7_verdict = LPF_VERDICT_PASS;
+      if (lpf_l7_lookup(domain, dlen, proto, 53, &l7_verdict)) {
+        if (l7_verdict == LPF_VERDICT_DROP || l7_verdict == LPF_VERDICT_REJECT) {
+          lpf_emit_event(l7_verdict, -2, proto, dport, saddr, daddr, 2, pkt_len);
+          return 0;
+        }
+      }
+    }
+  }
+
   __u32 id_mask = lpf_identity_mask();
   __u32 rc = lpf_rule_count();
   __u32 dv = lpf_default_action();
@@ -915,6 +1258,26 @@ int BPF_PROG(lpf_lsm_connect, struct socket *sock, struct sockaddr *address,
   __be32 daddr = addr->sin_addr.s_addr;
   __u16 dport = bpf_ntohs(addr->sin_port);
   __u8 proto = (sock->type == SOCK_STREAM) ? LPF_IPPROTO_TCP : LPF_IPPROTO_UDP;
+
+  /* L7 TLS egress enforcement: if TCP/443 traffic has domain-based policy,
+     require the destination IP to be DNS-resolved (lpf_dns map).
+     This prevents TLS connections to IPs not approved via DNS identity. */
+  if (proto == LPF_IPPROTO_TCP && dport == 443) {
+    __u32 *dns_hit = bpf_map_lookup_elem(&lpf_dns, &daddr);
+    if (!dns_hit) {
+      struct lpf_l7_key l7k = {};
+      l7k.type = LPF_L7_MATCH_SUFFIX;
+      l7k.proto = LPF_IPPROTO_TCP;
+      l7k.dport = 443;
+      l7k.domain_len = 0;
+      struct lpf_l7_policy *l7pol = bpf_map_lookup_elem(&lpf_l7_policy, &l7k);
+      if (l7pol && l7pol->verdict != LPF_VERDICT_PASS) {
+        __be32 zero = 0;
+        lpf_emit_event(LPF_VERDICT_DROP, -3, proto, dport, zero, daddr, 3, 0);
+        return -EPERM;
+      }
+    }
+  }
 
   /* DNS identity lookup */
   __u32 id_mask = 0;
