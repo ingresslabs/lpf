@@ -9,5 +9,4 @@
   (depends
    (ocaml (>= 5.1))
    (dune (>= 3.11))
-   (z3 (and (>= 4.8) :with-test))
    (ocamlformat (and (= 0.26.2) :with-test))))

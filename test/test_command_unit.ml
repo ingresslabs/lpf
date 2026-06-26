@@ -10,7 +10,7 @@ let () =
   require (String.length (Lpf.help ()) > 100) "help should be non-trivial";
 
   let all = Lpf.all_commands in
-  require (List.length all = 20) "should be 20 commands";
+  require (List.length all = 21) "should be 21 commands";
 
   List.iter
     (fun (name, command, _summary) ->
