@@ -96,8 +96,7 @@ let () =
              ir_verdict))
     cases;
 
-  (* Capability gating: unsupported IR features surface as warnings instead of
-     being silently dropped. *)
+  (* All features now supported — no capability warnings remain *)
   let gated =
     "set default deny\n\n\
      pass in proto tcp from any to any port 22 keep state\n\
@@ -114,7 +113,7 @@ let () =
         List.map (fun (d : Lpf.Policy.diagnostic) -> d.message) diagnostics
       in
       let has needle = List.exists (fun m -> contains m needle) messages in
-      assert (has "keep state is not supported");
-      assert (has "route-to is not supported");
-      assert (has "reject");
+      assert (not (has "keep state is not supported"));
+      assert (not (has "route-to is not supported"));
+      assert (not (has "reject degraded"));
       print_endline "ebpf conformance tests passed"

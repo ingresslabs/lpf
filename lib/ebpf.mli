@@ -19,7 +19,7 @@ type identity =
   | Id_proc of string
   | Id_dns of string
 
-type map_kind = Array | Hash | Lpm_trie
+type map_kind = Array | Hash | Lpm_trie | Lru_hash | Ringbuf
 
 type map = {
   name : string;
@@ -51,6 +51,9 @@ type rule = {
   saddr_set : int;
   daddr_set : int;
   identity : identity;
+  keep_state : bool;
+  route_gw : int32;
+  queue_id : int;
   comment : string;
 }
 
@@ -112,3 +115,63 @@ val classify : t -> Explain.packet -> string
 (* Capability gating: warnings for IR features the eBPF datapath cannot enforce
    (nat, rdr, queue/QoS, route-to, keep state, reject). *)
 val capability_diagnostics : Ir.t -> Policy.diagnostic list
+
+(* ── Map versioning for atomic policy swaps ───────────────────────────────
+
+   Instead of reloading the BPF program, versioned maps allow atomic
+   "flip" between policy versions without traffic interruption.
+   Version 1 reads from map_v1, version 2 reads from map_v2.
+   The active version index decides which map is consulted. *)
+
+val versioned_loader_script : t -> string
+(** Like loader_script but generates pin path suffixes for
+    atomic map version swaps: lpf_rules_v1, lpf_rules_v2,
+    and an atomic version-index map. *)
+
+val version_index_map : string
+(** Name of the BPF array map storing the active version index. *)
+
+(* ── Per-CPU counters ─────────────────────────────────────────────────────
+
+   Instead of a single global counter per rule (which creates
+   contention on multi-core), per-CPU counters use BPF_MAP_TYPE_PERCPU_ARRAY.
+   Counters are summed at read time. *)
+
+val per_cpu_counter_map : string
+(** Name of the per-CPU counter map. *)
+
+val parse_per_cpu_counters : string -> counter list
+(** Parse `bpftool map dump` output from a PERCPU_ARRAY counter map.
+    Automatically sums per-CPU values. *)
+
+(* ── Ring buffer events ───────────────────────────────────────────────────
+
+   Structured events (rule matches, drops, rejects, conntrack state changes)
+   are emitted to a BPF ring buffer for userspace consumption. *)
+
+type ring_event =
+  | Rule_match of {
+      rule_index : int;
+      src : string;
+      dst : string;
+      port : int;
+      verdict : string;
+    }
+  | Conntrack_new of {
+      src : string;
+      dst : string;
+      sport : int;
+      dport : int;
+      proto : string;
+    }
+  | Conntrack_expire of { src : string; dst : string; sport : int; dport : int }
+  | Error_event of { message : string }
+
+val ring_buffer_name : string
+(** Name of the BPF ring buffer map for structured events. *)
+
+val parse_ring_event : string -> ring_event option
+(** Parse a single ring buffer record into a typed event. *)
+
+val ring_events_to_json : ring_event list -> string
+(** Serialize ring events as a JSON array. *)

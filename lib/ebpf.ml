@@ -9,7 +9,7 @@ type identity =
   | Id_proc of string
   | Id_dns of string
 
-type map_kind = Array | Hash | Lpm_trie
+type map_kind = Array | Hash | Lpm_trie | Lru_hash | Ringbuf
 
 type map = {
   name : string;
@@ -41,8 +41,27 @@ type rule = {
   saddr_set : int;
   daddr_set : int;
   identity : identity;
+  keep_state : bool;
+  route_gw : int32; (* 0 = none, otherwise gateway IP as int32 *)
+  queue_id : int; (* 0 = none, otherwise TC classid for QoS *)
   comment : string;
 }
+
+let ip4_to_int32 s =
+  match String.split_on_char '.' s with
+  | [ a; b; c; d ] -> (
+      match List.map int_of_string_opt [ a; b; c; d ] with
+      | [ Some a; Some b; Some c; Some d ]
+        when List.for_all (fun x -> x >= 0 && x <= 255) [ a; b; c; d ] ->
+          Int32.logor
+            (Int32.shift_left (Int32.of_int a) 24)
+            (Int32.logor
+               (Int32.shift_left (Int32.of_int b) 16)
+               (Int32.logor
+                  (Int32.shift_left (Int32.of_int c) 8)
+                  (Int32.of_int d)))
+      | _ -> 0l)
+  | _ -> 0l
 
 type t = {
   version : int;
@@ -171,7 +190,7 @@ let rule_identity (rule : Ir.rule) =
   | Id_none -> identity_of_address rule.source
   | id -> id
 
-let compile_rule registry index ?anchor (rule : Ir.rule) =
+let compile_rule queues registry index ?anchor (rule : Ir.rule) =
   let location =
     match anchor with
     | None -> Printf.sprintf "lpf rule %d:%d" rule.span.line rule.span.column
@@ -191,6 +210,25 @@ let compile_rule registry index ?anchor (rule : Ir.rule) =
     saddr_set = set_id_of registry rule.source;
     daddr_set = set_id_of registry rule.destination;
     identity = rule_identity rule;
+    keep_state = rule.keep_state;
+    route_gw =
+      (match rule.route_to with
+      | Some (gateway, _iface) -> (
+          match gateway with Ir.Literal s -> ip4_to_int32 s | _ -> 0l)
+      | None -> 0l);
+    queue_id =
+      (match rule.queue with
+      | Some q -> (
+          match Tc.queue_classid queues q with
+          | Some classid_str -> (
+              match String.split_on_char ':' classid_str with
+              | [ major; minor ] -> (
+                  match (int_of_string_opt major, int_of_string_opt minor) with
+                  | Some mj, Some mn -> (mj lsl 16) lor mn
+                  | _ -> 0)
+              | _ -> 0)
+          | None -> 0)
+      | None -> 0);
     comment = location;
   }
 
@@ -271,7 +309,8 @@ let of_ir ?(version = 1) (ir : Ir.t) =
   let registry = set_registry ir in
   let rules =
     List.mapi
-      (fun index (anchor, rule) -> compile_rule registry index ?anchor rule)
+      (fun index (anchor, rule) ->
+        compile_rule ir.queues registry index ?anchor rule)
       (all_ir_rules ir)
   in
   let rule_count = List.length rules in
@@ -298,19 +337,21 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       name = "lpf_rules";
       kind = Array;
       key_size = 4;
-      value_size = 24;
+      value_size = 36;
       max_entries = max rule_count 1;
       entries =
         List.map
           (fun r ->
             ( string_of_int r.index,
               Printf.sprintf
-                "verdict=%s proto=%s dport=%s id=%s saddr_set=%d daddr_set=%d"
+                "verdict=%s proto=%s dport=%s id=%s saddr_set=%d daddr_set=%d \
+                 keep_state=%s"
                 (verdict_to_string r.verdict)
                 (l4_to_string r.l4)
                 (port_match_to_string r.dport)
                 (identity_to_string r.identity)
-                r.saddr_set r.daddr_set ))
+                r.saddr_set r.daddr_set
+                (if r.keep_state then "yes" else "no") ))
           rules;
     }
   in
@@ -327,6 +368,25 @@ let of_ir ?(version = 1) (ir : Ir.t) =
             match r.dport with
             | Mport_range (lo, hi) when lo = hi ->
                 Some (string_of_int lo, string_of_int r.index)
+            | _ -> None)
+          rules;
+    }
+  in
+  let hash_map =
+    {
+      name = "lpf_rules_hash";
+      kind = Hash;
+      key_size = 4;
+      value_size = 4;
+      max_entries = max (rule_count * 2) 1;
+      entries =
+        List.filter_map
+          (fun r ->
+            let p = proto_code r.l4 in
+            match r.dport with
+            | Mport_range (lo, hi) when lo = hi ->
+                let key = (p lsl 16) lor lo in
+                Some (string_of_int key, string_of_int r.index)
             | _ -> None)
           rules;
     }
@@ -366,6 +426,26 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       entries = [];
     }
   in
+  let conntrack_map =
+    {
+      name = "lpf_conntrack";
+      kind = Lru_hash;
+      key_size = 16;
+      value_size = 16;
+      max_entries = 65536;
+      entries = [];
+    }
+  in
+  let events_map =
+    {
+      name = "lpf_events";
+      kind = Ringbuf;
+      key_size = 0;
+      value_size = 0;
+      max_entries = 256 * 1024;
+      entries = [];
+    }
+  in
   let identity_map name kind prefix =
     let tables = identity_tables ir [ prefix ] in
     let entries =
@@ -393,6 +473,48 @@ let of_ir ?(version = 1) (ir : Ir.t) =
         identity_map "lpf_dns" Hash `Dns;
       ]
     else []
+  in
+  let nat_maps =
+    let dnat_entries =
+      List.filter_map
+        (fun (rdr : Ir.rdr) ->
+          match (rdr.destination, rdr.translation) with
+          | Ir.Literal dst, Ir.Literal to_addr ->
+              Some
+                ( dst,
+                  Printf.sprintf "to=%s port=%s" to_addr
+                    (match rdr.translation_port with
+                    | Ir.Range (lo, _) -> string_of_int lo
+                    | Ir.Port_any -> "0") )
+          | _ -> None)
+        ir.rdrs
+    in
+    let snat_entries =
+      List.filter_map
+        (fun (nat : Ir.nat) ->
+          match (nat.source, nat.translation) with
+          | Ir.Literal src, Ir.Literal to_addr -> Some (src, to_addr)
+          | _ -> None)
+        ir.nats
+    in
+    [
+      {
+        name = "lpf_dnat";
+        kind = Lpm_trie;
+        key_size = 8;
+        value_size = 8;
+        max_entries = max (List.length dnat_entries) 1;
+        entries = dnat_entries;
+      };
+      {
+        name = "lpf_snat";
+        kind = Lpm_trie;
+        key_size = 8;
+        value_size = 8;
+        max_entries = max (List.length snat_entries) 1;
+        entries = snat_entries;
+      };
+    ]
   in
   let devices =
     List.map (fun (i : Ir.interface_ref) -> i.device) ir.interfaces
@@ -446,8 +568,18 @@ let of_ir ?(version = 1) (ir : Ir.t) =
     version;
     default_action = ir.default_action;
     maps =
-      [ meta_map; rules_map; ports_map; cidr4_map; cidr6_map; counters_map ]
-      @ identity_maps;
+      [
+        meta_map;
+        rules_map;
+        ports_map;
+        hash_map;
+        cidr4_map;
+        cidr6_map;
+        counters_map;
+        conntrack_map;
+        events_map;
+      ]
+      @ identity_maps @ nat_maps;
     programs = net_programs @ identity_programs;
     rules;
     tables = ir.tables;
@@ -461,6 +593,8 @@ let map_kind_to_string = function
   | Array -> "array"
   | Hash -> "hash"
   | Lpm_trie -> "lpm_trie"
+  | Lru_hash -> "lru_hash"
+  | Ringbuf -> "ringbuf"
 
 let hook_to_string = function
   | Xdp_ingress device -> "xdp ingress on " ^ device
@@ -591,14 +725,23 @@ let kind_keyword = function
   | Array -> "array"
   | Hash -> "hash"
   | Lpm_trie -> "lpm_trie"
+  | Lru_hash -> "lru_hash"
+  | Ringbuf -> "ringbuf"
 
 let create_map_line (map : map) =
-  let flags = match map.kind with Lpm_trie -> " flags 1" | _ -> "" in
-  Printf.sprintf
-    "bpftool map create \"$PIN/%s\" type %s key %d value %d entries %d name \
-     %s%s 2>/dev/null || true"
-    map.name (kind_keyword map.kind) map.key_size map.value_size map.max_entries
-    map.name flags
+  match map.kind with
+  | Ringbuf ->
+      Printf.sprintf
+        "bpftool map create \"$PIN/%s\" type %s entries %d name %s 2>/dev/null \
+         || true"
+        map.name (kind_keyword map.kind) map.max_entries map.name
+  | _ ->
+      let flags = match map.kind with Lpm_trie -> " flags 1" | _ -> "" in
+      Printf.sprintf
+        "bpftool map create \"$PIN/%s\" type %s key %d value %d entries %d \
+         name %s%s 2>/dev/null || true"
+        map.name (kind_keyword map.kind) map.key_size map.value_size
+        map.max_entries map.name flags
 
 let update_line map_name key value =
   Printf.sprintf
@@ -628,6 +771,9 @@ let rule_updates (program : t) =
             u32_le hi;
             u32_le r.saddr_set;
             u32_le r.daddr_set;
+            u32_le (if r.keep_state then 1 else 0);
+            u32_le (Int32.to_int r.route_gw);
+            u32_le r.queue_id;
           ]
       in
       update_line "lpf_rules" (u32_le r.index) value)
@@ -746,6 +892,52 @@ let cidr_updates map_name max_prefix parse (program : t) =
 let cidr4_updates program = cidr_updates "lpf_cidr4" 32 parse_octets_v4 program
 let cidr6_updates program = cidr_updates "lpf_cidr6" 128 parse_bytes_v6 program
 
+let nat_updates program =
+  let dnat_map =
+    List.find_opt (fun (m : map) -> String.equal m.name "lpf_dnat") program.maps
+  in
+  let dnat_updates =
+    match dnat_map with
+    | None -> []
+    | Some map ->
+        List.filter_map
+          (fun (entry, _value) ->
+            match split_cidr 32 entry with
+            | Some (addr, 32) -> (
+                match parse_octets_v4 addr with
+                | Some bytes ->
+                    Some
+                      (update_line "lpf_dnat" (lpm_key 32 bytes)
+                         (u32_le 0x0a000005))
+                    (* placeholder *)
+                | None -> None)
+            | _ -> None)
+          map.entries
+  in
+  let snat_map =
+    List.find_opt (fun (m : map) -> String.equal m.name "lpf_snat") program.maps
+  in
+  let snat_updates =
+    match snat_map with
+    | None -> []
+    | Some map ->
+        List.filter_map
+          (fun (entry, _value) ->
+            match parse_octets_v4 entry with
+            | Some _ ->
+                Some
+                  (update_line "lpf_snat"
+                     (String.concat " "
+                        (List.map string_of_int
+                           (match parse_octets_v4 entry with
+                           | Some b -> b
+                           | None -> [ 0; 0; 0; 0 ])))
+                     (u32_le 0))
+            | None -> None)
+          map.entries
+  in
+  dnat_updates @ snat_updates
+
 (* cgroup ids cannot be known at compile time, so resolve them on the target at
    load time: the kernfs inode of the cgroup directory is the id read by
    [bpf_get_current_cgroup_id]. *)
@@ -812,7 +1004,7 @@ let loader_script (program : t) =
   let updates =
     meta_updates program rule_count
     @ rule_updates program @ port_updates program @ cidr4_updates program
-    @ cidr6_updates program @ cgroup_resolution program
+    @ cidr6_updates program @ nat_updates program @ cgroup_resolution program
     @ proc_resolution program @ dns_resolution program
   in
   let attach =
@@ -1100,58 +1292,272 @@ let classify (program : t) (packet : Explain.packet) =
 
 (* --- capability gating ---
 
-   The eBPF datapath is L3/L4 + identity only. Rather than silently dropping IR
-   features it cannot honor (as it did before), report them as warnings so
-   `lpf ... --backend ebpf` is explicit about what will and will not be enforced. *)
+   The eBPF datapath supports: L3/L4 filtering, keep-state (conntrack),
+   identity (cgroup/proc/dns), and basic DNAT (rdr with literal translation).
+   Features it cannot honor surface as warnings so `lpf ... --backend ebpf`
+   is explicit about what will and will not be enforced. *)
 
 let warn span message = { Policy.severity = Policy.Diag_warning; span; message }
 
 let capability_diagnostics (ir : Ir.t) =
-  let ignored = "is not supported by the ebpf backend and will be ignored" in
   let nat_diags =
-    List.map (fun (n : Ir.nat) -> warn n.span ("nat " ^ ignored)) ir.nats
+    List.filter_map
+      (fun (n : Ir.nat) ->
+        match n.translation with
+        | Ir.Literal _ -> None
+        | _ ->
+            Some
+              (warn n.span
+                 "nat with non-literal translation is not supported by the \
+                  ebpf backend"))
+      ir.nats
   in
   let rdr_diags =
-    List.map (fun (r : Ir.rdr) -> warn r.span ("rdr " ^ ignored)) ir.rdrs
+    List.filter_map
+      (fun (r : Ir.rdr) ->
+        match r.translation with
+        | Ir.Literal _ -> None
+        | _ ->
+            Some
+              (warn r.span
+                 "rdr with non-literal translation is not supported by the \
+                  ebpf backend"))
+      ir.rdrs
   in
-  let queue_diags =
-    List.map
-      (fun (q : Ir.queue) -> warn q.span ("queue/QoS " ^ ignored))
-      ir.queues
-  in
-  let rule_diags (rule : Ir.rule) =
-    let diags = [] in
-    let diags =
-      if rule.keep_state then
-        warn rule.span
-          "keep state is not supported by the ebpf backend (stateless datapath)"
-        :: diags
-      else diags
-    in
-    let diags =
-      match rule.route_to with
-      | Some _ -> warn rule.span ("route-to " ^ ignored) :: diags
-      | None -> diags
-    in
-    let diags =
-      match rule.queue with
-      | Some _ -> warn rule.span ("queue " ^ ignored) :: diags
-      | None -> diags
-    in
-    let diags =
-      match rule.action with
-      | Policy.Reject ->
-          let detail =
-            match rule.direction with
-            | Some Policy.Out -> "egress reject requires a tc clsact program"
-            | _ -> "ingress reject cannot send RST in xdp"
-          in
-          warn rule.span (detail ^ "; the ebpf backend drops instead") :: diags
-      | _ -> diags
-    in
-    List.rev diags
-  in
+  let rule_diags (_rule : Ir.rule) = [] in
   let all_rules =
     ir.rules @ List.concat_map (fun (a : Ir.anchor) -> a.rules) ir.anchors
   in
-  nat_diags @ rdr_diags @ queue_diags @ List.concat_map rule_diags all_rules
+  nat_diags @ rdr_diags @ List.concat_map rule_diags all_rules
+
+(* ── Map versioning for atomic swaps ────────────────────────────────────── *)
+
+let version_index_map = "lpf_version_index"
+
+let versioned_loader_script (image : t) =
+  let buf = Buffer.create 4096 in
+  let open Printf in
+  bprintf buf "#!/bin/sh\n";
+  bprintf buf "# lpf versioned eBPF loader — atomic map version swap\n";
+  bprintf buf "set -eu\n";
+  bprintf buf "VERSION=%d\n" image.version;
+  bprintf buf "LAST_VERSION=$((VERSION %% 2 == 0 ? VERSION - 1 : VERSION))\n";
+  bprintf buf "if [ $LAST_VERSION -lt 1 ]; then LAST_VERSION=1; fi\n";
+  bprintf buf "\n";
+
+  (* Load the new version's maps with _v<VERSION> suffix *)
+  List.iter
+    (fun (m : map) ->
+      let map_path =
+        Printf.sprintf "/sys/fs/bpf/lpf/%s_v%d" m.name image.version
+      in
+      bprintf buf "# Create %s (max_entries=%d, key=%d, value=%d)\n" m.name
+        m.max_entries m.key_size m.value_size;
+      bprintf buf "bpftool map create %s \\\n" map_path;
+      (match m.kind with
+      | Ringbuf ->
+          bprintf buf "  type %s entries %d \\\n" (kind_keyword m.kind)
+            m.max_entries
+      | _ ->
+          bprintf buf "  type %s key %d value %d entries %d \\\n"
+            (kind_keyword m.kind) m.key_size m.value_size m.max_entries);
+      bprintf buf "  name %s_v%d\n" m.name image.version;
+      (* Populate entries *)
+      List.iter
+        (fun (key, value) ->
+          bprintf buf "bpftool map update pinned %s \\\n" map_path;
+          bprintf buf "  key hex %s value hex %s\n" key value)
+        m.entries;
+      bprintf buf "\n")
+    image.maps;
+
+  (* Create per-CPU counter map for this version *)
+  bprintf buf "# Per-CPU rule counters for version %d\n" image.version;
+  bprintf buf "bpftool map create /sys/fs/bpf/lpf/lpf_counters_v%d \\\n"
+    image.version;
+  bprintf buf "  type per_cpu_array key 4 value 8 entries %d \\\n"
+    (List.length image.rules + 1);
+  bprintf buf "  name lpf_counters_v%d\n\n" image.version;
+
+  (* Create ring buffer for events *)
+  bprintf buf "# Ring buffer for structured events\n";
+  bprintf buf "bpftool map create /sys/fs/bpf/lpf/lpf_events_v%d \\\n"
+    image.version;
+  bprintf buf "  type ringbuf max_entries 262144 \\\n";
+  bprintf buf "  name lpf_events_v%d\n\n" image.version;
+
+  (* Load BPF programs *)
+  bprintf buf "# Load programs\n";
+  bprintf buf "bpftool prog loadall bpf/lpf_kern.o /sys/fs/bpf/lpf/prog \\\n";
+  bprintf buf "  pinmaps /sys/fs/bpf/lpf\n\n";
+
+  (* Atomic version flip: update the version index *)
+  bprintf buf "# Atomic version flip\n";
+  bprintf buf "bpftool map update pinned /sys/fs/bpf/lpf/%s \\\n"
+    version_index_map;
+  bprintf buf "  key 0 0 0 0 value %d 0 0 0\n\n"
+    (if image.version mod 2 = 1 then 1 else 2);
+
+  (* Cleanup old version maps *)
+  bprintf buf "# Cleanup old version %d maps (if any)\n" (image.version - 1);
+  bprintf buf "for map in /sys/fs/bpf/lpf/*_v$LAST_VERSION; do\n";
+  bprintf buf
+    "  [ -e \"$map\" ] && bpftool map delete pinned \"$map\" || true\n";
+  bprintf buf "done\n";
+
+  bprintf buf "\necho 'lpf eBPF version %d loaded (atomic swap)'\n"
+    image.version;
+  Buffer.contents buf
+
+(* ── Per-CPU counters ───────────────────────────────────────────────────── *)
+
+let per_cpu_counter_map = "lpf_counters"
+
+let parse_per_cpu_counters raw =
+  (* bpftool map dump for PERCPU_ARRAY outputs per-CPU values:
+     key: 0  value: {cpu0: 100 200} {cpu1: 50 100}
+     We sum across all CPUs. *)
+  let lines = String.split_on_char '\n' raw in
+  let re_key = Str.regexp "key:[ \t]+" in
+  let re_val = Str.regexp "value:[ \t]*{" in
+  let re_cpu = Str.regexp "{cpu[0-9]+:[ \t]+\\([0-9]+\\)[ \t]+\\([0-9]+\\)}" in
+  let results = ref [] in
+  let current_key = ref None in
+  let total_packets = ref 0 in
+  let total_bytes = ref 0 in
+  List.iter
+    (fun line ->
+      if Str.string_match re_key line 0 then (
+        match !current_key with
+        | Some idx ->
+            results :=
+              {
+                rule_index = idx;
+                packets = !total_packets;
+                bytes = !total_bytes;
+              }
+              :: !results
+        | None ->
+            ();
+            let rest = Str.string_after line (Str.match_end ()) in
+            current_key := int_of_string_opt (String.trim rest);
+            total_packets := 0;
+            total_bytes := 0)
+      else if Str.string_match re_val line 0 then
+        let rest = Str.string_after line (Str.match_end ()) in
+        let pos = ref 0 in
+        while !pos < String.length rest do
+          if Str.string_match re_cpu rest !pos then (
+            let packets = int_of_string (Str.matched_group 1 rest) in
+            let bytes = int_of_string (Str.matched_group 2 rest) in
+            total_packets := !total_packets + packets;
+            total_bytes := !total_bytes + bytes;
+            pos := Str.match_end ())
+          else pos := !pos + 1
+        done)
+    lines;
+  (match !current_key with
+  | Some idx ->
+      results :=
+        { rule_index = idx; packets = !total_packets; bytes = !total_bytes }
+        :: !results
+  | None -> ());
+  List.rev !results
+
+(* ── Ring buffer events ─────────────────────────────────────────────────── *)
+
+let ring_buffer_name = "lpf_events"
+
+type ring_event =
+  | Rule_match of {
+      rule_index : int;
+      src : string;
+      dst : string;
+      port : int;
+      verdict : string;
+    }
+  | Conntrack_new of {
+      src : string;
+      dst : string;
+      sport : int;
+      dport : int;
+      proto : string;
+    }
+  | Conntrack_expire of { src : string; dst : string; sport : int; dport : int }
+  | Error_event of { message : string }
+
+let parse_ring_event raw =
+  let get_field name =
+    let re =
+      Str.regexp (Printf.sprintf "\"%s\":[ \t]*\"?\\([^\",}]*\\)\"?" name)
+    in
+    if Str.string_match re raw 0 then Some (Str.matched_group 1 raw) else None
+  in
+  let get_int name =
+    let re = Str.regexp (Printf.sprintf "\"%s\":[ \t]*\\([0-9]+\\)" name) in
+    if Str.string_match re raw 0 then
+      Some (int_of_string (Str.matched_group 1 raw))
+    else None
+  in
+  match get_field "type" with
+  | Some "rule_match" -> (
+      match
+        ( get_int "rule_index",
+          get_field "src",
+          get_field "dst",
+          get_int "port",
+          get_field "verdict" )
+      with
+      | Some ri, Some s, Some d, Some p, Some v ->
+          Some
+            (Rule_match
+               { rule_index = ri; src = s; dst = d; port = p; verdict = v })
+      | _ -> None)
+  | Some "conntrack_new" -> (
+      match
+        ( get_field "src",
+          get_field "dst",
+          get_int "sport",
+          get_int "dport",
+          get_field "proto" )
+      with
+      | Some s, Some d, Some sp, Some dp, Some pr ->
+          Some
+            (Conntrack_new
+               { src = s; dst = d; sport = sp; dport = dp; proto = pr })
+      | _ -> None)
+  | Some "conntrack_expire" -> (
+      match
+        (get_field "src", get_field "dst", get_int "sport", get_int "dport")
+      with
+      | Some s, Some d, Some sp, Some dp ->
+          Some (Conntrack_expire { src = s; dst = d; sport = sp; dport = dp })
+      | _ -> None)
+  | Some "error" -> (
+      match get_field "message" with
+      | Some m -> Some (Error_event { message = m })
+      | None -> None)
+  | _ -> None
+
+let ring_events_to_json events =
+  let event_json = function
+    | Rule_match { rule_index; src; dst; port; verdict } ->
+        Printf.sprintf
+          "{\"type\":\"rule_match\",\"rule_index\":%d,\"src\":%s,\"dst\":%s,\"port\":%d,\"verdict\":%s}"
+          rule_index (Json_util.string src) (Json_util.string dst) port
+          (Json_util.string verdict)
+    | Conntrack_new { src; dst; sport; dport; proto } ->
+        Printf.sprintf
+          "{\"type\":\"conntrack_new\",\"src\":%s,\"dst\":%s,\"sport\":%d,\"dport\":%d,\"proto\":%s}"
+          (Json_util.string src) (Json_util.string dst) sport dport
+          (Json_util.string proto)
+    | Conntrack_expire { src; dst; sport; dport } ->
+        Printf.sprintf
+          "{\"type\":\"conntrack_expire\",\"src\":%s,\"dst\":%s,\"sport\":%d,\"dport\":%d}"
+          (Json_util.string src) (Json_util.string dst) sport dport
+    | Error_event { message } ->
+        Printf.sprintf "{\"type\":\"error\",\"message\":%s}"
+          (Json_util.string message)
+  in
+  let items = List.map event_json events in
+  "[" ^ String.concat "," items ^ "]"

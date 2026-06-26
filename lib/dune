@@ -5,6 +5,7 @@
  (modules
   policy_types
   json_util
+  json_parse
   policy_fmt
   policy
   ir
@@ -27,8 +28,11 @@
   table
   ip
   sysctl
+  cni
+  network_policy_translate
+  nomad_policy_translate
   lpf
   process
   file_util
   lpf_conf)
- (libraries unix))
+ (libraries unix str))

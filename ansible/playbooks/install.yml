@@ -1,0 +1,7 @@
+---
+# lpf install playbook — install lpf on target hosts
+- name: Install lpf firewall
+  hosts: all
+  become: true
+  roles:
+    - lpf

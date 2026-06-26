@@ -1,0 +1,4 @@
+(executable
+ (public_name lpf-cni)
+ (name main)
+ (libraries lpf unix))

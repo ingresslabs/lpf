@@ -240,6 +240,7 @@ let parse_rules_args args =
     | "--backend" :: "nftables" :: rest -> loop "nftables" paths rest
     | "--backend" :: "tc" :: rest -> loop "tc" paths rest
     | "--backend" :: "routing" :: rest -> loop "routing" paths rest
+    | "--backend" :: "ebpf" :: rest -> loop "ebpf" paths rest
     | "--backend" :: backend :: _ -> Error ("unsupported backend: " ^ backend)
     | option :: _ when String.length option > 0 && option.[0] = '-' ->
         Error ("unknown option: " ^ option)
@@ -298,7 +299,8 @@ let handle_rules = function
       | Error message ->
           prerr_endline message;
           prerr_endline
-            "usage: lpf rules show [--backend nftables|tc|routing] <policy>";
+            "usage: lpf rules show [--backend nftables|tc|routing|ebpf] \
+             <policy>";
           exit 64
       | Ok (backend, [ path ]) -> (
           let input = read_file path in
@@ -306,6 +308,7 @@ let handle_rules = function
             match backend with
             | "tc" -> Lpf.render_tc_policy_text ~file:path input
             | "routing" -> Lpf.render_routing_policy_text ~file:path input
+            | "ebpf" -> Lpf.render_ebpf_policy_text ~file:path input
             | _ -> Lpf.render_nftables_policy_text ~file:path input
           in
           match result with
@@ -317,7 +320,8 @@ let handle_rules = function
               exit 1)
       | Ok _ ->
           prerr_endline
-            "usage: lpf rules show [--backend nftables|tc|routing] <policy>";
+            "usage: lpf rules show [--backend nftables|tc|routing|ebpf] \
+             <policy>";
           exit 64)
   | "diff" :: args -> (
       match parse_rules_diff_args args with
@@ -1342,6 +1346,27 @@ let handle_tools args =
         Printf.printf "[%s]\n" (String.concat ",\n " schemas);
         exit 0
 
+let handle_verify args =
+  match Sys.getenv_opt "LPF_VERIFY_BIN" with
+  | Some bin when Sys.file_exists bin ->
+      let cmd = Printf.sprintf "%s %s" bin (String.concat " " args) in
+      exit (Sys.command cmd)
+  | _ ->
+      if Sys.file_exists "lpf-verify" then
+        let cmd = Printf.sprintf "lpf-verify %s" (String.concat " " args) in
+        exit (Sys.command cmd)
+      else (
+        prerr_endline "lpf verify: Z3 solver not available";
+        prerr_endline "";
+        prerr_endline "Install Z3 and build lpf-verify:";
+        prerr_endline "  brew install z3         # macOS";
+        prerr_endline "  apt install libz3-dev   # Debian/Ubuntu";
+        prerr_endline "  opam install z3";
+        prerr_endline "  dune build @install";
+        prerr_endline "";
+        prerr_endline "Then run: lpf-verify check policy.lpf";
+        exit 1)
+
 let () =
   match Array.to_list Sys.argv with
   | [ _ ] | [ _; "--help" ] | [ _; "-h" ] | [ _; "help" ] ->
@@ -1370,6 +1395,7 @@ let () =
   | _ :: "man" :: args -> handle_man args
   | _ :: "tools" :: args -> handle_tools args
   | _ :: "sysctl" :: args -> handle_sysctl args
+  | _ :: "verify" :: args -> handle_verify args
   | _ :: "completion" :: args -> handle_completion args
   | _ :: name :: _ -> (
       match Lpf.command_of_string name with

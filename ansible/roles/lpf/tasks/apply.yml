@@ -1,0 +1,53 @@
+---
+# Apply lpf policy with guarded apply support
+
+- name: Dry-run apply
+  command: "{{ lpf_bin_path }} apply --dry-run {{ lpf_policy_path }}"
+  register: lpf_dry_run
+  changed_when: false
+  when: lpf_apply_dry_run | bool
+
+- name: Show dry-run result
+  debug:
+    msg: "{{ lpf_dry_run.stdout }}"
+  when: lpf_apply_dry_run | bool
+
+- name: Apply policy
+  command: >
+    {{ lpf_bin_path }} apply
+    {% if not (lpf_apply_dry_run | bool) %}
+    --confirm {{ lpf_apply_confirm_seconds }}s
+    {% endif %}
+    {{ lpf_policy_path }}
+  register: lpf_apply_result
+  when: not (lpf_apply_dry_run | bool)
+  async: "{{ lpf_apply_confirm_seconds | int + 10 }}"
+  poll: 0
+
+- name: Pause for apply to register
+  pause:
+    seconds: 3
+  when: not (lpf_apply_dry_run | bool)
+
+- name: Confirm guarded apply
+  command: "{{ lpf_bin_path }} confirm"
+  register: lpf_confirm_result
+  when: not (lpf_apply_dry_run | bool)
+
+- name: Report apply result
+  debug:
+    msg: "lpf policy applied: {{ lpf_policy_path }}"
+  when: not (lpf_apply_dry_run | bool)
+
+- name: Rollback on failure
+  command: "{{ lpf_bin_path }} rollback --now"
+  when:
+    - lpf_rollback_on_failure | bool
+    - lpf_confirm_result is defined
+    - lpf_confirm_result.rc != 0
+  register: lpf_rollback_result
+
+- name: Report rollback
+  debug:
+    msg: "lpf rolled back to previous state"
+  when: lpf_rollback_result is defined and lpf_rollback_result.rc == 0

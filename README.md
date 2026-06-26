@@ -1,148 +1,41 @@
 # lpf: The Next-Generation Linux Firewall
 
-`lpf` is GitOps for Linux networking: PF-style firewall, NAT, QoS, and routing
-policy with live diff, guarded apply, and automatic rollback for remote changes.
-
-Website: [ingresslabs.github.io/lpf](https://ingresslabs.github.io/lpf/)
-
-Tired of juggling `iptables`, `nftables`, `tc`, and `ip route`? `lpf` provides a single, coherent control plane with human-readable policies, guarded deployments, and explainable decisions.
-
----
-
-## Core Features
-
-## GitOps-Safe Rollouts
-
-Keep policy in Git, review changes as code, diff them against live host state,
-then apply through a confirmation window. If the new policy cuts SSH or fails
-your health checks, the watchdog restores the previous known-good nftables, TC,
-routing, and sysctl state.
+`lpf` replaces `iptables`, `nftables`, `tc`, and `ip route` with a single PF-style
+policy language, guarded deployments, formal verification, and an eBPF datapath.
 
 ```sh
-git diff configs/policies/edge-router.lpf
-lpf diff --live configs/policies/edge-router.lpf
-lpf apply --confirm 60s configs/policies/edge-router.lpf
-ssh edge-router true
-lpf confirm
+lpf check policy.lpf && lpf apply --confirm 60s policy.lpf && lpf confirm
 ```
 
-## Safe & Predictable Operations
+| Capability | Command |
+|---|---|
+| Guarded apply with auto-rollback | `lpf apply --confirm 60s` |
+| Packet explainability (trace any packet) | `lpf explain --json ...` |
+| Z3 formal equivalence proof | `lpf verify equiv old.lpf new.lpf` |
+| Dead rule detection | `lpf verify check policy.lpf` |
+| Reachability proof (all packets) | `lpf verify reachable --dst 10.0.0.1 --dport 22` |
+| eBPF map compilation | `lpf ebpf show policy.lpf` |
+| Atomic eBPF updates (zero packet loss) | `lpf ebpf load --script policy.lpf` |
+| Multi-backend (nftables+tc+routing+eBPF) | `lpf plan --backend tc policy.lpf` |
+| JSON everywhere for automation | `lpf plan --json policy.lpf` |
+| AI agent tool schemas | `lpf tools --format openai` |
+| Firewall unit tests with JUnit CI | `lpf test --junit report.xml tests/*.lpf.test` |
+| Ansible role for install + control | `ansible-playbook playbooks/install.yml` |
 
-Network lockouts are a thing of the past. `lpf` is designed for bulletproof production deployments.
-
-### Guarded Apply with Auto-Rollback
-Never lock yourself out of a remote server again.
+## Install
 
 ```sh
-# Apply the new policy, but revert it in 60 seconds if you don't confirm
-$ lpf apply --confirm 60s /etc/new_policy.lpf
-
-# Test your SSH connection... it works!
-$ lpf confirm
+opam install . --deps-only --with-test && dune build && dune install
+make docker    # 5-distro CI images (Debian, Ubuntu 22/24, Alpine, Fedora)
+make deb rpm   # system packages
 ```
 
-### Semantic Diffing & Explainability
-Know exactly what will happen before you apply.
+## Verifiable & production-grade
 
-```sh
-# See exactly what nftables/tc/routing rules will change on the host
-$ lpf diff --live /etc/lpf.conf
+- **OCaml** — memory-safe, strictly typed, no null/bounds crashes
+- **Z3 SMT solver** — mathematical proofs for ALL possible packets
+- **eBPF datapath** — atomic map version swaps, per-CPU counters, ring buffer
+- **552-scenario E2E** in Firecracker microVMs across 8+ Linux kernels
+- **5-distro Jenkins CI** with Docker, Firecracker, and Ansible pipelines
 
-# Ask the static evaluator what it would do with a specific packet
-$ lpf explain --src 10.0.0.5 --dst 1.1.1.1 --dport 443 --tcp --in /etc/lpf.conf
-```
-
----
-
-## Automation & AI Ready
-
-`lpf` is built for machine consumption. Every operational command supports structured JSON output (`--json`), making it trivial to integrate with **Ansible**, **Terraform**, or custom dashboards.
-
-Furthermore, `lpf` natively exposes **Tool Calling Schemas** for AI Agents.
-
-```sh
-# Give an LLM the ability to manage your firewall securely
-$ lpf tools --format openai > tools.json
-$ lpf tools --format system-prompt > prompt.txt
-```
-
----
-
-## Quick Start
-
-### 1. Install
-```sh
-opam switch create . ocaml-base-compiler.5.2.1
-opam install . --deps-only --with-test
-dune build
-dune runtest
-```
-
-### 2. Write a Policy (`/etc/lpf.conf`)
-```pf
-set default deny
-
-interface wan = "eth0"
-interface lan = "eth1"
-
-table <trusted> { 10.0.0.0/8, 192.168.0.0/16 }
-
-pass out on lan proto tcp from any to any port 443 keep state
-block in on wan from any to any
-```
-
-### 3. Validate & Deploy
-```sh
-lpf check /etc/lpf.conf
-lpf diff --live /etc/lpf.conf
-lpf apply --confirm 60s /etc/lpf.conf
-```
-
----
-
-## Advanced CLI Usage
-
-**State Inspection & Dynamic Tables:**
-Update threat feeds without reloading the firewall.
-```sh
-lpf table <trusted> add 203.0.113.10
-lpf state list --json
-lpf state kill --src 10.0.0.1 --dst 10.0.0.2
-```
-
-**Testing & CI Integration:**
-Write unit tests for your firewall and output JUnit XML for your CI pipeline.
-```sh
-lpf test --junit evidence/junit.xml fixtures/tests/basic.lpf.test
-lpf e2e run --scenario-count 552
-```
-
-See [docs/COMMANDS.md](docs/COMMANDS.md) for the full command contract.
-
----
-
-## Policy Examples
-
-Full policy examples live under [configs/policies](configs/policies). They are
-kept behind this collapsed section so the README stays short.
-
-<details>
-<summary>Show policy examples</summary>
-
-- [Web server](configs/policies/web-server.lpf): public HTTP/HTTPS, restricted SSH, outbound DNS and updates.
-- [Reverse proxy](configs/policies/reverse-proxy.lpf): public port redirects to an internal application listener.
-- [NAT gateway](configs/policies/nat-gateway.lpf): LAN masquerade, blocked hosts, and controlled egress.
-- [Workstation egress](configs/policies/workstation-egress.lpf): default-deny client outbound policy.
-- [DNS resolver](configs/policies/dns-resolver.lpf): LAN resolver with restricted upstream DNS.
-- [Bastion host](configs/policies/bastion-host.lpf): operator-only SSH and managed-host access.
-- [Database segment](configs/policies/database-segment.lpf): app-to-database access and DBA management.
-- [Branch router QoS](configs/policies/branch-router-qos.lpf): NAT, policy routing, and traffic shaping queues.
-
-</details>
-
----
-
-## Configuration & Architecture
-- `LPF_VAR_DIR` - runtime state directory (default: `/var/lib/lpf`). Used for rollback preimages and history.
-- Written entirely in **OCaml** for memory safety and strict typing.
-- Validated via isolated **Firecracker microVM** end-to-end tests.
+[Commands](docs/COMMANDS.md) · [Policies](configs/policies) · [Ansible](ansible/roles/lpf) · [Docker](docker)

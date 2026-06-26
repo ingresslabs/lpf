@@ -5,6 +5,7 @@
 #
 # XDP return codes: ABORTED=0, DROP=1, PASS=2.
 
+import atexit
 import os
 import json
 import re
@@ -13,7 +14,8 @@ import subprocess
 import sys
 
 PIN = "/sys/fs/bpf/lpftest"
-PROG = f"{PIN}/prog/lpf_ingress"
+PROG_ROOT = f"{PIN}/prog"
+PROG = f"{PROG_ROOT}/lpf_ingress"
 META = f"{PIN}/lpf_meta"
 RULES = f"{PIN}/lpf_rules"
 COUNTERS = f"{PIN}/lpf_counters"
@@ -32,6 +34,23 @@ def sh(args):
     return r.returncode, r.stdout + r.stderr
 
 
+def cleanup():
+    sh(["rm", "-rf", PIN])
+
+
+def load_bpf():
+    cleanup()
+    os.makedirs(PROG_ROOT, exist_ok=True)
+    rc, out = sh(["bpftool", "prog", "loadall", "bpf/lpf_kern.o",
+                  PROG_ROOT, "pinmaps", PIN])
+    if rc != 0:
+        raise RuntimeError(f"bpftool loadall failed: {out}")
+
+
+load_bpf()
+atexit.register(cleanup)
+
+
 def u32le(n):
     return [str((n >> (8 * i)) & 0xFF) for i in range(4)]
 
@@ -47,9 +66,10 @@ def set_meta(idx, val):
     map_update(META, u32le(idx), u32le(val))
 
 
-def set_rule(i, verdict, proto, lo, hi, saddr_set=0, daddr_set=0):
+def set_rule(i, verdict, proto, lo, hi, saddr_set=0, daddr_set=0, keep_state=0, route_gw=0, queue_id=0):
     val = (u32le(verdict) + u32le(proto) + u32le(lo) + u32le(hi)
-           + u32le(saddr_set) + u32le(daddr_set))
+           + u32le(saddr_set) + u32le(daddr_set) + u32le(keep_state)
+           + u32le(route_gw) + u32le(queue_id))
     map_update(RULES, u32le(i), val)
 
 
@@ -66,7 +86,10 @@ def configure(default_pass, rules):
         v, p, lo, hi = r[0], r[1], r[2], r[3]
         ss = r[4] if len(r) > 4 else 0
         ds = r[5] if len(r) > 5 else 0
-        set_rule(i, v, p, lo, hi, ss, ds)
+        ks = r[6] if len(r) > 6 else 0
+        gw = r[7] if len(r) > 7 else 0
+        qi = r[8] if len(r) > 8 else 0
+        set_rule(i, v, p, lo, hi, ss, ds, ks, gw, qi)
 
 
 def craft(proto, dport=0, ethertype=0x0800, src=(10, 0, 0, 2), dst=(10, 0, 0, 1)):
@@ -257,6 +280,18 @@ check("src in set1 dst outside", False, both,
       craft(TCP, 1, src=(10, 1, 1, 1), dst=(8, 8, 8, 8)), XDP_DROP)
 check("dst in set1 src outside", False, both,
       craft(TCP, 1, src=(8, 8, 8, 8), dst=(10, 2, 2, 2)), XDP_DROP)
+
+# 20. conntrack: keep_state creates entries, ESTABLISHED flows bypass rule scan
+configure(False, [(PASS_V, TCP, 443, 443, 0, 0, 1)])  # keep_state=1
+pkt_ct = craft(TCP, 443)
+# Run once to create conntrack entry (via keep_state)
+run_prog(pkt_ct)
+# Second run should hit ESTABLISHED fastpath and PASS
+check("ct: keep_state+established pass", False, [(PASS_V, TCP, 443, 443, 0, 0, 1)],
+      P(TCP, 443), XDP_PASS)
+# Without keep_state — no fastpath, but rule still matches
+check("ct: no-keep_state still matches rule", False, [(PASS_V, TCP, 8080, 8080)],
+      P(TCP, 8080), XDP_PASS)
 
 # ---- report ----
 passed = sum(1 for r in results if r[0])

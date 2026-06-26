@@ -15,7 +15,7 @@ dev-repo: "git+https://github.com/avkcode/lpf.git"
 tags: ["firewall" "nftables" "networking" "pf" "linux" "tc" "routing" "conntrack"]
 depends: [
   "ocaml" {>= "5.1"}
-  "dune" {>= "3.11"}
+  "dune" {>= "3.15"}
   "ocamlformat" {= "0.26.2" & with-test}
 ]
 available: os = "linux"

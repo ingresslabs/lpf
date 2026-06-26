@@ -1,0 +1,88 @@
+---
+# Install lpf
+
+- name: Check if lpf is installed
+  command: "{{ lpf_bin_path }} version"
+  register: lpf_version_check
+  failed_when: false
+  changed_when: false
+
+- name: Install from system package (apt)
+  when:
+    - lpf_install_method == "package"
+    - ansible_os_family in ["Debian", "Ubuntu"]
+    - lpf_version_check.rc != 0
+  block:
+    - name: Add lpf apt repository
+      apt_repository:
+        repo: "deb [trusted=yes] {{ lpf_package_url | default('https://github.com/ingresslabs/lpf/releases/latest/download') }} /"
+        state: present
+        filename: lpf
+      when: lpf_package_url != ""
+
+    - name: Install lpf via apt
+      apt:
+        name: lpf
+        state: present
+        update_cache: true
+
+- name: Install from downloaded binary
+  when:
+    - lpf_install_method == "binary"
+    - lpf_binary_url != ""
+    - lpf_version_check.rc != 0
+  block:
+    - name: Download lpf binary
+      get_url:
+        url: "{{ lpf_binary_url }}"
+        dest: "{{ lpf_bin_path }}"
+        mode: "0755"
+
+- name: Build from source
+  when:
+    - lpf_install_method == "source"
+    - lpf_version_check.rc != 0
+  block:
+    - name: Install OCaml and build dependencies
+      package:
+        name: "{{ lpf_source_deps }}"
+        state: present
+
+    - name: Clone lpf repository
+      git:
+        repo: "{{ lpf_source_repo | default('https://github.com/ingresslabs/lpf.git') }}"
+        dest: /tmp/lpf-build
+        version: "{{ lpf_source_version | default('main') }}"
+
+    - name: Install opam dependencies
+      command: opam install . --deps-only --with-test --yes
+      args:
+        chdir: /tmp/lpf-build
+      environment:
+        OPAMYES: "1"
+
+    - name: Build lpf
+      command: opam exec -- dune build
+      args:
+        chdir: /tmp/lpf-build
+
+    - name: Install lpf binary
+      copy:
+        src: /tmp/lpf-build/_build/default/bin/main.exe
+        dest: "{{ lpf_bin_path }}"
+        mode: "0755"
+        remote_src: true
+
+    - name: Clean up build directory
+      file:
+        path: /tmp/lpf-build
+        state: absent
+
+- name: Verify lpf version
+  command: "{{ lpf_bin_path }} version"
+  register: lpf_installed_version
+  changed_when: false
+
+- name: Report installed version
+  debug:
+    msg: "lpf installed: {{ lpf_installed_version.stdout }}"

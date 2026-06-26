@@ -1,0 +1,55 @@
+# lpf CI image for the Vagabond test matrix.
+#
+# Parametric base so the same image can be built across different Linux
+# userspaces (Debian/Ubuntu/Alpine/Fedora) for the image axis of the matrix.
+# Ships the full repo, opam deps, a built+installed `lpf`, and the userspace +
+# eBPF toolchains so ci/vagabond/feature-suite.sh and ci/vagabond/ebpf-suite.sh
+# run inside an isolated Vagabond Linux sandbox / Firecracker microVM.
+#
+# Supported 5-distro bases:
+#   debian:    ocaml/opam:debian-12-ocaml-5.1
+#   ubuntu-22: ocaml/opam:ubuntu-22.04-ocaml-5.1
+#   ubuntu-24: ocaml/opam:ubuntu-24.04-ocaml-5.1
+#   alpine:    ocaml/opam:alpine-ocaml-5.1
+#   fedora:    ocaml/opam:fedora-41-ocaml-5.1
+#
+#   docker build -f Dockerfile.ci --build-arg BASE=ocaml/opam:debian-12-ocaml-5.1 -t lpf-ci:debian .
+ARG BASE=ocaml/opam:debian-12-ocaml-5.1
+FROM ${BASE} AS ci
+
+USER root
+# Critical CLI tooling (strict) + best-effort eBPF toolchain (used only by the
+# microVM eBPF stage; ebpf-suite.sh degrades gracefully if absent).
+RUN if command -v apt-get >/dev/null 2>&1; then \
+      apt-get update && \
+      apt-get install -y --no-install-recommends bash make python3 ca-certificates iproute2 nftables conntrack pkg-config libgmp-dev ansible python3-jinja2 && \
+      (apt-get install -y --no-install-recommends ansible-lint || true) && \
+      (apt-get install -y --no-install-recommends clang llvm libbpf-dev bpftool || true) && \
+      rm -rf /var/lib/apt/lists/*; \
+    elif command -v dnf >/dev/null 2>&1; then \
+      dnf install -y bash make python3 ca-certificates iproute iproute-tc nftables conntrack-tools pkg-config gmp-devel ansible-core python3-jinja2 && \
+      (dnf install -y ansible-lint || true) && \
+      (dnf install -y clang llvm libbpf-devel bpftool || true) && \
+      dnf clean all; \
+    elif command -v apk >/dev/null 2>&1; then \
+      apk add --no-cache bash make python3 ca-certificates iproute2 nftables conntrack-tools pkgconfig gmp-dev ansible py3-jinja2 && \
+      (apk add --no-cache ansible-lint || true) && \
+      (apk add --no-cache clang llvm libbpf-dev bpftool || true); \
+    fi
+# Docker creates WORKDIR as root even under USER opam; pre-create it owned by
+# opam so `dune build` can create _build/.
+RUN mkdir -p /home/opam/src && chown opam:opam /home/opam/src
+
+USER opam
+WORKDIR /home/opam/src
+COPY --chown=opam:opam . .
+# Drop any host build artifacts copied in, then resolve deps and build.
+RUN rm -rf _build && \
+    opam install . --deps-only --with-test --yes && \
+    opam exec -- dune build && \
+    sudo install -m 0755 _build/default/bin/main.exe /usr/local/bin/lpf
+
+ENV LPF_VAR_DIR=/tmp/lpf
+# No ENTRYPOINT: the Vagabond job supplies the full command
+# (e.g. bash -lc 'ci/vagabond/feature-suite.sh').
+CMD ["bash", "-lc", "lpf help"]

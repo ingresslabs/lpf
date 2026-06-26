@@ -1,0 +1,27 @@
+---
+# lpf verify playbook — check policy state across hosts
+- name: Verify lpf policy state
+  hosts: all
+  become: true
+  tasks:
+    - name: Check policy
+      command: lpf check --json /etc/lpf/policy.lpf
+      register: lpf_check
+      changed_when: false
+
+    - name: Diff against live
+      command: lpf diff --live /etc/lpf/policy.lpf
+      register: lpf_diff
+      changed_when: false
+
+    - name: Show explain output
+      command: lpf explain in eth0 from 10.0.0.1 to 10.0.0.2 proto tcp port 22 /etc/lpf/policy.lpf
+      register: lpf_explain
+      changed_when: false
+
+    - name: Report verify results
+      debug:
+        msg:
+          - "check: {{ (lpf_check.stdout | from_json).valid }}"
+          - "diff: {{ lpf_diff.stdout }}"
+          - "explain: {{ lpf_explain.stdout }}"

@@ -1,0 +1,33 @@
+---
+# Validate policy before applying
+
+- name: Check policy syntax
+  command: "{{ lpf_bin_path }} check {{ lpf_policy_path }}"
+  register: lpf_check_result
+  changed_when: false
+  failed_when: false
+
+- name: Fail on invalid policy
+  fail:
+    msg: "lpf policy validation failed: {{ lpf_check_result.stderr }}"
+  when: lpf_check_result.rc != 0
+
+- name: Show policy plan
+  command: "{{ lpf_bin_path }} plan --json {{ lpf_policy_path }}"
+  register: lpf_plan_result
+  changed_when: false
+
+- name: Report plan checksum
+  debug:
+    msg: "lpf plan checksum: {{ (lpf_plan_result.stdout | from_json).checksum }}"
+
+- name: Diff against live state
+  command: "{{ lpf_bin_path }} diff --live {{ lpf_policy_path }}"
+  register: lpf_diff_result
+  changed_when: false
+  failed_when: false
+
+- name: Report changes
+  debug:
+    msg: "{{ lpf_diff_result.stdout_lines }}"
+  when: "'no changes' not in lpf_diff_result.stdout"
