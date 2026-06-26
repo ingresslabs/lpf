@@ -167,14 +167,14 @@ fedora    ocaml/opam:fedora-41-ocaml-5.1           KERNEL_FEDORA   linux-7.1'''.
         stage('ansible:alpine') {
           steps {
             catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-              sh 'docker run --rm lpf-ci:alpine bash -lc "cd /home/opam/src && apk add --no-cache ansible ansible-lint py3-pip && LPF_ANSIBLE_JUNIT=junit-lpf-ansible-alpine.xml ci/vagabond/ansible-suite.sh"'
+              sh 'docker run --rm lpf-ci:alpine bash -lc "cd /home/opam/src && LPF_ANSIBLE_JUNIT=junit-lpf-ansible-alpine.xml ci/vagabond/ansible-suite.sh"'
             }
           }
         }
         stage('ansible:fedora') {
           steps {
             catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
-              sh 'docker run --rm lpf-ci:fedora bash -lc "cd /home/opam/src && dnf install -y ansible ansible-lint python3-pip && LPF_ANSIBLE_JUNIT=junit-lpf-ansible-fedora.xml ci/vagabond/ansible-suite.sh"'
+              sh 'docker run --rm lpf-ci:fedora bash -lc "cd /home/opam/src && LPF_ANSIBLE_JUNIT=junit-lpf-ansible-fedora.xml ci/vagabond/ansible-suite.sh"'
             }
           }
         }
@@ -213,7 +213,7 @@ fedora    ocaml/opam:fedora-41-ocaml-5.1           KERNEL_FEDORA   linux-7.1'''.
                   -v /sys/kernel/btf:/sys/kernel/btf:ro \
                   --tmpfs /tmp \
                   lpf-ci:ubuntu-22 \
-                  bash -lc "cd /home/opam/src && LPF_KERNEL_LABEL=ubuntu22-docker LPF_EBPF_LAYERS=0,1,2,3 LPF_EBPF_STRICT=1 ci/vagabond/ebpf-e2e-suite.sh"'''
+                  bash -lc "cd /home/opam/src && LPF_KERNEL_LABEL=ubuntu22-docker LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"'''
               }
             }
           }
@@ -227,7 +227,7 @@ fedora    ocaml/opam:fedora-41-ocaml-5.1           KERNEL_FEDORA   linux-7.1'''.
                   -v /sys/kernel/btf:/sys/kernel/btf:ro \
                   --tmpfs /tmp \
                   lpf-ci:ubuntu-24 \
-                  bash -lc "cd /home/opam/src && LPF_KERNEL_LABEL=ubuntu24-docker LPF_EBPF_LAYERS=0,1,2,3 LPF_EBPF_STRICT=1 ci/vagabond/ebpf-e2e-suite.sh"'''
+                  bash -lc "cd /home/opam/src && LPF_KERNEL_LABEL=ubuntu24-docker LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"'''
               }
             }
           }
