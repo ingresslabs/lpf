@@ -3,7 +3,6 @@
  (instrumentation
   (backend bisect_ppx))
  (modules
-  z3_verify
   policy_types
   json_util
   policy_fmt
@@ -32,4 +31,4 @@
   process
   file_util
   lpf_conf)
- (libraries unix z3))
+ (libraries unix str))

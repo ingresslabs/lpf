@@ -1,0 +1,6 @@
+(library
+ (name lpf_z3)
+ (enabled_if
+  (and %{lib-available:z3} true))
+ (modules z3_verify)
+ (libraries lpf z3))

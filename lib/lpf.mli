@@ -19,6 +19,7 @@ type command = Command.command =
   | Completion
   | Version
   | Help
+  | Verify
 
 type command_doc = Command.command_doc = {
   command : command;
