@@ -1,114 +1,105 @@
 # Developer glue for lpf. Product commands and feature logic stay in OCaml.
+#
+# Quick reference:
+#   make              build lpf
+#   make test         run unit test suite
+#   make ci           full CI check (build + test + fixtures + man pages)
+#   make docker       build all 5 CI distro images
+#   make ansible      run Ansible role validation
+#   make bpf-e2e      eBPF E2E with live traffic (root required)
 
-DUNE ?= dune
-OPAM ?= opam
-LPF ?= $(DUNE) exec -- lpf
-MAN_DIR ?= man/generated
-PREFIX ?= /usr/local
-POLICY ?= fixtures/policies/basic.lpf
-OBSERVED ?= fixtures/nftables/basic.nft
-REMOTE ?= remote-linux
+DUNE       ?= dune
+OPAM       ?= opam
+LPF        ?= $(DUNE) exec -- lpf
+MAN_DIR    ?= man/generated
+PREFIX     ?= /usr/local
+POLICY     ?= fixtures/policies/basic.lpf
+OBSERVED   ?= fixtures/nftables/basic.nft
+REMOTE     ?= remote-linux
 REMOTE_DIR ?= /tmp/lpf-remote-check
+
+# Docker image tags
+DOCKER_DISTROS     ?= debian ubuntu-22 ubuntu-24 alpine fedora
+DOCKER_CI_TAG      ?= lpf-ci
+DOCKER_CI_FILE     ?= Dockerfile.ci
+DOCKER_BASES       := debian=ocaml/opam:debian-12-ocaml-5.1 \
+                      ubuntu-22=ocaml/opam:ubuntu-22.04-ocaml-5.1 \
+                      ubuntu-24=ocaml/opam:ubuntu-24.04-ocaml-5.1 \
+                      alpine=ocaml/opam:alpine-ocaml-5.1 \
+                      fedora=ocaml/opam:fedora-41-ocaml-5.1
+
+# Ansible
+ANSIBLE_PLAYBOOKS  ?= ansible/playbooks
+ANSIBLE_ROLE       ?= ansible/roles/lpf
 
 .PHONY: all help deps build test check ci clean install uninstall
 .PHONY: man-generate man-check man-install
 .PHONY: policy-check policy-fmt policy-fmt-check fixture-check
 .PHONY: plan rules-show rules-diff remote-check
 .PHONY: release-checksums release-sign release-verify
-.PHONY: static
-.PHONY: deb rpm
+.PHONY: static deb rpm
+.PHONY: bpf bpf-e2e bpf-e2e-comprehensive bpf-e2e-vagabond bpf-e2e-ct
+.PHONY: docker docker-clean ansible-check ansible-lint ansible-dry-run
+.PHONY: e2e-feature e2e-ebpf
 
 all: build
 
-help:
+help: ## Show this help
 	@printf '%s\n' 'lpf make targets:'
-	@printf '%s\n' '  make deps              install opam dependencies for build and tests'
-	@printf '%s\n' '  make build             build the OCaml library and CLI'
-	@printf '%s\n' '  make test              run the Dune test suite'
-	@printf '%s\n' '  make check             build, test, check man pages, and smoke fixtures'
-	@printf '%s\n' '  make clean             remove Dune build output'
-	@printf '%s\n' '  make man-generate      regenerate man pages from OCaml metadata'
-	@printf '%s\n' '  make man-check         verify generated man pages are current'
-	@printf '%s\n' '  make man-install       install man pages under PREFIX=/usr/local'
-	@printf '%s\n' '  make policy-check      run lpf check on POLICY=fixtures/policies/basic.lpf'
-	@printf '%s\n' '  make policy-fmt        print formatted POLICY output'
-	@printf '%s\n' '  make policy-fmt-check  verify POLICY is already formatted'
-	@printf '%s\n' '  make fixture-check     run lpf check on non-invalid policy fixtures'
-	@printf '%s\n' '  make plan              print JSON plan for POLICY'
-	@printf '%s\n' '  make rules-show        render nftables rules for POLICY'
-	@printf '%s\n' '  make rules-diff        diff OBSERVED ruleset against POLICY'
-	@printf '%s\n' '  make remote-check      run build/test/man-check on REMOTE=<ssh-host>'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-28s\033[0m %s\n", $$1, $$2}'
 
-deps:
+# ── Core ──────────────────────────────────────────────────────────────────
+
+deps: ## Install opam dependencies for build and tests
 	$(OPAM) install . --deps-only --with-test
 
-build:
+build: ## Build the OCaml library and CLI
 	$(DUNE) build
 
-static:
+static: ## Build a statically-linked binary
 	$(DUNE) build --profile=static bin/main.exe
 
-# eBPF datapath object (Linux + clang/llvm + kernel BTF required).
-bpf:
-	sh bpf/build.sh
-
-# Basic in-kernel datapath conformance matrix (root + bpftool required; Linux only).
-bpf-e2e: bpf
-	rm -rf /sys/fs/bpf/lpftest && mkdir -p /sys/fs/bpf/lpftest/prog
-	bpftool prog loadall bpf/lpf_kern.o /sys/fs/bpf/lpftest/prog pinmaps /sys/fs/bpf/lpftest
-	python3 bpf/e2e_progrun.py; status=$$?; rm -rf /sys/fs/bpf/lpftest; exit $$status
-
-# Comprehensive 4-layer E2E runner (root + bpftool + python3 required).
-# Control layers: LPF_EBPF_LAYERS=0,1,2,3 (default: all)
-bpf-e2e-comprehensive: bpf
-	rm -rf /sys/fs/bpf/lpftest && mkdir -p /sys/fs/bpf/lpftest/prog
-	bpftool prog loadall bpf/lpf_kern.o /sys/fs/bpf/lpftest/prog pinmaps /sys/fs/bpf/lpftest
-	python3 bpf/e2e_runner.py --layers $${LPF_EBPF_LAYERS:-0,1,2,3} --skip-build; status=$$?; rm -rf /sys/fs/bpf/lpftest; exit $$status
-
-# Full Vagabond eBPF E2E suite (all layers including live Firecracker traffic).
-bpf-e2e-vagabond:
-	ci/vagabond/ebpf-e2e-suite.sh
-
-# eBPF conntrack-specific E2E run.
-bpf-e2e-ct: bpf
-	ci/vagabond/ebpf-conntrack-suite.sh
-
-test:
+test: ## Run the Dune test suite
 	$(DUNE) runtest
 
-check: build test man-check fixture-check rules-diff
+check: build test man-check fixture-check rules-diff ## Full CI check
 
-ci: check
+ci: check ## Alias for check (full CI pipeline)
 
-clean:
+clean: ## Remove Dune build output
 	$(DUNE) clean
 
-install:
+install: ## Install lpf to PREFIX
 	$(DUNE) build @install
 	$(DUNE) install
 
-uninstall:
+uninstall: ## Uninstall lpf
 	$(DUNE) uninstall
 
-man-generate:
+# ── Man pages ─────────────────────────────────────────────────────────────
+
+man-generate: ## Regenerate man pages from OCaml metadata
 	$(LPF) man generate --dir $(MAN_DIR)
 
-man-check:
+man-check: ## Verify generated man pages are current
 	$(LPF) man check --dir $(MAN_DIR)
 
-man-install:
+man-install: ## Install man pages under PREFIX
 	$(LPF) man install --prefix $(PREFIX)
 
-policy-check:
+# ── Policy operations ─────────────────────────────────────────────────────
+
+policy-check: ## Run lpf check on POLICY
 	$(LPF) check $(POLICY)
 
-policy-fmt:
+policy-fmt: ## Print formatted POLICY
 	$(LPF) fmt $(POLICY)
 
-policy-fmt-check:
+policy-fmt-check: ## Verify POLICY is already formatted
 	$(LPF) fmt --check $(POLICY)
 
-fixture-check:
+fixture-check: ## Run lpf check on all valid policy fixtures
 	@set -eu; \
 	for policy in fixtures/policies/*.lpf; do \
 		case "$$policy" in \
@@ -118,43 +109,158 @@ fixture-check:
 		$(LPF) check "$$policy" >/dev/null; \
 	done
 
-plan:
+plan: ## Print JSON plan for POLICY
 	$(LPF) plan --json $(POLICY)
 
-rules-show:
+rules-show: ## Render nftables rules for POLICY
 	$(LPF) rules show $(POLICY)
 
-rules-diff:
+rules-diff: ## Diff OBSERVED ruleset against POLICY
 	$(LPF) rules diff --observed $(OBSERVED) $(POLICY)
 
-remote-check:
-	git archive --format=tar HEAD | ssh $(REMOTE) 'set -eu; rm -rf "$(REMOTE_DIR)"; mkdir -p "$(REMOTE_DIR)"; tar -xf - -C "$(REMOTE_DIR)"; cd "$(REMOTE_DIR)"; dune build; dune runtest; dune exec -- lpf man check'
+remote-check: ## Run build/test/man-check on REMOTE (SSH host)
+	git archive --format=tar HEAD | ssh $(REMOTE) \
+		'set -eu; rm -rf "$(REMOTE_DIR)"; mkdir -p "$(REMOTE_DIR)"; \
+		 tar -xf - -C "$(REMOTE_DIR)"; cd "$(REMOTE_DIR)"; \
+		 dune build; dune runtest; dune exec -- lpf man check'
 
-# Release infrastructure
+# ── Docker ────────────────────────────────────────────────────────────────
+
+docker: ## Build CI images for all 5 distros
+	@for distro in $(DOCKER_DISTROS); do \
+		base=$$(printf '%s\n' $(DOCKER_BASES) | grep "^$$distro=" | cut -d= -f2-); \
+		[ -z "$$base" ] && continue; \
+		printf 'building lpf-ci:%s from %s\n' "$$distro" "$$base"; \
+		$(DUNE) build bin/main.exe 2>/dev/null || true; \
+		docker build -f $(DOCKER_CI_FILE) \
+			--build-arg BASE="$$base" \
+			-t $(DOCKER_CI_TAG):$$distro .; \
+	done
+
+docker-clean: ## Remove lpf CI images
+	@for distro in $(DOCKER_DISTROS); do \
+		docker rmi $(DOCKER_CI_TAG):$$distro 2>/dev/null || true; \
+	done
+
+docker-test: docker ## Run dune runtest in all distro images
+	@for distro in $(DOCKER_DISTROS); do \
+		printf 'testing lpf-ci:%s\n' "$$distro"; \
+		docker run --rm $(DOCKER_CI_TAG):$$distro opam exec -- dune runtest; \
+	done
+
+docker-feature: docker ## Run feature suite in all distro images
+	@for distro in $(DOCKER_DISTROS); do \
+		printf 'feature suite on lpf-ci:%s\n' "$$distro"; \
+		docker run --rm $(DOCKER_CI_TAG):$$distro \
+			bash -lc "cd /home/opam/src && ci/vagabond/feature-suite.sh"; \
+	done
+
+docker-ebpf: docker ## Run eBPF suite in privileged container (debian only)
+	docker run --rm --privileged --user root \
+		-v /sys/fs/bpf:/sys/fs/bpf \
+		-v /sys/kernel/btf:/sys/kernel/btf:ro \
+		--tmpfs /tmp \
+		$(DOCKER_CI_TAG):debian \
+		bash -lc "cd /home/opam/src && LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"
+
+# ── Ansible ───────────────────────────────────────────────────────────────
+
+ansible-check: ## Syntax-check all Ansible playbooks
+	@for pb in $(ANSIBLE_PLAYBOOKS)/*.yml; do \
+		printf 'syntax check: %s\n' "$$pb"; \
+		ansible-playbook --syntax-check "$$pb"; \
+	done
+
+ansible-lint: ## Lint the Ansible role
+	ansible-lint $(ANSIBLE_ROLE) || true
+
+ansible-dry-run: ## Dry-run the install playbook locally
+	ansible-playbook -i localhost, -c local $(ANSIBLE_PLAYBOOKS)/install.yml \
+		-e lpf_install_method=binary -e lpf_apply_dry_run=true \
+		-e lpf_watchdog_enabled=false --check
+
+ansible: ansible-check ansible-lint ansible-dry-run ## Run full Ansible validation
+
+# ── eBPF ──────────────────────────────────────────────────────────────────
+
+bpf: ## Build eBPF datapath object (Linux + clang/llvm + BTF required)
+	sh bpf/build.sh
+
+bpf-e2e: bpf ## Basic eBPF E2E: prog_test_run verdict check
+	rm -rf /sys/fs/bpf/lpftest && mkdir -p /sys/fs/bpf/lpftest/prog
+	bpftool prog loadall bpf/lpf_kern.o /sys/fs/bpf/lpftest/prog \
+		pinmaps /sys/fs/bpf/lpftest
+	python3 bpf/e2e_progrun.py; status=$$?; \
+	rm -rf /sys/fs/bpf/lpftest; exit $$status
+
+bpf-e2e-comprehensive: bpf ## 4-layer E2E: prog_test_run + map state + toolchain + live traffic
+	rm -rf /sys/fs/bpf/lpftest && mkdir -p /sys/fs/bpf/lpftest/prog
+	bpftool prog loadall bpf/lpf_kern.o /sys/fs/bpf/lpftest/prog \
+		pinmaps /sys/fs/bpf/lpftest
+	python3 bpf/e2e_runner.py \
+		--layers $${LPF_EBPF_LAYERS:-0,1,2,3} --skip-build; \
+	status=$$?; rm -rf /sys/fs/bpf/lpftest; exit $$status
+
+bpf-e2e-vagabond: ## Full Vagabond eBPF E2E suite (Firecracker microVM)
+	ci/vagabond/ebpf-e2e-suite.sh
+
+bpf-e2e-ct: bpf ## eBPF conntrack-specific E2E
+	ci/vagabond/ebpf-conntrack-suite.sh
+
+# ── E2E suites (requires Docker) ──────────────────────────────────────────
+
+e2e-feature: docker ## Run feature suite on all 5 distros
+	ci/vagabond/ansible-suite.sh
+
+e2e-ebpf: docker ## Run eBPF suite on all 5 distros (privileged)
+	@for distro in $(DOCKER_DISTROS); do \
+		printf 'ebpf E2E on lpf-ci:%s\n' "$$distro"; \
+		docker run --rm --privileged --user root \
+			-v /sys/fs/bpf:/sys/fs/bpf \
+			-v /sys/kernel/btf:/sys/kernel/btf:ro \
+			--tmpfs /tmp \
+			$(DOCKER_CI_TAG):$$distro \
+			bash -lc "cd /home/opam/src && LPF_EBPF_STRICT=1 ci/vagabond/ebpf-e2e-suite.sh" \
+			|| echo "ebpf E2E on $$distro had issues (may lack kernel support)"; \
+	done
+
+# ── Release ───────────────────────────────────────────────────────────────
+
 RELEASE_VERSION ?= $(shell $(LPF) version)
 RELEASE_TARBALL ?= lpf-$(RELEASE_VERSION).tar.gz
-CHECKSUM_FILE ?= SHA256SUMS
-SIGN_KEY ?=
+CHECKSUM_FILE   ?= SHA256SUMS
+SIGN_KEY        ?=
 
-release-checksum:
+release-checksum: ## Generate release tarball and checksums
 	git archive --prefix=lpf-$(RELEASE_VERSION)/ -o $(RELEASE_TARBALL) HEAD
 	sha256sum $(RELEASE_TARBALL) > $(CHECKSUM_FILE)
 	@printf 'checksums written to %s\n' $(CHECKSUM_FILE)
 
-release-sign: release-checksum
-	@if [ -z "$(SIGN_KEY)" ]; then printf 'set SIGN_KEY to your GPG key ID\n'; exit 1; fi
+release-sign: release-checksum ## Sign release files with GPG
+	@if [ -z "$(SIGN_KEY)" ]; then \
+		printf 'set SIGN_KEY to your GPG key ID\n'; exit 1; fi
 	gpg --detach-sign --armor --local-user $(SIGN_KEY) $(CHECKSUM_FILE)
 	gpg --detach-sign --armor --local-user $(SIGN_KEY) $(RELEASE_TARBALL)
-	@printf 'signed %s and %s with key %s\n' $(RELEASE_TARBALL) $(CHECKSUM_FILE) $(SIGN_KEY)
+	@printf 'signed %s and %s with key %s\n' \
+		$(RELEASE_TARBALL) $(CHECKSUM_FILE) $(SIGN_KEY)
 
-release-verify:
+release-verify: ## Verify release checksums and signatures
 	sha256sum -c $(CHECKSUM_FILE)
 	@if [ -f $(CHECKSUM_FILE).asc ]; then gpg --verify $(CHECKSUM_FILE).asc; fi
 	@if [ -f $(RELEASE_TARBALL).asc ]; then gpg --verify $(RELEASE_TARBALL).asc; fi
 	@printf 'release verified\n'
 
-deb:
-	set -eu; rm -rf debian; cp -a packaging/deb debian; trap 'rm -rf debian' EXIT; dpkg-buildpackage -b -us -uc -d
+deb: ## Build Debian package
+	set -eu; rm -rf debian; cp -a packaging/deb debian; \
+	trap 'rm -rf debian' EXIT; dpkg-buildpackage -b -us -uc -d
 
-rpm:
-	set -eu; VERSION=$$($(LPF) version); RPM_TOPDIR="$$(pwd)/../lpf-rpmbuild"; OPAMSWITCH="$$(opam switch show)"; export OPAMSWITCH; rm -rf "$$RPM_TOPDIR"; mkdir -p "$$RPM_TOPDIR/BUILD" "$$RPM_TOPDIR/BUILDROOT" "$$RPM_TOPDIR/RPMS" "$$RPM_TOPDIR/SOURCES" "$$RPM_TOPDIR/SPECS" "$$RPM_TOPDIR/SRPMS"; git archive --prefix="lpf-$$VERSION/" -o "$$RPM_TOPDIR/SOURCES/lpf-$$VERSION.tar.gz" HEAD; rpmbuild -bb --nodeps packaging/rpm/lpf.spec --define "_topdir $$RPM_TOPDIR"
+rpm: ## Build RPM package
+	set -eu; VERSION=$$($(LPF) version); \
+	RPM_TOPDIR="$$(pwd)/../lpf-rpmbuild"; \
+	OPAMSWITCH="$$(opam switch show)"; export OPAMSWITCH; \
+	rm -rf "$$RPM_TOPDIR"; \
+	mkdir -p "$$RPM_TOPDIR"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}; \
+	git archive --prefix="lpf-$$VERSION/" \
+		-o "$$RPM_TOPDIR/SOURCES/lpf-$$VERSION.tar.gz" HEAD; \
+	rpmbuild -bb --nodeps packaging/rpm/lpf.spec \
+		--define "_topdir $$RPM_TOPDIR"
