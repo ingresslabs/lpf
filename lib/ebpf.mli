@@ -19,7 +19,7 @@ type identity =
   | Id_proc of string
   | Id_dns of string
 
-type map_kind = Array | Hash | Lpm_trie
+type map_kind = Array | Hash | Lpm_trie | Lru_hash | Ringbuf
 
 type map = {
   name : string;

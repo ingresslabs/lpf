@@ -9,7 +9,7 @@ type identity =
   | Id_proc of string
   | Id_dns of string
 
-type map_kind = Array | Hash | Lpm_trie
+type map_kind = Array | Hash | Lpm_trie | Lru_hash | Ringbuf
 
 type map = {
   name : string;
@@ -425,6 +425,26 @@ let of_ir ?(version = 1) (ir : Ir.t) =
       entries = [];
     }
   in
+  let conntrack_map =
+    {
+      name = "lpf_conntrack";
+      kind = Lru_hash;
+      key_size = 16;
+      value_size = 16;
+      max_entries = 65536;
+      entries = [];
+    }
+  in
+  let events_map =
+    {
+      name = "lpf_events";
+      kind = Ringbuf;
+      key_size = 0;
+      value_size = 0;
+      max_entries = 256 * 1024;
+      entries = [];
+    }
+  in
   let identity_map name kind prefix =
     let tables = identity_tables ir [ prefix ] in
     let entries =
@@ -476,21 +496,24 @@ let of_ir ?(version = 1) (ir : Ir.t) =
           | _ -> None)
         ir.nats
     in
-    let has_nat = dnat_entries <> [] || snat_entries <> [] in
-    if has_nat then
-      [
-        {
-          name = "lpf_dnat"; kind = Lpm_trie; key_size = 8; value_size = 8;
-          max_entries = max (List.length dnat_entries) 1;
-          entries = dnat_entries;
-        };
-        {
-          name = "lpf_snat"; kind = Lpm_trie; key_size = 8; value_size = 8;
-          max_entries = max (List.length snat_entries) 1;
-          entries = snat_entries;
-        };
-      ]
-    else []
+    [
+      {
+        name = "lpf_dnat";
+        kind = Lpm_trie;
+        key_size = 8;
+        value_size = 8;
+        max_entries = max (List.length dnat_entries) 1;
+        entries = dnat_entries;
+      };
+      {
+        name = "lpf_snat";
+        kind = Lpm_trie;
+        key_size = 8;
+        value_size = 8;
+        max_entries = max (List.length snat_entries) 1;
+        entries = snat_entries;
+      };
+    ]
   in
   let devices =
     List.map (fun (i : Ir.interface_ref) -> i.device) ir.interfaces
@@ -544,7 +567,17 @@ let of_ir ?(version = 1) (ir : Ir.t) =
     version;
     default_action = ir.default_action;
     maps =
-      [ meta_map; rules_map; ports_map; hash_map; cidr4_map; cidr6_map; counters_map ]
+      [
+        meta_map;
+        rules_map;
+        ports_map;
+        hash_map;
+        cidr4_map;
+        cidr6_map;
+        counters_map;
+        conntrack_map;
+        events_map;
+      ]
       @ identity_maps @ nat_maps;
     programs = net_programs @ identity_programs;
     rules;
@@ -559,6 +592,8 @@ let map_kind_to_string = function
   | Array -> "array"
   | Hash -> "hash"
   | Lpm_trie -> "lpm_trie"
+  | Lru_hash -> "lru_hash"
+  | Ringbuf -> "ringbuf"
 
 let hook_to_string = function
   | Xdp_ingress device -> "xdp ingress on " ^ device
@@ -689,14 +724,23 @@ let kind_keyword = function
   | Array -> "array"
   | Hash -> "hash"
   | Lpm_trie -> "lpm_trie"
+  | Lru_hash -> "lru_hash"
+  | Ringbuf -> "ringbuf"
 
 let create_map_line (map : map) =
-  let flags = match map.kind with Lpm_trie -> " flags 1" | _ -> "" in
-  Printf.sprintf
-    "bpftool map create \"$PIN/%s\" type %s key %d value %d entries %d name \
-     %s%s 2>/dev/null || true"
-    map.name (kind_keyword map.kind) map.key_size map.value_size map.max_entries
-    map.name flags
+  match map.kind with
+  | Ringbuf ->
+      Printf.sprintf
+        "bpftool map create \"$PIN/%s\" type %s entries %d name %s 2>/dev/null \
+         || true"
+        map.name (kind_keyword map.kind) map.max_entries map.name
+  | _ ->
+      let flags = match map.kind with Lpm_trie -> " flags 1" | _ -> "" in
+      Printf.sprintf
+        "bpftool map create \"$PIN/%s\" type %s key %d value %d entries %d name \
+         %s%s 2>/dev/null || true"
+        map.name (kind_keyword map.kind) map.key_size map.value_size
+        map.max_entries map.name flags
 
 let update_line map_name key value =
   Printf.sprintf
@@ -1298,9 +1342,13 @@ let versioned_loader_script (image : t) =
     bprintf buf "# Create %s (max_entries=%d, key=%d, value=%d)\n"
       m.name m.max_entries m.key_size m.value_size;
     bprintf buf "bpftool map create %s \\\n" map_path;
-    bprintf buf "  type %s key %d value %d entries %d \\\n"
-      (match m.kind with Array -> "array" | Hash -> "hash" | Lpm_trie -> "lpm_trie")
-      m.key_size m.value_size m.max_entries;
+    (match m.kind with
+    | Ringbuf ->
+        bprintf buf "  type %s entries %d \\\n" (kind_keyword m.kind)
+          m.max_entries
+    | _ ->
+        bprintf buf "  type %s key %d value %d entries %d \\\n"
+          (kind_keyword m.kind) m.key_size m.value_size m.max_entries);
     bprintf buf "  name %s_v%d\n" m.name image.version;
     (* Populate entries *)
     List.iter (fun (key, value) ->
