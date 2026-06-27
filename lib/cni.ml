@@ -402,6 +402,25 @@ let detach_bpf cgroup_path =
             "bpftool cgroup detach %s cgroup_skb egress pinned %s 2>/dev/null"
             cgroup_path prog_egress))
 
+(* ─── bandwidth enforcement ──────────────────────────────────────────────── *)
+
+let setup_bandwidth host_if =
+  ignore
+    (run_cmd
+       (Printf.sprintf
+          "tc qdisc add dev %s root handle 1: htb default 1 2>/dev/null"
+          host_if));
+  ignore
+    (run_cmd
+       (Printf.sprintf
+          "tc class add dev %s parent 1: classid 1:1 htb rate 1gbit ceil 1gbit 2>/dev/null"
+          host_if))
+
+let teardown_bandwidth host_if =
+  ignore
+    (run_cmd
+       (Printf.sprintf "tc qdisc delete dev %s root 2>/dev/null" host_if))
+
 (* ─── ADD handler ─── *)
 
 let handle_add cfg netns_path container_id ifname =
@@ -424,6 +443,7 @@ let handle_add cfg netns_path container_id ifname =
                   ignore (delete_veth host_if);
                   Error (Printf.sprintf "container if up: %s" e)
               | Ok () -> (
+                  setup_bandwidth host_if;
                   match cfg.ipam with
                   | Some ipam_cfg -> (
                       let cni_path = getenv_default "CNI_PATH" "/opt/cni/bin" in
@@ -520,6 +540,7 @@ let handle_del cfg _netns_path container_id ifname =
       ignore
         (run_cmd (Printf.sprintf "ip addr flush dev %s 2>/dev/null" host_if))
   | None -> ());
+  teardown_bandwidth host_if;
   ignore (delete_veth host_if);
   Ok ()
 

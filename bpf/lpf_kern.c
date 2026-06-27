@@ -135,7 +135,7 @@ struct lpf_event {
   __u32 hook;          /* 0=xdp 1=tc_egress 2=cgroup 3=lsm */
   __u64 timestamp_ns;
   __u32 pkt_len;
-  __u32 padding;
+  __u32 cgroup_id;     /* pod identity: lower 32 bits of cgroup id */
 };
 
 /* ── BPF maps ───────────────────────────────────────────────────────────── */
@@ -330,6 +330,30 @@ struct {
   __type(key, struct lpf_svc_ct_key);
   __type(value, struct lpf_svc_ct_value);
 } lpf_svc_ct SEC(".maps");
+
+/* ── VXLAN overlay ─────────────────────────────────────────────────────────
+   Pure eBPF overlay network: no userspace tunnel daemon.
+   lpf_vxlan_peers maps pod CIDR prefix → target node IP.
+   TC ingress decaps VXLAN, TC egress encapsulates to remote nodes. */
+
+#define LPF_VXLAN_PORT 8472
+#define LPF_VXLAN_MAX_PEERS 4096
+
+struct lpf_vxlan_peer {
+  __be32 node_ip;       /* target node IP for encap */
+  __u32 vni;            /* virtual network identifier */
+};
+
+/* pod CIDR prefix (u32) → (node IP, VNI).
+   Key: pod IP masked to /24 (e.g. 10.42.1.0 → 10.42.1.0 as u32).
+   Value: node IP to encap to + VNI. */
+struct {
+  __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+  __uint(max_entries, LPF_VXLAN_MAX_PEERS);
+  __type(key, struct lpf_lpm_v4_key);
+  __type(value, struct lpf_vxlan_peer);
+  __uint(map_flags, BPF_F_NO_PREALLOC);
+} lpf_vxlan_peers SEC(".maps");
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
 
@@ -700,6 +724,7 @@ static __always_inline void lpf_emit_event(__u32 verdict, __s32 matched,
     ev->hook = hook;
     ev->timestamp_ns = bpf_ktime_get_ns();
     ev->pkt_len = pkt_len;
+    ev->cgroup_id = (__u32)bpf_get_current_cgroup_id();
     bpf_ringbuf_submit(ev, 0);
   }
 }
@@ -995,6 +1020,110 @@ static __always_inline int lpf_send_rst(struct __sk_buff *skb,
   return bpf_redirect(skb->ifindex, BPF_F_INGRESS);
 }
 
+/* ── VXLAN encap ───────────────────────────────────────────────────────────
+   Encapsulates a pod-to-pod packet destined for a remote node.
+   Wraps the original Ethernet+IP+payload in VXLAN+UDP+IP+Ethernet headers.
+   Uses bpf_skb_adjust_room for header growth. */
+
+#define LPF_VXLAN_HEADER_SIZE (8 + 8 + 20 + 14)
+
+struct lpf_vxlan_hdr {
+  __u8 flags;
+  __u8 reserved[3];
+  __u32 vni_reserved;
+};
+
+static __always_inline int lpf_vxlan_encap(struct __sk_buff *skb,
+                                            __be32 remote_node_ip) {
+  void *data = (void *)(long)skb->data;
+  void *data_end = (void *)(long)skb->data_end;
+  __u32 pkt_len = skb->len;
+
+  struct ethhdr *eth = data;
+  if ((void *)(eth + 1) > data_end) return TC_ACT_OK;
+
+  if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) return TC_ACT_OK;
+
+  struct iphdr *inner_ip = (void *)(eth + 1);
+  if ((void *)(inner_ip + 1) > data_end) return TC_ACT_OK;
+
+  struct lpf_lpm_v4_key vxlan_key = { .prefixlen = 24 };
+  __builtin_memcpy(vxlan_key.data, &inner_ip->daddr, 4);
+  struct lpf_vxlan_peer *peer = bpf_map_lookup_elem(&lpf_vxlan_peers, &vxlan_key);
+  if (!peer || peer->node_ip != remote_node_ip) return TC_ACT_OK;
+
+  if (bpf_skb_adjust_room(skb, LPF_VXLAN_HEADER_SIZE, BPF_ADJ_ROOM_MAC, 0))
+    return TC_ACT_OK;
+
+  data = (void *)(long)skb->data;
+  data_end = (void *)(long)skb->data_end;
+
+  struct ethhdr *outer_eth = data;
+  struct iphdr *outer_ip = (void *)(outer_eth + 1);
+  struct udphdr *outer_udp = (void *)(outer_ip + 1);
+  struct lpf_vxlan_hdr *vxlan = (void *)(outer_udp + 1);
+
+  if ((void *)(vxlan + 1) > data_end) return TC_ACT_OK;
+
+  __builtin_memset(outer_eth->h_dest, 0, 6);
+  __builtin_memset(outer_eth->h_source, 0, 6);
+  outer_eth->h_proto = bpf_htons(LPF_ETH_P_IP);
+
+  outer_ip->version = 4;
+  outer_ip->ihl = 5;
+  outer_ip->tos = 0;
+  outer_ip->tot_len = bpf_htons((__u16)(pkt_len + 8 + 8 + 20));
+  outer_ip->id = 0;
+  outer_ip->frag_off = 0;
+  outer_ip->ttl = 64;
+  outer_ip->protocol = LPF_IPPROTO_UDP;
+  outer_ip->saddr = 0;
+  outer_ip->daddr = peer->node_ip;
+  outer_ip->check = 0;
+
+  outer_udp->source = bpf_htons(LPF_VXLAN_PORT);
+  outer_udp->dest = bpf_htons(LPF_VXLAN_PORT);
+  outer_udp->len = bpf_htons((__u16)(pkt_len + 8 + 8));
+  outer_udp->check = 0;
+
+  __builtin_memset(vxlan, 0, sizeof(*vxlan));
+  vxlan->flags = 0x08;
+
+  return bpf_redirect(skb->ifindex, BPF_F_INGRESS);
+}
+
+/* ── VXLAN decap ───────────────────────────────────────────────────────────
+   Decapsulates a VXLAN packet arriving from a remote node.
+   Strips VXLAN+UDP+IP+Ethernet headers and re-injects the inner packet.
+   Uses bpf_skb_adjust_room for header removal. */
+
+static __always_inline int lpf_vxlan_decap(struct __sk_buff *skb) {
+  void *data = (void *)(long)skb->data;
+  void *data_end = (void *)(long)skb->data_end;
+
+  struct ethhdr *eth = data;
+  if ((void *)(eth + 1) > data_end) return TC_ACT_OK;
+  if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) return TC_ACT_OK;
+
+  struct iphdr *ip = (void *)(eth + 1);
+  if ((void *)(ip + 1) > data_end) return TC_ACT_OK;
+  if (ip->protocol != LPF_IPPROTO_UDP) return TC_ACT_OK;
+
+  __u32 ihl = ip->ihl * 4;
+  struct udphdr *udp = (void *)ip + ihl;
+  if ((void *)(udp + 1) > data_end) return TC_ACT_OK;
+  if (udp->dest != bpf_htons(LPF_VXLAN_PORT)) return TC_ACT_OK;
+
+  struct lpf_vxlan_hdr *vxlan = (void *)(udp + 1);
+  if ((void *)(vxlan + 1) > data_end) return TC_ACT_OK;
+  if (vxlan->flags != 0x08) return TC_ACT_OK;
+
+  if (bpf_skb_adjust_room(skb, -(int)LPF_VXLAN_HEADER_SIZE, BPF_ADJ_ROOM_MAC, 0))
+    return TC_ACT_OK;
+
+  return bpf_redirect(skb->ifindex, BPF_F_INGRESS);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Hook 1: XDP ingress (fastest path, before sk_buff allocation)
    ══════════════════════════════════════════════════════════════════════════ */
@@ -1172,7 +1301,16 @@ int lpf_egress(struct __sk_buff *skb) {
   if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) {
     if (eth->h_proto == bpf_htons(LPF_ETH_P_IPV6)) {
       /* same match engine for IPv6 egress */
-      return TC_ACT_OK;
+  if (m.verdict == LPF_VERDICT_PASS) {
+    struct iphdr *pass_ip = (void *)(eth + 1);
+    if ((void *)(pass_ip + 1) <= data_end) {
+      struct lpf_lpm_v4_key vk = { .prefixlen = 24 };
+      __builtin_memcpy(vk.data, &pass_ip->daddr, 4);
+      struct lpf_vxlan_peer *vp = bpf_map_lookup_elem(&lpf_vxlan_peers, &vk);
+      if (vp) return lpf_vxlan_encap(skb, vp->node_ip);
+    }
+  }
+  return TC_ACT_OK;
     }
     return TC_ACT_OK;
   }
