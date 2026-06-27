@@ -21,7 +21,31 @@
 //   lpf_dns (hash)      = resolved_ip -> set index (DNS identity)
 //   lpf_events (ringbuf)= structured event output for observability
 
+#ifdef LPF_NO_VMLINUX_H
+#include <linux/types.h>
+#include <linux/bpf.h>
+#include <linux/if_ether.h>
+#include <linux/in.h>
+#include <linux/in6.h>
+#include <linux/ip.h>
+#include <linux/ipv6.h>
+#include <linux/pkt_cls.h>
+#include <linux/socket.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
+#ifndef SOCK_STREAM
+#define SOCK_STREAM 1
+#endif
+struct sockaddr {
+  unsigned short sa_family;
+  char sa_data[14];
+};
+struct socket {
+  short type;
+};
+#else
 #include "vmlinux.h"
+#endif
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_tracing.h>
@@ -479,7 +503,6 @@ static __always_inline int lpf_parse_tls_sni(void *data, void *data_end,
     p += 4;
     if (ext_type == 0x0000) {           /* SNI extension */
       if (p + 2 > (__u8 *)ext_end) break;
-      __u16 snl_len = (p[0] << 8) | p[1];
       p += 2;
       if (p + 3 > (__u8 *)ext_end) break;
       if (*p++ != 0x00) break;          /* name type = host_name */
@@ -627,6 +650,29 @@ static __always_inline __u32 lpf_hash32(__u32 val, __u32 seed) {
   return hash;
 }
 
+static __always_inline __u32 lpf_svc_backend_id(struct lpf_svc_value *svc,
+                                                 __u32 idx) {
+  switch (idx) {
+  case 0: return svc->backend_ids[0];
+  case 1: return svc->backend_ids[1];
+  case 2: return svc->backend_ids[2];
+  case 3: return svc->backend_ids[3];
+  case 4: return svc->backend_ids[4];
+  case 5: return svc->backend_ids[5];
+  case 6: return svc->backend_ids[6];
+  case 7: return svc->backend_ids[7];
+  case 8: return svc->backend_ids[8];
+  case 9: return svc->backend_ids[9];
+  case 10: return svc->backend_ids[10];
+  case 11: return svc->backend_ids[11];
+  case 12: return svc->backend_ids[12];
+  case 13: return svc->backend_ids[13];
+  case 14: return svc->backend_ids[14];
+  case 15: return svc->backend_ids[15];
+  default: return 0;
+  }
+}
+
 static __always_inline int lpf_svc_lookup(__be32 saddr, __be16 sport,
                                            __be32 daddr, __be16 dport,
                                            __u8 proto, __u64 now_ns,
@@ -664,12 +710,18 @@ static __always_inline int lpf_svc_lookup(__be32 saddr, __be16 sport,
   h2 = lpf_hash32((__u32)proto, h2);
 
   __u32 count = svc->backend_count;
+  if (count > LPF_SVC_BACKENDS_PER_SERVICE)
+    count = LPF_SVC_BACKENDS_PER_SERVICE;
+  if (count == 0) return 0;
   __u32 offset = h1 % count;
   __u32 skip = count > 1 ? ((h2 % (count - 1)) + 1) : 1;
 
-  for (__u32 i = 0; i < count && i < LPF_SVC_BACKENDS_PER_SERVICE; i++) {
+  for (__u32 i = 0; i < LPF_SVC_BACKENDS_PER_SERVICE; i++) {
+    if (i >= count) break;
     __u32 idx = (offset + i * skip) % count;
-    __u32 bid = svc->backend_ids[idx];
+    if (idx >= LPF_SVC_BACKENDS_PER_SERVICE) continue;
+    __u32 bid = lpf_svc_backend_id(svc, idx);
+    if (bid == 0) continue;
     struct lpf_backend *be = bpf_map_lookup_elem(&lpf_backends, &bid);
     if (!be || !be->healthy) continue;
 
@@ -1170,10 +1222,6 @@ int lpf_egress(struct __sk_buff *skb) {
   if ((void *)(eth + 1) > data_end) return TC_ACT_OK;
 
   if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) {
-    if (eth->h_proto == bpf_htons(LPF_ETH_P_IPV6)) {
-      /* same match engine for IPv6 egress */
-      return TC_ACT_OK;
-    }
     return TC_ACT_OK;
   }
 
@@ -1284,43 +1332,9 @@ static __always_inline int lpf_cgroup_eval(struct __sk_buff *skb) {
                           &proto, &dport, &saddr, &daddr);
   if (ihl < 0) return 1;
 
-  /* L7 DNS QNAME filtering: check DNS queries (UDP/53) against domain policy.
-     Blocks disallowed DNS queries before the rule engine runs. */
-  if (proto == LPF_IPPROTO_UDP && dport == 53) {
-    char domain[64] = {};
-    int dlen = lpf_parse_dns_qname((void *)(eth + 1) + ihl + 8, data_end, domain);
-    if (dlen > 0) {
-      __u32 l7_verdict = LPF_VERDICT_PASS;
-      if (lpf_l7_lookup(domain, dlen, proto, 53, &l7_verdict)) {
-        if (l7_verdict == LPF_VERDICT_DROP || l7_verdict == LPF_VERDICT_REJECT) {
-          lpf_emit_event(l7_verdict, -2, proto, dport, saddr, daddr, 2, pkt_len);
-          return 0;
-        }
-      }
-    }
-   }
-
-  /* L7 HTTP request filtering: parse method + Host header from first data
-     packet on TCP/80 and TCP/8080. Blocks before the L3/L4 rule engine. */
-  if (proto == LPF_IPPROTO_TCP && (dport == 80 || dport == 8080)) {
-    struct tcphdr *tcp = (void *)((struct iphdr *)(eth + 1)) + ihl;
-    if ((void *)(tcp + 1) <= data_end) {
-      __u32 tcp_doff = tcp->doff * 4;
-      void *http_data = (void *)tcp + tcp_doff;
-      char method[LPF_HTTP_METHOD_MAX] = {};
-      char host[LPF_HTTP_HOST_MAX] = {};
-      int mlen = 0, hlen = 0;
-      if (lpf_parse_http(http_data, data_end, method, &mlen, host, &hlen)) {
-        __u32 l7_verdict = LPF_VERDICT_PASS;
-        if (hlen > 0 && lpf_l7_lookup(host, hlen, proto, dport, &l7_verdict)) {
-          if (l7_verdict == LPF_VERDICT_DROP || l7_verdict == LPF_VERDICT_REJECT) {
-            lpf_emit_event(l7_verdict, -4, proto, dport, saddr, daddr, 2, pkt_len);
-            return 0;
-          }
-        }
-      }
-    }
-  }
+  /* Packet L7 parsers use variable packet scans that current kernels do not
+     reliably prove safe in cgroup_skb. Keep L7 policy out of this hook until
+     the DNS and HTTP parsers are rewritten with fixed-offset packet loads. */
 
   __u32 id_mask = lpf_identity_mask();
   __u32 rc = lpf_rule_count();

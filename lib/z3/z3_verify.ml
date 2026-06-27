@@ -1,3 +1,54 @@
+module Ir = Lpf.Ir
+module Policy = Lpf.Policy
+module Explain = Lpf.Explain
+
+type counterexample = {
+  direction : string;
+  interface : string;
+  protocol : string;
+  source : string;
+  destination : string;
+  port : int option;
+  decision : string;
+  matched_rule_line : int option;
+  nat_applied : int option;
+  rdr_applied : int option;
+}
+
+type dead_rule = { line : int; action : string; reason : string }
+
+type equiv_result =
+  | Equivalent
+  | Not_equivalent of {
+      counterexample : counterexample;
+      decision_in_first : string;
+      decision_in_second : string;
+    }
+
+type reachable_result = Reachable of counterexample | Unreachable
+
+type invariant_clause =
+  | Field of string * string * string
+  | And of invariant_clause * invariant_clause
+  | Or of invariant_clause * invariant_clause
+  | Not of invariant_clause
+
+type invariant_result = Holds | Violated of counterexample
+
+type rule_coverage = {
+  line : int;
+  action : string;
+  reachable : bool;
+  example : counterexample option;
+}
+
+type generated_test = {
+  test_name : string;
+  packet : Explain.packet;
+  expected_action : string;
+  rule_line : int option;
+}
+
 open Policy
 open Ir
 
@@ -12,44 +63,12 @@ let bool_sort = lazy (Z3.Boolean.mk_sort (ctxt ()))
 let bv32_sort = lazy (Z3.BitVector.mk_sort (ctxt ()) 32)
 let bv16_sort = lazy (Z3.BitVector.mk_sort (ctxt ()) 16)
 
-(* Symbolic enums for protocol and interface *)
-let mk_enum_sort name values =
-  let c = ctxt () in
-  let syms = List.map (fun v -> Z3.Symbol.mk_string c v) values in
-  let sorts =
-    List.map
-      (fun _ ->
-        Z3.EnumSort.mk_constructor_s c "c"
-          (Z3.Symbol.mk_string c "c")
-          [] (Some 0))
-      values
-  in
-  let sort = Z3.EnumSort.mk_sort_s c (Z3.Symbol.mk_string c name) syms sorts in
-  (sort, syms)
-
-let proto_names = [ "tcp"; "udp"; "icmp"; "any" ]
-let proto_sort, proto_syms = lazy (mk_enum_sort "protocol" proto_names)
-let proto_sort_val () = fst (Lazy.force proto_sort)
-
-let proto_tcp () =
-  Z3.Expr.mk_const_s (ctxt ())
-    (snd (Lazy.force proto_sort) |> List.hd)
-    (proto_sort_val ())
-
-let proto_udp () =
-  Z3.Expr.mk_const_s (ctxt ())
-    (List.nth (snd (Lazy.force proto_sort)) 1)
-    (proto_sort_val ())
-
-let proto_icmp () =
-  Z3.Expr.mk_const_s (ctxt ())
-    (List.nth (snd (Lazy.force proto_sort)) 2)
-    (proto_sort_val ())
-
-let proto_any_val () =
-  Z3.Expr.mk_const_s (ctxt ())
-    (List.nth (snd (Lazy.force proto_sort)) 3)
-    (proto_sort_val ())
+(* Protocols are encoded as integers: 0=tcp, 1=udp, 2=icmp, 3=any. *)
+let proto_sort_val () = Z3.Arithmetic.Integer.mk_sort (ctxt ())
+let proto_value n = Z3.Arithmetic.Integer.mk_numeral_i (ctxt ()) n
+let proto_tcp () = proto_value 0
+let proto_udp () = proto_value 1
+let proto_icmp () = proto_value 2
 
 (* ── Z3 expression helpers ──────────────────────────────────────────────── *)
 
@@ -58,9 +77,8 @@ let mk_true () = Z3.Boolean.mk_true (ctxt ())
 let mk_false () = Z3.Boolean.mk_false (ctxt ())
 let mk_eq a b = Z3.Boolean.mk_eq (ctxt ()) a b
 let mk_not a = Z3.Boolean.mk_not (ctxt ()) a
-let mk_and a b = Z3.Boolean.mk_and (ctxt ()) [| a; b |]
-let mk_or a b = Z3.Boolean.mk_or (ctxt ()) [| a; b |]
-let mk_implies a b = Z3.Boolean.mk_implies (ctxt ()) a b
+let mk_and a b = Z3.Boolean.mk_and (ctxt ()) [ a; b ]
+let mk_or a b = Z3.Boolean.mk_or (ctxt ()) [ a; b ]
 let mk_bv_uge a b = Z3.BitVector.mk_uge (ctxt ()) a b
 let mk_bv_ule a b = Z3.BitVector.mk_ule (ctxt ()) a b
 let mk_bv_eq a b = mk_eq a b
@@ -134,35 +152,15 @@ let iface_names (ir : Ir.t) =
   in
   if names = [] then [ "eth0" ] else names
 
-let mk_sym_packet (ir : Ir.t) =
+let mk_sym_packet (_ir : Ir.t) =
   let c = ctxt () in
-  let src =
-    Z3.Expr.mk_const_s c
-      (Z3.Symbol.mk_string c "pkt_src")
-      (Lazy.force bv32_sort)
-  in
-  let dst =
-    Z3.Expr.mk_const_s c
-      (Z3.Symbol.mk_string c "pkt_dst")
-      (Lazy.force bv32_sort)
-  in
-  let port =
-    Z3.Expr.mk_const_s c
-      (Z3.Symbol.mk_string c "pkt_port")
-      (Lazy.force bv16_sort)
-  in
-  let dir =
-    Z3.Expr.mk_const_s c
-      (Z3.Symbol.mk_string c "pkt_dir")
-      (Lazy.force bool_sort)
-  in
-  let proto =
-    Z3.Expr.mk_const_s c (Z3.Symbol.mk_string c "pkt_proto") (proto_sort_val ())
-  in
+  let src = Z3.Expr.mk_const_s c "pkt_src" (Lazy.force bv32_sort) in
+  let dst = Z3.Expr.mk_const_s c "pkt_dst" (Lazy.force bv32_sort) in
+  let port = Z3.Expr.mk_const_s c "pkt_port" (Lazy.force bv16_sort) in
+  let dir = Z3.Expr.mk_const_s c "pkt_dir" (Lazy.force bool_sort) in
+  let proto = Z3.Expr.mk_const_s c "pkt_proto" (proto_sort_val ()) in
   let iface =
-    Z3.Expr.mk_const_s c
-      (Z3.Symbol.mk_string c "pkt_iface")
-      (Z3.Arithmetic.Integer.mk_sort c)
+    Z3.Expr.mk_const_s c "pkt_iface" (Z3.Arithmetic.Integer.mk_sort c)
   in
   {
     pkt_dir = dir;
@@ -286,11 +284,7 @@ let encode_nat_match (ir : Ir.t) (sp : sym_packet) (nat : nat) =
   in
   (* NAT means: src is rewritten to nat.translation.
      We encode this as: post-NAT src = translation *)
-  let nat_src =
-    Z3.Expr.mk_const_s (ctxt ())
-      (Z3.Symbol.mk_string (ctxt ()) "nat_src")
-      (Lazy.force bv32_sort)
-  in
+  let nat_src = Z3.Expr.mk_const_s (ctxt ()) "nat_src" (Lazy.force bv32_sort) in
   let match_expr = mk_all_of conds in
   let trans_expr =
     match nat.translation with
@@ -312,11 +306,7 @@ let encode_rdr_match (ir : Ir.t) (sp : sym_packet) (rdr : rdr) =
       encode_port sp.pkt_port rdr.port;
     ]
   in
-  let rdr_dst =
-    Z3.Expr.mk_const_s (ctxt ())
-      (Z3.Symbol.mk_string (ctxt ()) "rdr_dst")
-      (Lazy.force bv32_sort)
-  in
+  let rdr_dst = Z3.Expr.mk_const_s (ctxt ()) "rdr_dst" (Lazy.force bv32_sort) in
   let match_expr = mk_all_of conds in
   let trans_expr =
     match rdr.translation with
@@ -338,13 +328,9 @@ let encode_rdr_match (ir : Ir.t) (sp : sym_packet) (rdr : rdr) =
 
 type symbolic_policy = {
   sp : sym_packet;
-  rules : (Z3.Expr.expr * Ir.action * int) list;
+  rules : (Z3.Expr.expr * Policy.action * int) list;
       (* (matches, action, line_number) *)
-  default_action : Ir.action;
-  nats : (Z3.Expr.expr * Z3.Expr.expr) list;
-      (* (matches, translation_constraint) pairs *)
-  rdrs : (Z3.Expr.expr * Z3.Expr.expr) list;
-      (* (matches, translation_constraint) pairs *)
+  default_action : Policy.action;
 }
 
 let encode_policy (ir : Ir.t) =
@@ -357,7 +343,7 @@ let encode_policy (ir : Ir.t) =
       (fun rule -> (encode_rule_match ir sp rule, rule.action, rule.span.line))
       all_rules
   in
-  let nats =
+  let _nats =
     List.filter_map
       (fun nat ->
         match encode_nat_match ir sp nat with
@@ -365,7 +351,7 @@ let encode_policy (ir : Ir.t) =
         | None -> None)
       ir.nats
   in
-  let rdrs =
+  let _rdrs =
     List.filter_map
       (fun rdr ->
         match encode_rdr_match ir sp rdr with
@@ -380,8 +366,6 @@ let encode_policy (ir : Ir.t) =
       (match ir.default_action with
       | Default_pass -> Pass
       | Default_deny -> Block);
-    nats;
-    rdrs;
   }
 
 (* Build the decision function.
@@ -401,34 +385,26 @@ let encode_decision (pol : symbolic_policy) =
     | (matches, action, line) :: rest ->
         let cond = mk_and seen_not matches in
         let line_val = Z3.Arithmetic.Integer.mk_numeral_i (ctxt ()) line in
-        let then_pass, then_block, then_line =
+        let then_pass, then_block =
           match action with
-          | Pass -> (mk_true (), mk_false (), line_val)
-          | Block -> (mk_false (), mk_true (), line_val)
-          | Reject -> (mk_false (), mk_false (), line_val)
+          | Pass -> (mk_true (), mk_false ())
+          | Block -> (mk_false (), mk_true ())
+          | Reject -> (mk_false (), mk_false ())
         in
-        let else_pass, else_block, else_line =
+        let else_pass, else_block, _else_line =
           fold_rules (mk_and seen_not (mk_not matches)) line_var rest
         in
         ( mk_or (mk_and cond then_pass) (mk_and (mk_not cond) else_pass),
           mk_or (mk_and cond then_block) (mk_and (mk_not cond) else_block),
-          (* line: if cond then line_val else rest_line.
-             Encode via: (cond ∧ line = line_val) ∨ (¬cond ∧ line = else_line) *)
-          let new_line_var =
-            Z3.Expr.mk_const_s (ctxt ())
-              (Z3.Symbol.mk_string (ctxt ()) "rule_line")
-              (Z3.Arithmetic.Integer.mk_sort (ctxt ()))
-          in
           (* This is simplified — we only care about pass/block for the decision.
              For counterexample extraction, we use the solver model directly. *)
           line_val )
   in
   let line_var =
-    Z3.Expr.mk_const_s (ctxt ())
-      (Z3.Symbol.mk_string (ctxt ()) "matched_line")
+    Z3.Expr.mk_const_s (ctxt ()) "matched_line"
       (Z3.Arithmetic.Integer.mk_sort (ctxt ()))
   in
-  let pass, block, matched_line = fold_rules (mk_true ()) line_var pol.rules in
+  let pass, block, _matched_line = fold_rules (mk_true ()) line_var pol.rules in
   (pass, block)
 
 (* ── Solver helpers ─────────────────────────────────────────────────────── *)
@@ -436,45 +412,42 @@ let encode_decision (pol : symbolic_policy) =
 let mk_solver () = Z3.Solver.mk_solver (ctxt ()) None
 
 let check_sat solver =
-  match Z3.Solver.check (ctxt ()) solver with
+  match Z3.Solver.check solver [] with
   | Z3.Solver.SATISFIABLE -> true
   | _ -> false
 
-let get_model solver = Z3.Solver.get_model (ctxt ()) solver
+let get_model solver = Z3.Solver.get_model solver
 
 let model_get_bool model expr =
-  match Z3.Model.get_const_interp_e (ctxt ()) model expr with
-  | Some v -> Z3.Boolean.is_true (ctxt ()) v
+  match Z3.Model.get_const_interp_e model expr with
+  | Some v -> Z3.Boolean.is_true v
   | None -> false
 
 let model_get_int model expr =
-  match Z3.Model.get_const_interp_e (ctxt ()) model expr with
+  match Z3.Model.get_const_interp_e model expr with
   | Some v -> (
-      try Some (int_of_string (Z3.Expr.get_numeral_string v)) with _ -> None)
+      try Some (int_of_string (Z3.Arithmetic.Integer.numeral_to_string v))
+      with _ -> None)
   | None -> None
 
 let model_get_ip4 model expr =
-  match Z3.Model.get_const_interp_e (ctxt ()) model expr with
+  match Z3.Model.get_const_interp_e model expr with
   | None -> "0.0.0.0"
   | Some v -> (
-      try int32_to_ip4_str (Int32.of_string (Z3.Expr.get_numeral_string v))
+      try int32_to_ip4_str (Int32.of_string (Z3.BitVector.numeral_to_string v))
       with _ -> "0.0.0.0")
 
 let model_get_port model expr =
-  match Z3.Model.get_const_interp_e (ctxt ()) model expr with
+  match Z3.Model.get_const_interp_e model expr with
   | None -> None
-  | Some v -> int_of_string_opt (Z3.Expr.get_numeral_string v)
+  | Some v -> int_of_string_opt (Z3.BitVector.numeral_to_string v)
 
 let model_get_proto model expr =
-  match Z3.Model.get_const_interp_e (ctxt ()) model expr with
-  | None -> "any"
-  | Some v ->
-      let s = Z3.Expr.to_string v in
-      if String.contains s '0' then "any"
-      else if String.contains s '1' then "tcp"
-      else if String.contains s '2' then "udp"
-      else if String.contains s '3' then "icmp"
-      else "any"
+  match model_get_int model expr with
+  | Some 0 -> "tcp"
+  | Some 1 -> "udp"
+  | Some 2 -> "icmp"
+  | Some 3 | None | Some _ -> "any"
 
 let model_get_iface (ir : Ir.t) model expr =
   let names = iface_names ir in
@@ -614,8 +587,8 @@ let check_consistency (ir : Ir.t) =
     | [] -> ()
     | (matches, action, line) :: rest ->
         let fires = mk_and seen_not matches in
-        Z3.Solver.push (ctxt ()) solver;
-        Z3.Solver.add (ctxt ()) solver [ fires ];
+        Z3.Solver.push solver;
+        Z3.Solver.add solver [ fires ];
         if not (check_sat solver) then
           result :=
             {
@@ -628,7 +601,7 @@ let check_consistency (ir : Ir.t) =
               reason = "shadowed by earlier rule(s)";
             }
             :: !result;
-        Z3.Solver.pop (ctxt ()) solver 1;
+        Z3.Solver.pop solver 1;
         check_rules (mk_and seen_not (mk_not matches)) (idx + 1) rest
   in
   check_rules (mk_true ()) 1 pol.rules;
@@ -645,7 +618,7 @@ let check_equivalence (ir1 : Ir.t) (ir2 : Ir.t) =
     mk_or (mk_not (mk_eq pass1 pass2)) (mk_not (mk_eq block1 block2))
   in
   let solver = mk_solver () in
-  Z3.Solver.add (ctxt ()) solver [ diff ];
+  Z3.Solver.add solver [ diff ];
   if check_sat solver then
     match get_model solver with
     | Some model ->
@@ -672,7 +645,7 @@ let check_reachable (ir : Ir.t) ~constraints ~target_action =
     | Block -> block_expr
     | Reject -> mk_false ()
   in
-  Z3.Solver.add (ctxt ()) solver [ target_expr ];
+  Z3.Solver.add solver [ target_expr ];
 
   List.iter
     (fun (field, value) ->
@@ -690,7 +663,7 @@ let check_reachable (ir : Ir.t) ~constraints ~target_action =
             | None -> mk_true ())
         | _ -> mk_true ()
       in
-      Z3.Solver.add (ctxt ()) solver [ c ])
+      Z3.Solver.add solver [ c ])
     constraints;
 
   if check_sat solver then
@@ -735,7 +708,7 @@ let check_invariant (ir : Ir.t) clauses =
   (* Violation: condition holds AND packet passes (should be blocked) *)
   let pass_expr, _ = encode_decision pol in
   let violation = mk_and condition pass_expr in
-  Z3.Solver.add (ctxt ()) solver [ violation ];
+  Z3.Solver.add solver [ violation ];
 
   if check_sat solver then
     match get_model solver with
@@ -751,7 +724,7 @@ let minimize (ir : Ir.t) =
   let all_rules =
     List.concat_map (fun (a : anchor) -> a.rules) ir.anchors @ ir.rules
   in
-  let total = List.length all_rules in
+  let _total = List.length all_rules in
   let removed = ref [] in
   let kept = ref [] in
   List.iteri
@@ -773,7 +746,7 @@ let minimize (ir : Ir.t) =
           (mk_not (mk_eq block_full block_minus))
       in
       let solver = mk_solver () in
-      Z3.Solver.add (ctxt ()) solver [ diff ];
+      Z3.Solver.add solver [ diff ];
       if check_sat solver then
         (* Rule is needed — keep it *)
         kept := !kept @ [ rule ]
@@ -797,7 +770,7 @@ let check_rule_coverage (ir : Ir.t) =
         let matches = encode_rule_match ir pol.sp rule in
         let fires = mk_and seen_not matches in
         let solver = mk_solver () in
-        Z3.Solver.add (ctxt ()) solver [ fires ];
+        Z3.Solver.add solver [ fires ];
         let reachable = check_sat solver in
         let example =
           if reachable then
@@ -842,7 +815,7 @@ let generate_tests (ir : Ir.t) =
 
   (* Helper: generate a test from a Z3 query *)
   let generate ?(name_prefix = "test") (solver : Z3.Solver.solver)
-      (pol : symbolic_policy) (action : Ir.action) =
+      (pol : symbolic_policy) (action : Policy.action) =
     if check_sat solver then
       match get_model solver with
       | Some model ->
@@ -892,7 +865,7 @@ let generate_tests (ir : Ir.t) =
         let matches = encode_rule_match ir pol.sp rule in
         let fires = mk_and seen_not matches in
         let solver = mk_solver () in
-        Z3.Solver.add (ctxt ()) solver [ fires ];
+        Z3.Solver.add solver [ fires ];
         generate ~name_prefix:"rule_witness" solver pol rule.action;
         witness_rules (mk_and seen_not (mk_not matches)) rest
   in
@@ -907,7 +880,7 @@ let generate_tests (ir : Ir.t) =
           match ip4_cidr_low_high entry with
           | Some (low, high) when low <> high ->
               let solver = mk_solver () in
-              Z3.Solver.add (ctxt ()) solver
+              Z3.Solver.add solver
                 [
                   mk_bv_eq pol.sp.pkt_src (i32_to_z3 low);
                   mk_bv_eq pol.sp.pkt_dst (i32_to_z3 (ip4_to_int32 "1.1.1.1"));
@@ -915,7 +888,7 @@ let generate_tests (ir : Ir.t) =
               generate ~name_prefix:"cidr_low_boundary" solver pol Block;
 
               let solver = mk_solver () in
-              Z3.Solver.add (ctxt ()) solver
+              Z3.Solver.add solver
                 [
                   mk_bv_eq pol.sp.pkt_src (i32_to_z3 high);
                   mk_bv_eq pol.sp.pkt_dst (i32_to_z3 (ip4_to_int32 "1.1.1.1"));
@@ -927,18 +900,18 @@ let generate_tests (ir : Ir.t) =
 
   (* Edge case: port 0 and port 65535 *)
   let solver = mk_solver () in
-  Z3.Solver.add (ctxt ()) solver
+  Z3.Solver.add solver
     [ mk_bv_eq pol.sp.pkt_port (Z3.BitVector.mk_numeral (ctxt ()) "0" 16) ];
   generate ~name_prefix:"port_edge_zero" solver pol Block;
 
   let solver = mk_solver () in
-  Z3.Solver.add (ctxt ()) solver
+  Z3.Solver.add solver
     [ mk_bv_eq pol.sp.pkt_port (Z3.BitVector.mk_numeral (ctxt ()) "65535" 16) ];
   generate ~name_prefix:"port_edge_max" solver pol Block;
 
   (* Edge case: IP boundaries *)
   let solver = mk_solver () in
-  Z3.Solver.add (ctxt ()) solver
+  Z3.Solver.add solver
     [
       mk_bv_eq pol.sp.pkt_src (i32_to_z3 0l);
       mk_bv_eq pol.sp.pkt_dst (i32_to_z3 0l);
@@ -946,7 +919,7 @@ let generate_tests (ir : Ir.t) =
   generate ~name_prefix:"ip_boundary_zero" solver pol Block;
 
   let solver = mk_solver () in
-  Z3.Solver.add (ctxt ()) solver
+  Z3.Solver.add solver
     [
       mk_bv_eq pol.sp.pkt_src (i32_to_z3 0xffffffffl);
       mk_bv_eq pol.sp.pkt_dst (i32_to_z3 0xffffffffl);
@@ -1000,7 +973,7 @@ let check_backend_equivalence ~ir ~ebpf_rules =
       (mk_not (mk_eq block_ir ebpf_block))
   in
   let solver = mk_solver () in
-  Z3.Solver.add (ctxt ()) solver [ diff ];
+  Z3.Solver.add solver [ diff ];
   if check_sat solver then
     match get_model solver with
     | Some model ->

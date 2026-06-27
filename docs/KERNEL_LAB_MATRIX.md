@@ -14,8 +14,8 @@ The matrix keeps these states separate:
 - `requested`: every label in the manifest or `REQUESTED_KERNELS`
 - `available`: labels mapped to a registered Firecracker image outside the repo
 - `missing`: requested labels that do not have an available image
-- `covered`: available labels that booted a Firecracker VM and completed
-  `lpf e2e run`
+- `covered`: available labels that booted a Firecracker VM and completed the
+  tracked CI/lab E2E suite
 - `failed`: available labels that booted or ran but did not complete the suite
 
 Missing kernels are never counted as covered. A kernel is covered only when the
