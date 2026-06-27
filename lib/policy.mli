@@ -12,7 +12,7 @@ type reference =
   | Table_ref of string
   | Macro_ref of string
 
-type port = Port_any | Port_number of int | Port_macro of string
+type port = Port_any | Port_number of int | Port_range of int * int | Port_macro of string
 type interface_decl = { name : string; device : string; span : span }
 type macro = { name : string; value : string; span : span }
 type table = { name : string; entries : string list; span : span }

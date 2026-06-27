@@ -26,6 +26,7 @@ let string_of_reference = function
 let string_of_port = function
   | Port_any -> "any"
   | Port_number number -> string_of_int number
+  | Port_range (low, high) -> Printf.sprintf "%d:%d" low high
   | Port_macro name -> "$" ^ name
 
 let format_policy (policy : policy) =
