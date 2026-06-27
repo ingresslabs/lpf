@@ -84,6 +84,54 @@ jobs:
       - run: opam exec -- dune build
       - run: ci/github/repo-hygiene.sh
 
+  z3-verify:
+    name: Optional Z3 verifier
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.2.1
+      - name: Install Z3 system packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends z3 libz3-dev
+      - name: Install OCaml dependencies
+        run: |
+          for attempt in 1 2 3; do
+            if opam install . --deps-only --with-test; then
+              exit 0
+            fi
+            if [ "$attempt" = "3" ]; then
+              exit 1
+            fi
+            opam update
+            sleep 5
+          done
+      - run: opam install z3
+      - name: Build optional verifier
+        run: ENABLE_LPF_VERIFY=1 opam exec -- dune build bin/verify/main.exe
+      - name: Run verifier smoke tests
+        run: |
+          set -euo pipefail
+          ENABLE_LPF_VERIFY=1 opam exec -- dune exec -- lpf-verify consistency fixtures/policies/basic.lpf
+          LPF_VERIFY_BIN="$PWD/_build/default/bin/verify/main.exe" \
+            opam exec -- dune exec -- lpf verify consistency fixtures/policies/basic.lpf
+
+  bpf-build:
+    name: eBPF object build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install eBPF toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+      - name: Build eBPF object
+        run: LPF_NO_BTF=1 make bpf
+
   coverage:
     name: OCaml coverage
     runs-on: ubuntu-latest
