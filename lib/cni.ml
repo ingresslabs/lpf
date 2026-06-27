@@ -214,6 +214,39 @@ let add_default_route ifname gw netns_path =
   | Some g -> add_route ifname "0.0.0.0/0" (Some g) netns_path
   | None -> add_route ifname "0.0.0.0/0" None netns_path
 
+(* host-side L3 plumbing (ptp/proxy_arp primary CNI) *)
+
+(* Make the node forward and reach the pod: enable ip_forward, install a
+   /32 host route to the pod via its host veth, and enable proxy_arp on the
+   host veth so the pod's on-link gateway/neighbour ARP requests are answered
+   by the node. This turns lpf-cni into a working primary (ptp-style) CNI. *)
+let run_host_command program args =
+  let invocation : Process.invocation = { program; argv = program :: args } in
+  ignore (Process.run ~temp_prefix:"lpf-cni-host" invocation)
+
+let proc_sys_net_conf_path ifname key =
+  if
+    String.equal ifname "" || String.equal ifname "."
+    || String.equal ifname ".." || String.contains ifname '/'
+  then None
+  else Some ("/proc/sys/net/ipv4/conf/" ^ ifname ^ "/" ^ key)
+
+let write_proc_sys_ifname ifname key value =
+  match proc_sys_net_conf_path ifname key with
+  | None -> ()
+  | Some path -> (
+      try File_util.write_file path value
+      with Sys_error _ | Unix.Unix_error _ -> ())
+
+let setup_host_routing host_if ip_addr =
+  let pod_ip =
+    match String.split_on_char '/' ip_addr with ip :: _ -> ip | [] -> ip_addr
+  in
+  run_host_command "sysctl" [ "-w"; "-q"; "net.ipv4.ip_forward=1" ];
+  run_host_command "ip" [ "route"; "replace"; pod_ip ^ "/32"; "dev"; host_if ];
+  write_proc_sys_ifname host_if "proxy_arp" "1\n";
+  write_proc_sys_ifname host_if "forwarding" "1\n"
+
 (* ─── IPAM delegation ─── *)
 
 let call_ipam plugin_path ipam_config _container_id _ifname =
@@ -466,6 +499,7 @@ let handle_add cfg netns_path container_id ifname =
                                       ignore (delete_veth host_if);
                                       Error e
                                   | Ok () -> (
+                                      setup_host_routing host_if ip_addr;
                                       match cfg.policy with
                                       | Some _policy -> (
                                           match
