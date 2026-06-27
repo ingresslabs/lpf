@@ -87,7 +87,7 @@ jobs:
   z3-verify:
     name: Optional Z3 verifier
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: ocaml/setup-ocaml@v3
@@ -109,7 +109,18 @@ jobs:
             opam update
             sleep 5
           done
-      - run: opam install z3
+      - name: Install Z3 OCaml bindings
+        run: |
+          for attempt in 1 2 3; do
+            if opam install z3; then
+              exit 0
+            fi
+            if [ "$attempt" = "3" ]; then
+              exit 1
+            fi
+            opam update
+            sleep 5
+          done
       - name: Build optional verifier
         run: ENABLE_LPF_VERIFY=1 opam exec -- dune build bin/verify/main.exe
       - name: Run verifier smoke tests
