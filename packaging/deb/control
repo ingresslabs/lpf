@@ -8,9 +8,9 @@ Build-Depends:
  ocaml-dune (>= 3.11),
  opam,
 Standards-Version: 4.7.0
-Homepage: https://github.com/avkcode/lpf
-Vcs-Browser: https://github.com/avkcode/lpf
-Vcs-Git: https://github.com/avkcode/lpf.git
+Homepage: https://github.com/ingresslabs/lpf
+Vcs-Browser: https://github.com/ingresslabs/lpf
+Vcs-Git: https://github.com/ingresslabs/lpf.git
 
 Package: lpf
 Architecture: any

@@ -1,3 +1,10 @@
+lpf (0.3.0-1) unstable; urgency=medium
+
+  * Primary CNI packaging and real eBPF cgroup_skb enforcement.
+  * Add Kubernetes policy packaging, daemon metrics, and real-traffic validation.
+
+ -- lpf maintainers <lpf@example.com>  Sun, 28 Jun 2026 00:00:00 +0000
+
 lpf (0.2.3-1) unstable; urgency=medium
 
   * Verified rollback-safe advanced policies across Ubuntu and Fedora VMs.

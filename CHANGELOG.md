@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.0 - 2026-06-28
+
+### Added
+
+- Primary CNI packaging and Kubernetes manifests for CRDs and DaemonSet-based
+  deployment.
+- Real eBPF `cgroup_skb` enforcement path with policy map loading, counters,
+  and daemon health/metrics.
+- NetworkPolicy translation and real-traffic validation coverage for the CNI
+  datapath.
+
+### Changed
+
+- Release and package metadata now point at `ingresslabs/lpf`.
+
 ## 0.2.3 - 2026-06-22
 
 ### Added

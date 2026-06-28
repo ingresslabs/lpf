@@ -9,9 +9,9 @@ and multi-backend diff/live readback.
 maintainer: "avkcode"
 authors: ["avkcode"]
 license: "Apache-2.0"
-homepage: "https://github.com/avkcode/lpf"
-bug-reports: "https://github.com/avkcode/lpf/issues"
-dev-repo: "git+https://github.com/avkcode/lpf.git"
+homepage: "https://github.com/ingresslabs/lpf"
+bug-reports: "https://github.com/ingresslabs/lpf/issues"
+dev-repo: "git+https://github.com/ingresslabs/lpf.git"
 tags: ["firewall" "nftables" "networking" "pf" "linux" "tc" "routing" "conntrack"]
 depends: [
   "ocaml" {>= "5.1"}

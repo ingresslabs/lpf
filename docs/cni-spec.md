@@ -269,7 +269,7 @@ for single-pod add/delete when only CIDR sets change.
 
 ## 4. BPF Datapath Extensions
 
-### 4.1 What already exists (v0.2.3)
+### 4.1 What already exists (v0.3.0)
 
 | Feature | Hooks | Status |
 |---------|-------|--------|

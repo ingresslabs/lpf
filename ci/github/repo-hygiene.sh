@@ -47,10 +47,36 @@ awk -F '\t' '
   END { exit bad }
 ' ci/kernels/kernel-matrix.tsv
 
+load_dotenv_value() {
+  local key="$1"
+  if [ -n "${!key:-}" ]; then
+    return 0
+  fi
+
+  local env_file line value
+  for env_file in .env .env.local .env.ci .env.github .env.jenkins; do
+    [ -f "$env_file" ] || continue
+    line=$(grep -E "^[[:space:]]*${key}=" "$env_file" | tail -n 1 || true)
+    [ -n "$line" ] || continue
+    value="${line#*=}"
+    value="${value%$'\r'}"
+    value="${value%\"}"
+    value="${value#\"}"
+    value="${value%\'}"
+    value="${value#\'}"
+    export "${key}=${value}"
+    return 0
+  done
+}
+
+load_dotenv_value LPF_FORBIDDEN_GREP_PATTERN
+
 ipv4='([0-9]{1,3}\.){3}[0-9]{1,3}'
-if git grep -nI -E \
-  "(141\.105\.65\.227|vagabond\.141\.105\.65\.227\.sslip\.io|root@${ipv4}|HostName[[:space:]]+${ipv4}|BEGIN (OPENSSH|RSA|EC) PRIVATE KEY)" \
-  -- .; then
+secret_pattern="(root@${ipv4}|HostName[[:space:]]+${ipv4}|BEGIN (OPENSSH|RSA|EC) PRIVATE KEY)"
+if [ -n "${LPF_FORBIDDEN_GREP_PATTERN:-}" ]; then
+  secret_pattern="(${secret_pattern}|${LPF_FORBIDDEN_GREP_PATTERN})"
+fi
+if git grep -nI -E "$secret_pattern" -- .; then
   echo "::error::tracked files contain lab host literals or private key material"
   exit 1
 fi
