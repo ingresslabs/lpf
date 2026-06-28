@@ -4,6 +4,9 @@ _build/
 *.merlin
 *.opam.locked
 .DS_Store
+.env
+.env.*
+!.env.example
 lpf-support-bundle-*/
 .firecracker-observability/
 var/

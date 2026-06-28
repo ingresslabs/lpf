@@ -49,19 +49,36 @@ awk -F '\t' '
 
 ipv4='([0-9]{1,3}\.){3}[0-9]{1,3}'
 if git grep -nI -E \
-  "(root@${ipv4}|HostName[[:space:]]+${ipv4}|BEGIN (OPENSSH|RSA|EC) PRIVATE KEY)" \
+  "(141\.105\.65\.227|vagabond\.141\.105\.65\.227\.sslip\.io|root@${ipv4}|HostName[[:space:]]+${ipv4}|BEGIN (OPENSSH|RSA|EC) PRIVATE KEY)" \
   -- .; then
   echo "::error::tracked files contain lab host literals or private key material"
   exit 1
 fi
 
-if bad_files=$(git ls-files | while IFS= read -r path; do
-  [ -e "$path" ] || continue
-  printf '%s\n' "$path"
-done | grep -E '(^ci/jenkins/(?!.*\.sh$)(?!.*\.groovy$)(?!README\.md$)|(^|/)(aero-install-support-[0-9-]+\.json|create_job[0-9]*\.py|disable_csrf\.groovy|security\.groovy|mini-e2e\.xml|lpf-[0-9a-f].*\.tar\.gz|lpf-firecracker.*\.xml|jenkins-.*\.(xml|json))$)' || true); then
-  if [ -n "$bad_files" ]; then
-    echo "::error::transient lab/helper artifacts are tracked"
-    printf '%s\n' "$bad_files"
+if tracked_env_files=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -Ev '(^|/)\.env\.example$' || true); then
+  if [ -n "$tracked_env_files" ]; then
+    echo "::error::dotenv files must stay local and gitignored"
+    printf '%s\n' "$tracked_env_files"
     exit 1
   fi
+fi
+
+bad_files=$(git ls-files | while IFS= read -r path; do
+  [ -e "$path" ] || continue
+  printf '%s\n' "$path"
+done | awk '
+  /^ci\/jenkins\// {
+    if ($0 !~ /\.sh$/ && $0 !~ /\.groovy$/ && $0 !~ /(^|\/)README\.md$/) {
+      print
+    }
+    next
+  }
+  /(^|\/)(aero-install-support-[0-9-]+\.json|create_job[0-9]*\.py|disable_csrf\.groovy|security\.groovy|mini-e2e\.xml|lpf-[0-9a-f].*\.tar\.gz|lpf-firecracker.*\.xml|jenkins-.*\.(xml|json))$/ {
+    print
+  }
+')
+if [ -n "$bad_files" ]; then
+  echo "::error::transient lab/helper artifacts are tracked"
+  printf '%s\n' "$bad_files"
+  exit 1
 fi

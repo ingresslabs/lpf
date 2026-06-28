@@ -18,6 +18,66 @@
 //      with its assigned kernel.
 //   4. Collect and archive JUnit XML.
 
+def lpfReadDotEnvFiles() {
+  def values = [:]
+  ['.env', '.env.local', '.env.ci', '.env.jenkins'].each { path ->
+    if (fileExists(path)) {
+      readFile(path).split(/\r?\n/).each { rawLine ->
+        def line = rawLine.trim()
+        if (line && !line.startsWith('#')) {
+          if (line.startsWith('export ')) {
+            line = line.substring('export '.length()).trim()
+          }
+          def idx = line.indexOf('=')
+          if (idx > 0) {
+            def key = line.substring(0, idx).trim()
+            def value = line.substring(idx + 1).trim()
+            if ((value.startsWith('"') && value.endsWith('"')) ||
+                (value.startsWith("'") && value.endsWith("'"))) {
+              value = value.substring(1, value.length() - 1)
+            }
+            values[key] = value
+          }
+        }
+      }
+    }
+  }
+  return values
+}
+
+def lpfResolveCiSetting(String key, Map dotEnv) {
+  def paramValue = params[key]
+  if (paramValue != null && paramValue.toString().trim()) {
+    return paramValue.toString().trim()
+  }
+  def envValue = env[key]
+  if (envValue != null && envValue.toString().trim()) {
+    return envValue.toString().trim()
+  }
+  def fileValue = dotEnv[key]
+  if (fileValue != null && fileValue.toString().trim()) {
+    return fileValue.toString().trim()
+  }
+  return ''
+}
+
+def lpfVagabondConfig() {
+  def dotEnv = lpfReadDotEnvFiles()
+  def cfg = [
+    apiUrl: lpfResolveCiSetting('VAGABOND_API_URL', dotEnv),
+    credentialsId: lpfResolveCiSetting('VAGABOND_CREDENTIALS_ID', dotEnv),
+    target: lpfResolveCiSetting('SCAN_TARGET', dotEnv),
+  ]
+  def missing = []
+  if (!cfg.apiUrl) { missing << 'VAGABOND_API_URL' }
+  if (!cfg.credentialsId) { missing << 'VAGABOND_CREDENTIALS_ID' }
+  if (!cfg.target) { missing << 'SCAN_TARGET' }
+  if (!missing.isEmpty()) {
+    error("Missing ${missing.join(', ')}. Set Jenkins parameters/environment or an ignored .env/.env.ci/.env.jenkins file.")
+  }
+  return cfg
+}
+
 pipeline {
   agent any
 
@@ -27,12 +87,12 @@ pipeline {
   }
 
   parameters {
-    string(name: 'VAGABOND_API_URL', defaultValue: 'http://vagabond.141.105.65.227.sslip.io',
-           description: 'Vagabond control-plane base URL')
-    string(name: 'VAGABOND_CREDENTIALS_ID', defaultValue: 'vagabond-api-key',
-           description: 'Jenkins Secret-text credential holding the Vagabond API key')
-    string(name: 'SCAN_TARGET', defaultValue: '141.105.65.227',
-           description: 'Allowlisted target host for the Vagabond jobs')
+    string(name: 'VAGABOND_API_URL', defaultValue: '',
+           description: 'Vagabond control-plane base URL; set via parameter, Jenkins env, or ignored .env file')
+    string(name: 'VAGABOND_CREDENTIALS_ID', defaultValue: '',
+           description: 'Jenkins Secret-text credential ID; set via parameter, Jenkins env, or ignored .env file')
+    string(name: 'SCAN_TARGET', defaultValue: '',
+           description: 'Allowlisted target host for Vagabond jobs; set via parameter, Jenkins env, or ignored .env file')
     string(name: 'FIRECRACKER_ROOTFS', defaultValue: '',
            description: 'Path to the lpf rootfs image for Firecracker microVMs. Empty disables Firecracker stages.')
     booleanParam(name: 'RUN_FIRECRACKER', defaultValue: false,
@@ -270,6 +330,7 @@ fedora    ocaml/opam:fedora-41-ocaml-5.1           KERNEL_FEDORA   linux-7.1'''.
       }
       steps {
         script {
+          def lpfCi = lpfVagabondConfig()
           def firecracker_jobs = [:]
 
           def distros = [
@@ -297,7 +358,7 @@ fedora    ocaml/opam:fedora-41-ocaml-5.1           KERNEL_FEDORA   linux-7.1'''.
                   timeout(time: 30, unit: 'MINUTES') {
                     def f = vagabondRun(
                       image: "lpf-ci:${distro}",
-                      target: params.SCAN_TARGET,
+                      target: lpfCi.target,
                       runtime: 'nomad.firecracker',
                       kernel: kernelImage,
                       rootfs: params.FIRECRACKER_ROOTFS,
@@ -306,8 +367,8 @@ fedora    ocaml/opam:fedora-41-ocaml-5.1           KERNEL_FEDORA   linux-7.1'''.
                       network: 'host',
                       dryRun: false,
                       waitForCompletion: true,
-                      apiUrl: params.VAGABOND_API_URL,
-                      credentialsId: params.VAGABOND_CREDENTIALS_ID,
+                      apiUrl: lpfCi.apiUrl,
+                      credentialsId: lpfCi.credentialsId,
                       command: ['bash', '-lc', "cd /home/opam/src && LPF_KERNEL_LABEL=${kernelLabel} LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"])
                     echo "Firecracker E2E ${distro} (${kernelLabel}): job=${f.jobId} status=${f.status}"
                   }

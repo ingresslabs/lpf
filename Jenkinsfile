@@ -16,6 +16,66 @@
 //
 // Stages are conditionally enabled via parameters with sensible defaults.
 
+def lpfReadDotEnvFiles() {
+  def values = [:]
+  ['.env', '.env.local', '.env.ci', '.env.jenkins'].each { path ->
+    if (fileExists(path)) {
+      readFile(path).split(/\r?\n/).each { rawLine ->
+        def line = rawLine.trim()
+        if (line && !line.startsWith('#')) {
+          if (line.startsWith('export ')) {
+            line = line.substring('export '.length()).trim()
+          }
+          def idx = line.indexOf('=')
+          if (idx > 0) {
+            def key = line.substring(0, idx).trim()
+            def value = line.substring(idx + 1).trim()
+            if ((value.startsWith('"') && value.endsWith('"')) ||
+                (value.startsWith("'") && value.endsWith("'"))) {
+              value = value.substring(1, value.length() - 1)
+            }
+            values[key] = value
+          }
+        }
+      }
+    }
+  }
+  return values
+}
+
+def lpfResolveCiSetting(String key, Map dotEnv) {
+  def paramValue = params[key]
+  if (paramValue != null && paramValue.toString().trim()) {
+    return paramValue.toString().trim()
+  }
+  def envValue = env[key]
+  if (envValue != null && envValue.toString().trim()) {
+    return envValue.toString().trim()
+  }
+  def fileValue = dotEnv[key]
+  if (fileValue != null && fileValue.toString().trim()) {
+    return fileValue.toString().trim()
+  }
+  return ''
+}
+
+def lpfVagabondConfig() {
+  def dotEnv = lpfReadDotEnvFiles()
+  def cfg = [
+    apiUrl: lpfResolveCiSetting('VAGABOND_API_URL', dotEnv),
+    credentialsId: lpfResolveCiSetting('VAGABOND_CREDENTIALS_ID', dotEnv),
+    target: lpfResolveCiSetting('SCAN_TARGET', dotEnv),
+  ]
+  def missing = []
+  if (!cfg.apiUrl) { missing << 'VAGABOND_API_URL' }
+  if (!cfg.credentialsId) { missing << 'VAGABOND_CREDENTIALS_ID' }
+  if (!cfg.target) { missing << 'SCAN_TARGET' }
+  if (!missing.isEmpty()) {
+    error("Missing ${missing.join(', ')}. Set Jenkins parameters/environment or an ignored .env/.env.ci/.env.jenkins file.")
+  }
+  return cfg
+}
+
 pipeline {
   agent any
 
@@ -25,12 +85,12 @@ pipeline {
   }
 
   parameters {
-    string(name: 'VAGABOND_API_URL', defaultValue: 'http://vagabond.141.105.65.227.sslip.io',
-           description: 'Vagabond control-plane base URL')
-    string(name: 'VAGABOND_CREDENTIALS_ID', defaultValue: 'vagabond-api-key',
-           description: 'Jenkins Secret-text credential holding the Vagabond API key')
-    string(name: 'SCAN_TARGET', defaultValue: '141.105.65.227',
-           description: 'Allowlisted target host for the Vagabond jobs')
+    string(name: 'VAGABOND_API_URL', defaultValue: '',
+           description: 'Vagabond control-plane base URL; set via parameter, Jenkins env, or ignored .env file')
+    string(name: 'VAGABOND_CREDENTIALS_ID', defaultValue: '',
+           description: 'Jenkins Secret-text credential ID; set via parameter, Jenkins env, or ignored .env file')
+    string(name: 'SCAN_TARGET', defaultValue: '',
+           description: 'Allowlisted target host for Vagabond jobs; set via parameter, Jenkins env, or ignored .env file')
     string(name: 'IMAGE_MATRIX', defaultValue: 'debian,alpine',
            description: 'Comma list of userspace labels to test (debian,ubuntu,alpine)')
     string(name: 'AVAILABLE_KERNELS', defaultValue: '',
@@ -246,6 +306,7 @@ pipeline {
       when { expression { return params.AVAILABLE_KERNELS?.trim() } }
       steps {
         script {
+          def lpfCi = lpfVagabondConfig()
           def desired = []
           readFile('ci/kernels/kernel-matrix.tsv').split('\n').each { line ->
             if (line.startsWith('#') || !line.trim()) { return }
@@ -267,7 +328,7 @@ pipeline {
                 timeout(time: 15, unit: 'MINUTES') {
                   def f = vagabondRun(
                     image: 'lpf-ci:debian',
-                    target: params.SCAN_TARGET,
+                    target: lpfCi.target,
                     runtime: 'nomad.firecracker',
                     kernel: kernelImage,
                     rootfs: params.FIRECRACKER_ROOTFS,
@@ -275,8 +336,8 @@ pipeline {
                     memoryMiB: 1024,
                     dryRun: false,
                     waitForCompletion: true,
-                    apiUrl: params.VAGABOND_API_URL,
-                    credentialsId: params.VAGABOND_CREDENTIALS_ID,
+                    apiUrl: lpfCi.apiUrl,
+                    credentialsId: lpfCi.credentialsId,
                     command: ['bash', '-lc', "cd /home/opam/src && LPF_KERNEL_LABEL=${label} LPF_EBPF_LAYERS=0,1,2 ci/vagabond/ebpf-suite.sh"])
                   echo "eBPF on kernel ${label}: job=${f.jobId} status=${f.status}"
                 }
@@ -299,6 +360,7 @@ pipeline {
       when { expression { return params.E2E_KERNELS?.trim() } }
       steps {
         script {
+          def lpfCi = lpfVagabondConfig()
           def e2e_mapping = [:]
           params.E2E_KERNELS.split(';').each { pair ->
             def kv = pair.split('=')
@@ -313,7 +375,7 @@ pipeline {
               catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
                 def f = vagabondRun(
                   image: 'lpf-ci:debian',
-                  target: params.SCAN_TARGET,
+                  target: lpfCi.target,
                   runtime: 'nomad.firecracker',
                   kernel: kernelImage,
                   rootfs: params.FIRECRACKER_ROOTFS,
@@ -322,8 +384,8 @@ pipeline {
                   network: 'host',
                   dryRun: false,
                   waitForCompletion: false,
-                  apiUrl: params.VAGABOND_API_URL,
-                  credentialsId: params.VAGABOND_CREDENTIALS_ID,
+                  apiUrl: lpfCi.apiUrl,
+                  credentialsId: lpfCi.credentialsId,
                   command: ['bash', '-lc', "cd /home/opam/src && LPF_KERNEL_LABEL=${label} LPF_EBPF_LAYERS=0,1,2,3 ci/vagabond/ebpf-e2e-suite.sh"])
                 echo "e2e on kernel ${label}: job=${f.jobId} status=${f.status}"
               }
@@ -344,6 +406,7 @@ pipeline {
     stage('Vagabond isolation: feature suite') {
       steps {
         script {
+          def lpfCi = lpfVagabondConfig()
           def labels = params.IMAGE_MATRIX.split(',').collect { it.trim() }.findAll { it }
           def branches = [:]
           for (lbl in labels) {
@@ -351,13 +414,13 @@ pipeline {
             branches["vagabond:${label}"] = {
               def r = vagabondRun(
                 image: "lpf-ci:${label}",
-                target: params.SCAN_TARGET,
+                target: lpfCi.target,
                 runtime: 'nomad.container',
                 network: 'none',
                 dryRun: false,
                 waitForCompletion: false,
-                apiUrl: params.VAGABOND_API_URL,
-                credentialsId: params.VAGABOND_CREDENTIALS_ID,
+                apiUrl: lpfCi.apiUrl,
+                credentialsId: lpfCi.credentialsId,
                 command: ['bash', '-lc', 'cd /home/opam/src && ci/vagabond/feature-suite.sh'])
               echo "Vagabond feature suite (${label}): job=${r.jobId}"
             }
@@ -378,13 +441,14 @@ pipeline {
       when { expression { return params.RUN_SECURITY_SCAN } }
       steps {
         script {
+          def lpfCi = lpfVagabondConfig()
           def r = vagabondJob(
             template: 'tsunami-dry-run',
-            target: params.SCAN_TARGET,
+            target: lpfCi.target,
             runtime: 'nomad.container',
             dryRun: true,
-            apiUrl: params.VAGABOND_API_URL,
-            credentialsId: params.VAGABOND_CREDENTIALS_ID,
+            apiUrl: lpfCi.apiUrl,
+            credentialsId: lpfCi.credentialsId,
             failOn: 'high',
             archiveReport: true,
             timeoutSeconds: 1200)
