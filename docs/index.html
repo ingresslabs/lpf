@@ -4,8 +4,41 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="lpf is a next-generation Linux firewall.">
-  <title>lpf</title>
+  <meta name="theme-color" content="#030407">
+  <meta name="description" content="lpf — PF-style firewall policy engine for Linux. One language replaces nftables, tc, and ip route, with guarded apply, Z3 verification, and an eBPF datapath.">
+  <title>lpf — PF-style firewall policy engine for Linux</title>
+
+  <link rel="canonical" href="https://ingresslabs.github.io/lpf/">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="dns-prefetch" href="https://cdn.jsdelivr.net">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="lpf">
+  <meta property="og:title" content="lpf — PF-style firewall policy engine for Linux">
+  <meta property="og:description" content="One PF-style policy file replaces nftables, tc, and ip route — with guarded apply, Z3 verification, and an eBPF datapath.">
+  <meta property="og:url" content="https://ingresslabs.github.io/lpf/">
+
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="lpf — PF-style firewall policy engine for Linux">
+  <meta name="twitter:description" content="One PF-style policy file replaces nftables, tc, and ip route — with guarded apply, Z3 verification, and an eBPF datapath.">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "lpf",
+    "applicationCategory": "DeveloperApplication",
+    "applicationSubCategory": "Firewall",
+    "operatingSystem": "Linux",
+    "description": "PF-style firewall policy engine for Linux. One policy language replaces nftables, tc, and ip route, with guarded apply, Z3 verification, and an eBPF datapath.",
+    "url": "https://ingresslabs.github.io/lpf/",
+    "codeRepository": "https://github.com/ingresslabs/lpf",
+    "programmingLanguage": ["OCaml", "C"],
+    "license": "https://github.com/ingresslabs/lpf/blob/main/LICENSE",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+
   <style>
     :root {
       --bg: #030407;
@@ -451,14 +484,6 @@
       padding: 0 clamp(18px, 3vw, 30px) 26px;
     }
 
-    .signal {
-      color: var(--amber);
-    }
-
-    .loop-card b.signal {
-      color: var(--amber);
-    }
-
     .loop-zone {
       min-height: 120vh;
       background:
@@ -534,6 +559,181 @@
       color: var(--muted);
     }
 
+    .footer-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 20px;
+      align-items: center;
+    }
+
+    .noscript-note {
+      width: min(var(--max), calc(100% - 36px));
+      margin: 0 auto;
+      padding: 16px 18px;
+      border: 1px solid var(--amber);
+      background: rgba(214, 177, 98, 0.08);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .skip-link {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 60;
+      padding: 10px 16px;
+      transform: translateY(-160%);
+      background: var(--panel-2);
+      border: 1px solid var(--line-bright);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 750;
+      text-transform: uppercase;
+      transition: transform 0.16s ease;
+    }
+
+    .skip-link:focus {
+      transform: translateY(0);
+      color: var(--cyan);
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    .diagram-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1px;
+      margin-top: clamp(28px, 5vw, 52px);
+      border: 1px solid rgba(58, 141, 255, 0.24);
+      background: rgba(58, 141, 255, 0.24);
+    }
+
+    .diagram {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+      margin: 0;
+      padding: clamp(18px, 3vw, 30px);
+      background: rgba(7, 10, 16, 0.96);
+    }
+
+    .diagram.wide {
+      grid-column: 1 / -1;
+    }
+
+    .diagram-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1.35;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .diagram-title::after {
+      width: 9px;
+      height: 9px;
+      flex: 0 0 auto;
+      content: "";
+      border: 1px solid var(--line-bright);
+      background: rgba(31, 111, 255, 0.18);
+      box-shadow: 0 0 18px rgba(31, 111, 255, 0.7);
+    }
+
+    .mermaid {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: center;
+      overflow-x: auto;
+      min-height: 96px;
+      visibility: hidden;
+    }
+
+    .mermaid[data-processed="true"] {
+      visibility: visible;
+    }
+
+    .mermaid svg {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .mermaid .node rect,
+    .mermaid .node polygon,
+    .mermaid .node path,
+    .mermaid .cluster rect,
+    .mermaid .statediagram-state rect,
+    .mermaid .label-container {
+      rx: 0 !important;
+      ry: 0 !important;
+    }
+
+    .mermaid .edgePath .path,
+    .mermaid .transition {
+      stroke-width: 1.1px;
+    }
+
+    .mermaid .edgeLabel {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .mermaid .edgeLabel .label foreignObject,
+    .mermaid .edgeLabel rect {
+      opacity: 0.92;
+    }
+
+    .diagram-cap {
+      margin: 0;
+      color: var(--dim);
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 11.5px;
+      line-height: 1.5;
+    }
+
+    .diagram-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 22px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(58, 141, 255, 0.18);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.4;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .diagram-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .diagram-legend i {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      border: 1px solid currentColor;
+    }
+
+    .diagram-legend .lg-verify { color: var(--cyan); }
+    .diagram-legend .lg-guard { color: var(--amber); }
+    .diagram-legend .lg-safe { color: var(--green); }
+    .diagram-legend .lg-block { color: var(--red); }
+
     @media (max-width: 760px) {
       .topbar {
         padding: 15px 18px;
@@ -555,6 +755,7 @@
 
       .hero-meta,
       .command-grid,
+      .diagram-grid,
       .section-head,
       .principles,
       .loop-intro,
@@ -605,13 +806,15 @@
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to content</a>
   <div class="shell">
     <header class="topbar" aria-label="Primary">
       <a class="brand" href="#top" aria-label="lpf home">
         <i class="brand-mark" aria-hidden="true"></i>
         <span>lpf</span>
       </a>
-      <nav class="nav" aria-label="Page">
+      <nav class="nav">
+        <a href="#flow">Flow</a>
         <a href="#install">Install</a>
         <a href="#usage">Usage</a>
         <a href="#configs">Configs</a>
@@ -623,39 +826,157 @@
       <canvas class="hero-canvas" id="stage" aria-hidden="true"></canvas>
       <div class="hero-inner">
         <h1>lpf</h1>
-        <p class="lede">Next-generation Linux firewall</p>
-        <div class="hero-meta" aria-label="Project traits">
+        <p class="lede">Next-generation Linux firewall with PF-style policy</p>
+        <div class="hero-meta">
           <span>PF-style syntax</span>
-          <span>nftables first</span>
-          <span>safe remote apply</span>
-          <span>JSON ready</span>
+          <span>eBPF datapath</span>
+          <span>Z3 formal proofs</span>
+          <span>auto-rollback</span>
         </div>
       </div>
     </section>
 
-    <main>
+    <main id="main">
+      <noscript>
+        <p class="noscript-note">Architecture diagrams on this page render with JavaScript (Mermaid). The full policy reference is on <a href="https://github.com/ingresslabs/lpf">GitHub</a>.</p>
+      </noscript>
       <section class="section" id="why">
         <div class="section-inner">
           <div class="section-head">
             <div class="eyebrow">Why</div>
             <div>
-              <h2>Linux firewalling should feel like one system.</h2>
-              <p class="copy">Linux packet policy is powerful, but it is split across nftables, policy routing, tc, conntrack, rollback files, and logging. lpf was created to make that surface readable, reviewable, testable, and safe to apply on remote machines.</p>
+              <h2>One policy. Guarded apply. Explainable.</h2>
+              <p class="copy">Linux packet policy spans nftables, routing, tc, conntrack, and logging. lpf unifies them into a single PF-style policy file with guarded deployment, packet explainability, and formal Z3 verification.</p>
             </div>
           </div>
           <div class="principles">
             <article class="principle">
               <h3>One policy</h3>
-              <p>PF-style rules describe filtering, NAT, routing intent, queues, tables, and logging in one file.</p>
+              <p>One PF-style file describes filtering, NAT, routing, queues, tables, and logging.</p>
             </article>
             <article class="principle">
               <h3>Safe changes</h3>
-              <p>Plans, diffs, guarded apply, confirmation timers, history, and rollback are part of the operating model.</p>
+              <p>Plans, diffs, guarded apply, confirmation timers, history, and rollback.</p>
             </article>
             <article class="principle">
-              <h3>Explainable operations</h3>
-              <p>Operators can ask what would change, why a packet matched, and what state must be restored before touching production networking.</p>
+              <h3>Explainable</h3>
+              <p>Ask what would change, why a packet matched, and what state gets restored before applying.</p>
             </article>
+          </div>
+          <figure class="diagram wide">
+            <figcaption class="diagram-title">Consolidation</figcaption>
+            <div class="mermaid" id="dg-consolidate">flowchart LR
+  accTitle: lpf consolidates Linux networking subsystems
+  accDescr: nftables, ip route, tc, conntrack, and logging are unified into a single lpf policy file
+  NFT["nftables"] --> LPF["lpf"]
+  RT["ip route"] --> LPF
+  TC["tc"] --> LPF
+  CT["conntrack"] --> LPF
+  LOG["logging"] --> LPF
+  LPF --> POL["one policy.lpf"]
+  classDef data fill:#0a1322,stroke:#3a8dff,color:#dce9ff;
+  classDef guard fill:#1a160c,stroke:#d6b162,color:#f2e6c4;
+  class LPF data;
+  class POL guard;</div>
+            <p class="diagram-cap"># nftables + routing + tc + conntrack + logging → lpf</p>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section" id="flow">
+        <div class="section-inner">
+          <div class="section-head">
+            <div class="eyebrow">Flow</div>
+            <div>
+              <h2>From policy file to kernel datapath.</h2>
+              <p class="copy">One source file is checked, lowered to a typed IR, planned, proven with Z3, then applied behind a rollback timer onto an nftables or eBPF datapath. Every stage is inspectable.</p>
+            </div>
+          </div>
+          <div class="diagram-grid">
+            <figure class="diagram wide">
+              <figcaption class="diagram-title">Control plane</figcaption>
+              <div class="mermaid" id="dg-pipeline">flowchart LR
+  accTitle: lpf control plane pipeline
+  accDescr: policy file flows through check, typed IR, plan, Z3 verification, and guarded apply into nftables and eBPF datapaths
+  P["policy.lpf"] --> C["check"]
+  C --> IR["typed IR"]
+  IR --> PL["plan"]
+  PL --> V["verify · Z3"]
+  V --> A["apply · confirm"]
+  A --> NFT["nftables"]
+  A --> BPF["eBPF · XDP"]
+  IR -.-> EX["explain"]
+  classDef verify fill:#0a1622,stroke:#5ed7ff,color:#dff4ff;
+  classDef guard fill:#1a160c,stroke:#d6b162,color:#f2e6c4;
+  classDef data fill:#0a1322,stroke:#3a8dff,color:#dce9ff;
+  class V verify;
+  class A guard;
+  class NFT,BPF data;</div>
+              <p class="diagram-cap"># check → IR → plan → verify → apply → datapath</p>
+            </figure>
+            <figure class="diagram">
+              <figcaption class="diagram-title">Guarded apply</figcaption>
+              <div class="mermaid" id="dg-apply">stateDiagram-v2
+  accTitle: lpf guarded apply state machine
+  accDescr: states flow from Checked through Planned to Pending, where lpf confirm reaches Confirmed and timer expiry triggers RolledBack
+  [*] --> Checked
+  Checked --> Planned
+  Planned --> Pending: apply · confirm 60s
+  Pending --> Confirmed: lpf confirm
+  Pending --> RolledBack: timer expires
+  Confirmed --> [*]
+  RolledBack --> [*]
+  classDef pend fill:#1a160c,stroke:#d6b162,color:#f2e6c4;
+  classDef ok fill:#0b1a12,stroke:#69cc8d,color:#d4f3e0;
+  classDef bad fill:#1c0d0d,stroke:#d26060,color:#f3d6d6;
+  class Pending pend
+  class Confirmed ok
+  class RolledBack bad</div>
+              <p class="diagram-cap"># no confirm → automatic rollback</p>
+            </figure>
+            <figure class="diagram">
+              <figcaption class="diagram-title">Packet decision</figcaption>
+              <div class="mermaid" id="dg-packet">flowchart TD
+  accTitle: lpf packet decision flow
+  accDescr: packet matched against rules, no match defaults to deny, matching rule triggers pass, block, or reject
+  PKT["packet"] --> M{"matches rule?"}
+  M -- no --> DEF["default deny"]
+  M -- yes --> ACT{"action"}
+  ACT -- pass --> P["pass · keep state"]
+  ACT -- block --> B["block · log"]
+  ACT -- reject --> R["reject"]
+  classDef ok fill:#0b1a12,stroke:#69cc8d,color:#d4f3e0;
+  classDef bad fill:#1c0d0d,stroke:#d26060,color:#f3d6d6;
+  class P ok;
+  class B,DEF,R bad;</div>
+              <p class="diagram-cap"># lpf explain traces this path for any packet</p>
+            </figure>
+            <figure class="diagram wide">
+              <figcaption class="diagram-title">eBPF · XDP datapath</figcaption>
+              <div class="mermaid" id="dg-ebpf">flowchart LR
+  accTitle: lpf eBPF XDP datapath
+  accDescr: packets arrive at the NIC and hit the XDP hook which consults eBPF maps for a verdict, passing to the kernel stack or dropping, while events stream through a ring buffer to lpf userspace
+  RX["packet · NIC"] --> XDP["XDP hook"]
+  XDP --> MAPS["eBPF maps"]
+  MAPS --> VRD{"verdict"}
+  VRD -- pass --> STK["kernel stack"]
+  VRD -- drop --> DROP["XDP_DROP"]
+  XDP -.-> RB["ring buffer"]
+  RB -.-> US["lpf userspace"]
+  classDef ok fill:#0b1a12,stroke:#69cc8d,color:#d4f3e0;
+  classDef bad fill:#1c0d0d,stroke:#d26060,color:#f3d6d6;
+  classDef data fill:#0a1322,stroke:#3a8dff,color:#dce9ff;
+  class STK ok;
+  class DROP bad;
+  class MAPS,RB data;</div>
+              <p class="diagram-cap"># XDP drops before sk_buff · per-CPU counters · ring buffer events</p>
+            </figure>
+          </div>
+          <div class="diagram-legend" aria-hidden="true">
+            <span class="lg-verify"><i></i>verify</span>
+            <span class="lg-guard"><i></i>guarded</span>
+            <span class="lg-safe"><i></i>pass / safe</span>
+            <span class="lg-block"><i></i>block / rollback</span>
           </div>
         </div>
       </section>
@@ -665,15 +986,14 @@
           <div class="section-head">
             <div class="eyebrow">Install</div>
             <div>
-              <h2>Install from GitHub Releases.</h2>
-              <p class="copy">Use the native Debian or RPM package for a host install. Clone the repository only when you want the OCaml build, tests, and fixtures locally.</p>
+              <h2>Install from GitHub Releases or source.</h2>
+              <p class="copy">Native .deb and .rpm packages on GitHub Releases. Clone the repo for the OCaml build, tests, and fixtures.</p>
             </div>
           </div>
           <div class="command-grid">
             <article class="terminal">
               <div class="terminal-title">Debian / Ubuntu</div>
-              <pre><code><span class="prompt">$</span> OUT=/tmp/lpf-release
-<span class="prompt">$</span> mkdir -p "$OUT"
+              <pre><code><span class="prompt">$</span> OUT=/tmp/lpf-release && mkdir -p "$OUT"
 <span class="prompt">$</span> gh release download \
   --repo ingresslabs/lpf \
   --pattern 'lpf_*_amd64.deb' \
@@ -682,8 +1002,7 @@
             </article>
             <article class="terminal">
               <div class="terminal-title">RPM hosts</div>
-              <pre><code><span class="prompt">$</span> OUT=/tmp/lpf-release
-<span class="prompt">$</span> mkdir -p "$OUT"
+              <pre><code><span class="prompt">$</span> OUT=/tmp/lpf-release && mkdir -p "$OUT"
 <span class="prompt">$</span> gh release download \
   --repo ingresslabs/lpf \
   --pattern 'lpf-*.x86_64.rpm' \
@@ -692,15 +1011,10 @@
             </article>
             <article class="terminal wide">
               <div class="terminal-title">Source checkout</div>
-              <pre><code><span class="prompt">$</span> git clone \
-  https://github.com/ingresslabs/lpf.git
-<span class="prompt">$</span> cd lpf
-<span class="prompt">$</span> opam switch create . \
-  ocaml-base-compiler.5.2.1
-<span class="prompt">$</span> opam install . \
-  --deps-only --with-test
-<span class="prompt">$</span> dune build
-<span class="prompt">$</span> dune runtest</code></pre>
+              <pre><code><span class="prompt">$</span> git clone https://github.com/ingresslabs/lpf.git && cd lpf
+<span class="prompt">$</span> opam switch create . ocaml-base-compiler.5.1
+<span class="prompt">$</span> opam install . --deps-only --with-test
+<span class="prompt">$</span> dune build && dune runtest</code></pre>
             </article>
           </div>
         </div>
@@ -712,7 +1026,7 @@
             <div class="eyebrow">Usage</div>
             <div>
               <h2>Check first. Diff live. Apply guarded.</h2>
-              <p class="copy">Use policy files as code: validate before touching the host, inspect live drift, ask why a packet matches, then apply with a confirmation timer.</p>
+              <p class="copy">Policy files as code: validate, inspect drift, trace packets, then apply with a confirmation timer.</p>
             </div>
           </div>
           <div class="command-grid">
@@ -731,7 +1045,8 @@
             </article>
             <article class="terminal wide">
               <div class="terminal-title">Explain a packet</div>
-              <pre><code><span class="prompt">$</span> lpf explain --src 10.0.0.5 --dst 1.1.1.1 --dport 443 --tcp --in /etc/lpf.conf</code></pre>
+              <pre><code><span class="prompt">$</span> lpf explain --src 10.0.0.5 --dst 1.1.1.1 \
+  --dport 443 --tcp --in /etc/lpf.conf</code></pre>
             </article>
           </div>
         </div>
@@ -867,8 +1182,13 @@ block in log from any to any</code></pre>
 
     <footer>
       <div class="footer-inner">
-        <span>Next-generation Linux firewall</span>
-        <a href="https://github.com/ingresslabs/lpf">github.com/ingresslabs/lpf</a>
+        <span>PF-style firewall policy engine</span>
+        <nav class="footer-nav" aria-label="Footer">
+          <a href="https://github.com/ingresslabs/lpf/blob/main/docs/COMMANDS.md">Commands</a>
+          <a href="https://github.com/ingresslabs/lpf/blob/main/SECURITY.md">Security</a>
+          <a href="https://github.com/ingresslabs/lpf/blob/main/LICENSE">License</a>
+          <a href="https://github.com/ingresslabs/lpf">GitHub</a>
+        </nav>
       </div>
     </footer>
   </div>
@@ -961,10 +1281,23 @@ block in log from any to any</code></pre>
         line(width * 0.14, height * 0.39, width * 0.62, height * 0.39, "#3a8dff", 0.16, 8);
 
         tick += 1;
-        if (!reduced) {
-          requestAnimationFrame(draw);
-        }
       };
+
+      let running = false;
+      const loop = () => { if (!running) return; draw(); requestAnimationFrame(loop); };
+      const start = () => { if (!running && !reduced) { running = true; loop(); } };
+      const stop = () => { running = false; };
+
+      start();
+
+      document.addEventListener("visibilitychange", () => {
+        document.visibilityState === "visible" ? start() : stop();
+      });
+      window.addEventListener("pagehide", stop);
+
+      if ("IntersectionObserver" in window) {
+        new IntersectionObserver(([e]) => { e.isIntersecting ? start() : stop(); }).observe(canvas.parentElement);
+      }
 
       window.addEventListener("resize", () => {
         resize();
@@ -978,26 +1311,24 @@ block in log from any to any</code></pre>
       const loop = document.querySelector("[data-loop]");
       const sentinel = document.querySelector("[data-sentinel]");
       const examples = [
-        ["format gate", "$ lpf fmt --check configs/policies/web-server.lpf\nok: canonical policy formatting"],
-        ["typecheck json", "$ lpf check --json configs/policies/web-server.lpf\n{\"status\":\"ok\",\"warnings\":[]}"],
-        ["semantic plan", "$ lpf plan --json configs/policies/reverse-proxy.lpf > plan.json\n$ jq '.checksum' plan.json"],
+        ["fmt check", "$ lpf fmt --check configs/policies/web-server.lpf\nok: canonical formatting"],
+        ["check json", "$ lpf check --json configs/policies/web-server.lpf\n{\"status\":\"ok\",\"warnings\":[]}"],
+        ["plan", "$ lpf plan --json configs/policies/reverse-proxy.lpf > plan.json\n$ jq '.checksum' plan.json"],
         ["render nft", "$ lpf rules show --backend nftables configs/policies/nat-gateway.lpf\n# deterministic lpf-owned ruleset"],
-        ["observed diff", "$ nft list ruleset > observed.nft\n$ lpf rules diff --backend nftables \\\n  --observed observed.nft \\\n  configs/policies/web-server.lpf"],
+        ["observed diff", "$ nft list ruleset > observed.nft\n$ lpf rules diff --backend nftables --observed observed.nft configs/policies/web-server.lpf"],
         ["live drift", "$ sudo lpf diff --live configs/policies/web-server.lpf\nstatus: compare live lpf-owned state"],
-        ["json drift", "$ sudo lpf diff --json --live \\\n  configs/policies/reverse-proxy.lpf\n{\"status\":\"changed\",\"backend\":\"nftables\"}"],
-        ["guarded apply", "$ sudo lpf apply --confirm 60s \\\n  configs/policies/web-server.lpf\npending: rollback timer armed"],
-        ["confirm apply", "$ lpf confirm\nok: latest policy marked known-good"],
+        ["guarded apply", "$ sudo lpf apply --confirm 60s configs/policies/web-server.lpf\npending: rollback timer armed"],
+        ["confirm", "$ lpf confirm\nok: latest policy marked known-good"],
         ["rollback", "$ sudo lpf rollback previous\nok: restored captured backend preimage"],
-        ["packet explain", "$ lpf explain --src 10.0.0.5 \\\n  --dst 1.1.1.1 --tcp --dport 443 \\\n  --in /etc/lpf.conf\ndecision: pass"],
-        ["ssh deny trace", "$ lpf explain --src 203.0.113.99 \\\n  --dst firewall --tcp --dport 22 \\\n  --in configs/policies/web-server.lpf\ndecision: block"],
-        ["dynamic table", "$ sudo lpf table <blocked> add 10.0.0.66\n$ sudo lpf table <blocked> show"],
-        ["state list", "$ sudo lpf state list --json\n[{\"proto\":\"tcp\",\"state\":\"established\"}]"],
-        ["kill flow", "$ sudo lpf state kill --src 10.0.0.1 \\\n  --dst 10.0.0.2\nok: matching conntrack entries removed"],
+        ["explain", "$ lpf explain --src 10.0.0.5 --dst 1.1.1.1 --tcp --dport 443 --in /etc/lpf.conf\ndecision: pass"],
+        ["ssh deny", "$ lpf explain --src 203.0.113.99 --dst firewall --tcp --dport 22 --in configs/policies/web-server.lpf\ndecision: block"],
+        ["tables", "$ sudo lpf table <blocked> add 10.0.0.66\n$ sudo lpf table <blocked> show"],
+        ["conntrack", "$ sudo lpf state kill --src 10.0.0.1 --dst 10.0.0.2\nok: matching conntrack entries removed"],
         ["openai tools", "$ lpf tools --format openai > tools.json\nok: generated tool-calling schema"],
-        ["agent prompt", "$ lpf tools --format system-prompt \\\n  > lpf-agent.txt\nok: compact operator prompt emitted"],
-        ["policy test", "$ lpf test --junit evidence/basic.xml \\\n  fixtures/tests/basic.lpf.test\nok: assertions exported for CI"],
-        ["feature suite", "$ LPF_FEATURE_JUNIT=evidence/feature.xml \\\n  ci/vagabond/feature-suite.sh\nok: userspace feature suite passed"],
-        ["ebpf evidence", "$ sudo python3 bpf/e2e_runner.py \\\n  --layers 0,1,2 --junit evidence/ebpf.xml\nok: ebpf runner JUnit written"],
+        ["agent prompt", "$ lpf tools --format system-prompt > lpf-agent.txt\nok: compact operator prompt emitted"],
+        ["policy test", "$ lpf test --junit evidence/basic.xml fixtures/tests/basic.lpf.test\nok: assertions exported for CI"],
+        ["feature suite", "$ LPF_FEATURE_JUNIT=evidence/feature.xml ci/vagabond/feature-suite.sh\nok: userspace feature suite passed"],
+        ["ebpf evidence", "$ sudo python3 bpf/e2e_runner.py --layers 0,1,2 --junit evidence/ebpf.xml\nok: ebpf runner JUnit written"],
         ["history", "$ lpf history\npolicy-id  checksum  confirmed  rollback"],
         ["man check", "$ lpf man check\nok: generated man pages are current"],
         ["man install", "$ sudo lpf man install\nok: operator docs installed"]
@@ -1016,9 +1347,6 @@ block in log from any to any</code></pre>
           const number = String(cursor + index + 1).padStart(2, "0");
           card.innerHTML = `<b>${number} / ${title}</b><pre><code></code></pre>`;
           card.querySelector("code").textContent = text;
-          if ((cursor + index) % 5 === 0) {
-            card.querySelector("b").classList.add("signal");
-          }
           fragment.appendChild(card);
         });
         cursor += batch.length;
@@ -1054,6 +1382,49 @@ block in log from any to any</code></pre>
         }, { passive: true });
       }
     })();
+  </script>
+
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.esm.min.mjs";
+
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "base",
+      fontFamily: '"Inter","SF Pro Text","Segoe UI",system-ui,sans-serif',
+      themeVariables: {
+        darkMode: true,
+        background: "#070a10",
+        primaryColor: "#0c1018",
+        primaryBorderColor: "#3a8dff",
+        primaryTextColor: "#f4f7ff",
+        secondaryColor: "#0c1018",
+        secondaryBorderColor: "#3a8dff",
+        secondaryTextColor: "#f4f7ff",
+        tertiaryColor: "#070a10",
+        tertiaryBorderColor: "#263044",
+        tertiaryTextColor: "#b4bdcc",
+        mainBkg: "#0c1018",
+        nodeBorder: "#3a8dff",
+        lineColor: "#3a8dff",
+        textColor: "#f4f7ff",
+        clusterBkg: "#070a10",
+        clusterBorder: "#263044",
+        edgeLabelBackground: "#070a10",
+        labelColor: "#f4f7ff",
+        fontSize: "13px"
+      },
+      flowchart: { curve: "linear", htmlLabels: false, padding: 12, nodeSpacing: 34, rankSpacing: 44, useMaxWidth: true },
+      state: { useMaxWidth: true }
+    });
+
+    try {
+      await mermaid.run({ querySelector: ".mermaid" });
+      document.documentElement.dataset.mermaid = "ready";
+    } catch (error) {
+      document.documentElement.dataset.mermaid = "error";
+      console.error("mermaid render failed", error);
+    }
   </script>
 </body>
 </html>

@@ -8,7 +8,7 @@ Python, Ruby, Go, Rust, or JavaScript for product features.
 ## Development Cycle
 
 ```sh
-opam switch create . ocaml-base-compiler.5.2.1
+opam switch create . ocaml-base-compiler.5.1
 opam install . --deps-only --with-test
 dune build          # build
 dune runtest        # test

@@ -1,15 +1,15 @@
 %global debug_package %{nil}
 
 Name:           lpf
-Version:        0.2.3
+Version:        0.3.0
 Release:        1%{?dist}
 Summary:        PF-style control plane for Linux networking
 License:        Apache-2.0
-URL:            https://github.com/avkcode/lpf
+URL:            https://github.com/ingresslabs/lpf
 Source0:        lpf-%{version}.tar.gz
 
 BuildRequires:  ocaml >= 5.1.0
-BuildRequires:  ocaml-dune >= 3.11
+BuildRequires:  ocaml-dune >= 3.15
 BuildRequires:  opam
 Requires:       nftables
 Requires:       iproute
@@ -50,6 +50,10 @@ cp bin/lpf-completion.sh %{buildroot}%{_datadir}/bash-completion/completions/lpf
 %doc README.md CHANGELOG.md
 
 %changelog
+* Sun Jun 28 2026 avkcode - 0.3.0-1
+- Primary CNI packaging and real eBPF cgroup_skb enforcement
+- Add Kubernetes policy packaging, daemon metrics, and real-traffic validation
+
 * Mon Jun 22 2026 avkcode - 0.2.3-1
 - Verified rollback-safe advanced policies across Ubuntu and Fedora VMs
 - Fix CIDR explain semantics, NAT/RDR rendering, TC/routing batches, and owned-table rollback

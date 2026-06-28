@@ -30,11 +30,6 @@ val render_ebpf_policy_text :
   string ->
   (string * Policy.diagnostic list, Policy.diagnostic list) result
 
-val render_ebpf_loader_text :
-  ?file:string ->
-  string ->
-  (string * Policy.diagnostic list, Policy.diagnostic list) result
-
 val diff_ebpf_policy :
   ?file:string ->
   observed:string ->

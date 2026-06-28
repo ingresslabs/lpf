@@ -1,4 +1,5 @@
 _build/
+_packages/
 *.install
 !packaging/deb/*.install
 *.merlin
@@ -25,7 +26,6 @@ lpf-firecracker-*.json
 jenkins-*.xml
 jenkins-*.json
 jenkins-evidence/
-ci/jenkins/
 cloud-config.xml
 full-e2e.groovy
 *-e2e.xml

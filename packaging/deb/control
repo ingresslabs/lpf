@@ -5,12 +5,12 @@ Maintainer: lpf maintainers <lpf@example.com>
 Build-Depends:
  debhelper-compat (= 13),
  ocaml (>= 5.1.0),
- ocaml-dune (>= 3.11),
+ ocaml-dune (>= 3.15),
  opam,
 Standards-Version: 4.7.0
-Homepage: https://github.com/avkcode/lpf
-Vcs-Browser: https://github.com/avkcode/lpf
-Vcs-Git: https://github.com/avkcode/lpf.git
+Homepage: https://github.com/ingresslabs/lpf
+Vcs-Browser: https://github.com/ingresslabs/lpf
+Vcs-Git: https://github.com/ingresslabs/lpf.git
 
 Package: lpf
 Architecture: any

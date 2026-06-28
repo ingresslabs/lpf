@@ -33,7 +33,7 @@ type command_doc = {
   see_also : string list;
 }
 
-let version = "0.2.3"
+let version = "0.3.0"
 
 let all_commands =
   [

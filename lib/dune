@@ -31,7 +31,6 @@
   cni
   lpf_daemon
   network_policy_translate
-  nomad_policy_translate
   lpf
   process
   file_util
