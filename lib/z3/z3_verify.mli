@@ -1,3 +1,7 @@
+module Ir = Lpf.Ir
+module Policy = Lpf.Policy
+module Explain = Lpf.Explain
+
 (* Z3-powered formal verification for lpf firewall policies.
 
    Translates the policy IR into Z3 SMT constraints and answers questions
@@ -59,7 +63,7 @@ val check_equivalence : Ir.t -> Ir.t -> equiv_result
 val check_reachable :
   Ir.t ->
   constraints:(string * string) list ->
-  target_action:Ir.action ->
+  target_action:Policy.action ->
   reachable_result
 
 (* Prove an invariant holds for ALL packets. The invariant is a

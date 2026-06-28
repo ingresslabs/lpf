@@ -235,16 +235,24 @@ used for command help and man pages.
 `lpf completion` is read-only. The output is suitable for sourcing in an
 interactive shell or installing into the host shell-completion directory.
 
-### `lpf e2e <run|list>`
+### E2E lab suites
 
-Run real end-to-end Linux networking validation inside a disposable lab
-environment. The runner is intended for Firecracker VMs or equivalent throwaway
-Linux guests with root/CAP_NET_ADMIN.
+Run real end-to-end Linux networking validation through the CI/lab scripts and
+`make` targets. These suites are intended for Firecracker VMs or equivalent
+throwaway Linux guests with root/CAP_NET_ADMIN.
 
-The default catalog contains 552 deterministic scenarios and accepts 1 to 1000
-scenarios per run. Advanced CI jobs normally use 500 to 1000 scenarios per
-available kernel; the generic advanced matrix uses 984 scenarios for balanced
-family coverage. The catalog is split across:
+Primary entry points:
+
+- `ci/vagabond/feature-suite.sh` for userspace policy, backend-rendering,
+  completion, tool-schema, and guarded-apply dry-run coverage
+- `make bpf` for CO-RE object compilation
+- `make bpf-e2e` for basic BPF_PROG_TEST_RUN verdict checks
+- `make bpf-e2e-comprehensive` or `bpf/e2e_runner.py --layers 0,1,2,3` for the
+  multi-layer eBPF matrix
+- `ci/vagabond/ebpf-e2e-suite.sh` for Firecracker/kernel-matrix runs
+
+Advanced CI jobs normally use the generic kernel matrix described in
+`docs/KERNEL_LAB_MATRIX.md`. The lab coverage is split across:
 
 - nftables accept decisions with real ICMP traffic over veth namespaces
 - nftables drop decisions with observed traffic failure
@@ -258,24 +266,42 @@ family coverage. The catalog is split across:
 - intended-vs-observed readback diff evidence
 - negative invalid-update rejection
 
-Supported report outputs:
+Supported report controls in the lab runners:
 
-- `--junit <path>` for CI trend reporting
-- `--allure-dir <dir>` for Allure result JSON files
-- `--evidence-dir <dir>` for a sanitized run manifest, `summary.jsonl`, and
-  `scenario-log.jsonl`
-- `--kernel-id <id>` to attach the matrix kernel label
-- `--dry-run` to render the catalog and reports without changing networking
-  state
+- `LPF_FEATURE_JUNIT=<path>` for the userspace feature-suite JUnit file
+- `LPF_EBPF_JUNIT=<path>` for the eBPF wrapper JUnit file
+- `bpf/e2e_runner.py --junit <path>` for runner-level JUnit output
+- `LPF_KERNEL_LABEL=<label>` or `bpf/e2e_runner.py --label <label>` to attach
+  the matrix kernel label
+- `LPF_EBPF_LAYERS=0,1,2,3` or `bpf/e2e_runner.py --layers 0,1,2,3` to scope
+  the eBPF matrix
 
-This command requires root/CAP_NET_ADMIN and must not be run in a production
+These suites require root/CAP_NET_ADMIN and must not be run in a production
 network namespace.
 
-Scenario evidence includes the intended nftables ruleset or routing/tc action,
-the command argv, exit status, stdout/stderr, readback output, and cleanup or
-post-remove readback where applicable. Kernel-matrix jobs must keep requested,
-available, covered, and missing kernel labels separate; missing kernel images
-must never be counted as covered.
+Scenario evidence includes generated JUnit, command stdout/stderr, BPF section
+presence, readback output, and cleanup or post-remove readback where
+applicable. Kernel-matrix jobs must keep requested, available, covered, and
+missing kernel labels separate; missing kernel images must never be counted as
+covered.
+
+### `lpf verify`
+
+Formally verify lpf policy properties using Z3 theorem proving. Requires the
+optional `lpf-verify` binary built with Z3 support (`opam install z3`).
+
+Commands (delegated to `lpf-verify`):
+- `consistency` — find dead/shadowed rules via SMT solving
+- `equivalence` — prove two policies semantically equivalent
+- `reachable` — check if a target action is reachable from constraints
+- `invariant` — prove a logical invariant holds for all packets
+- `minimize` — find minimal semantically-equivalent rule set
+- `coverage` — symbolic reverse-explanation of rule coverage
+- `gen-tests` — auto-generate boundary test fixtures
+- `backend-ebpf` — prove eBPF backend is semantically equivalent
+- `check-all` — run all verification passes
+
+Without Z3 installed, `lpf verify` prints installation instructions.
 
 ### `lpf verify`
 

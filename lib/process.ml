@@ -12,6 +12,8 @@ type run_error = {
   stderr : string;
 }
 
+type run_output = { status : run_status; stdout : string; stderr : string }
+
 let close_noerr fd = try Unix.close fd with Unix.Unix_error _ -> ()
 let read_file = File_util.read_file
 
@@ -26,7 +28,7 @@ let status_of_unix_status = function
   | Unix.WSIGNALED signal -> Signaled signal
   | Unix.WSTOPPED signal -> Stopped signal
 
-let run ~temp_prefix invocation =
+let run_capture ~temp_prefix invocation =
   with_temp_file (temp_prefix ^ "-stdout") (fun stdout_path ->
       with_temp_file (temp_prefix ^ "-stderr") (fun stderr_path ->
           let stdout_fd =
@@ -48,7 +50,7 @@ let run ~temp_prefix invocation =
               let stdout = read_file stdout_path in
               let stderr = read_file stderr_path in
               let status = status_of_unix_status status in
-              Ok (status, stdout, stderr)
+              Ok { status; stdout; stderr }
             with Unix.Unix_error (error, function_name, argument) ->
               close_noerr stdout_fd;
               close_noerr stderr_fd;
@@ -56,8 +58,7 @@ let run ~temp_prefix invocation =
                 (Unix.error_message error ^ " in " ^ function_name ^ "("
                ^ argument ^ ")")
           with
-          | Ok (Exited 0, stdout, _stderr) -> Ok stdout
-          | Ok (status, _stdout, stderr) -> Error { invocation; status; stderr }
+          | Ok output -> Ok output
           | Error message ->
               Error
                 {
@@ -65,6 +66,12 @@ let run ~temp_prefix invocation =
                   status = Failed_to_start message;
                   stderr = message;
                 }))
+
+let run ~temp_prefix invocation =
+  match run_capture ~temp_prefix invocation with
+  | Ok { status = Exited 0; stdout; _ } -> Ok stdout
+  | Ok { status; stderr; _ } -> Error { invocation; status; stderr }
+  | Error error -> Error error
 
 let string_of_run_status = function
   | Exited code -> "exit " ^ string_of_int code
@@ -74,7 +81,7 @@ let string_of_run_status = function
 
 let string_of_invocation invocation = String.concat " " invocation.argv
 
-let string_of_run_error command_name error =
+let string_of_run_error command_name (error : run_error) =
   let stderr = String.trim error.stderr in
   let detail = if String.equal stderr "" then "" else ": " ^ stderr in
   command_name ^ " command failed ("

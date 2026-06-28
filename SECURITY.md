@@ -26,6 +26,6 @@ If you discover a security vulnerability, please report it privately to the main
 
 1. Always run `lpf check` and `lpf diff --live` before `lpf apply`.
 2. Use `lpf apply --confirm 60s` on remote hosts so connectivity loss triggers automatic rollback.
-3. Test policies with `lpf test` and `lpf e2e run --dry-run` before production apply.
+3. Test policies with `lpf test` and CI/lab E2E dry runs before production apply.
 4. Keep rollback evidence in `/var/lib/lpf/rollback` for post-incident analysis.
 5. Run `lpf` inside a disposable lab (Firecracker VM or network namespace) for E2E validation.
