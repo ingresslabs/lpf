@@ -1,4 +1,7 @@
 let () =
+  if Array.length Sys.argv >= 2 && Sys.argv.(1) = "daemon" then
+    Lpf.Lpf_daemon.run (Lpf.Lpf_daemon.default_config ())
+  else
   let cmd = Sys.getenv_opt "CNI_COMMAND" in
   let netns = Sys.getenv_opt "CNI_NETNS" in
   let container_id = Sys.getenv_opt "CNI_CONTAINERID" in

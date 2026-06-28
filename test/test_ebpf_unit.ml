@@ -65,6 +65,10 @@ let () =
   assert (contains_substring loader "bpftool map create \"$PIN/lpf_meta\"");
   assert (
     contains_substring loader "bpftool map update pinned \"$PIN/lpf_rules\"");
+  assert (
+    contains_substring loader
+      "map name lpf_meta pinned \"$PIN/lpf_meta\" map name lpf_rules pinned \
+       \"$PIN/lpf_rules\"");
   assert (contains_substring loader "lpf-ebpf-loaded version=1 rules=3");
   let rollback = Lpf.Ebpf.rollback_script ~to_version:3 in
   assert (

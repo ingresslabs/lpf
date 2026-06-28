@@ -63,39 +63,39 @@ let protocol_string prot =
   | _ -> "tcp"
 
 let translate_ports ports =
-  if ports = [] then " any"
+  if ports = [] then [ (None, None) ]
   else
-    let port_strs =
-      List.filter_map
-        (fun port_json ->
-          let fields = obj_fields port_json in
-          let port =
-            match field "port" fields with
-            | Some (Json_parse.Number f) -> Some (int_of_float f)
-            | Some (Json_parse.String s) -> (
-                match int_of_string_opt s with Some n -> Some n | None -> None)
-            | _ -> None
-          in
-          let end_port =
-            match field "endPort" fields with
-            | Some (Json_parse.Number f) -> Some (int_of_float f)
-            | _ -> None
-          in
-          let protocol =
-            match field_string "protocol" fields with
-            | Some p -> protocol_string p
-            | None -> "tcp"
-          in
-          match (port, end_port) with
-          | Some p, Some ep ->
-              Some (Printf.sprintf " proto %s port %d:%d" protocol p ep)
-          | Some p, None -> Some (Printf.sprintf " proto %s port %d" protocol p)
-          | None, _ -> None)
-        ports
-    in
-    String.concat "" port_strs
+    List.filter_map
+      (fun port_json ->
+        let fields = obj_fields port_json in
+        let port =
+          match field "port" fields with
+          | Some (Json_parse.Number f) -> Some (int_of_float f)
+          | Some (Json_parse.String s) -> (
+              match int_of_string_opt s with Some n -> Some n | None -> None)
+          | _ -> None
+        in
+        let end_port =
+          match field "endPort" fields with
+          | Some (Json_parse.Number f) -> Some (int_of_float f)
+          | _ -> None
+        in
+        let protocol =
+          match field_string "protocol" fields with
+          | Some p -> protocol_string p
+          | None -> "tcp"
+        in
+        match (port, end_port) with
+        | Some p, Some ep ->
+            Some (Some protocol, Some (Printf.sprintf "%d:%d" p ep))
+        | Some p, None -> Some (Some protocol, Some (string_of_int p))
+        | None, _ -> Some (Some protocol, None))
+      ports
 
-let translate_peer to_json =
+let rule_proto = function Some protocol -> " proto " ^ protocol | None -> ""
+let rule_port = function Some port -> " port " ^ port | None -> ""
+
+let translate_peer_addr to_json =
   let fields = obj_fields to_json in
   let pod_sel = field "podSelector" fields in
   let ns_sel = field "namespaceSelector" fields in
@@ -104,55 +104,56 @@ let translate_peer to_json =
   | Some ps, Some ns ->
       let _set_name = pod_selector_to_set_name ps in
       let ns_set_name = namespace_selector_to_set_name ns in
-      Some (Printf.sprintf " from %s" ns_set_name)
+      Some ns_set_name
   | Some ps, None ->
       let set_name = pod_selector_to_set_name ps in
-      Some (Printf.sprintf " from %s" set_name)
+      Some set_name
   | None, Some ns ->
       let ns_set_name = namespace_selector_to_set_name ns in
-      Some (Printf.sprintf " from %s" ns_set_name)
+      Some ns_set_name
   | None, None -> (
       match ip_block with
       | Some (Json_parse.Object ib_fields) -> (
           match field_string "cidr" ib_fields with
           | Some cidr ->
               let except = field_list "except" ib_fields in
-              if except = [] then Some (Printf.sprintf " from %s" cidr)
-              else Some (Printf.sprintf " from %s" cidr)
-          | None -> Some " from any")
-      | _ -> Some " from any")
+              if except = [] then Some cidr else Some cidr
+          | None -> Some "any")
+      | _ -> Some "any")
 
 let translate_ingress_rule rule_json =
   let fields = obj_fields rule_json in
   let froms = field_list "from" fields in
-  let ports = field_list "ports" fields in
-  let port_str = translate_ports ports in
-  if froms = [] then [ "pass in on eth0 proto tcp from any to any" ^ port_str ]
-  else
-    List.filter_map
-      (fun from_json ->
-        match translate_peer from_json with
-        | Some peer_str ->
-            Some ("pass in on eth0" ^ peer_str ^ " to any" ^ port_str)
-        | None -> None)
-      froms
+  let port_specs = translate_ports (field_list "ports" fields) in
+  let sources =
+    if froms = [] then [ "any" ]
+    else List.filter_map translate_peer_addr froms
+  in
+  List.concat_map
+    (fun source ->
+      List.map
+        (fun (protocol, port) ->
+          "pass in on eth0" ^ rule_proto protocol ^ " from " ^ source
+          ^ " to any" ^ rule_port port)
+        port_specs)
+    sources
 
 let translate_egress_rule rule_json =
   let fields = obj_fields rule_json in
   let tos = field_list "to" fields in
-  let ports = field_list "ports" fields in
-  let port_str = translate_ports ports in
-  if tos = [] then
-    [ "pass out on eth0 from any to any" ^ port_str ^ " keep state" ]
-  else
-    List.filter_map
-      (fun to_json ->
-        match translate_peer to_json with
-        | Some peer_str ->
-            Some
-              ("pass out on eth0 from any" ^ peer_str ^ port_str ^ " keep state")
-        | None -> None)
-      tos
+  let port_specs = translate_ports (field_list "ports" fields) in
+  let destinations =
+    if tos = [] then [ "any" ]
+    else List.filter_map translate_peer_addr tos
+  in
+  List.concat_map
+    (fun destination ->
+      List.map
+        (fun (protocol, port) ->
+          "pass out on eth0" ^ rule_proto protocol ^ " from any to "
+          ^ destination ^ rule_port port ^ " keep state")
+        port_specs)
+    destinations
 
 let translate_one_np np_json =
   let open Json_parse in
