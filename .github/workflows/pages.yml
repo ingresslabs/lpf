@@ -8,6 +8,7 @@ on:
     paths:
       - 'docs/index.html'
       - 'docs/.nojekyll'
+      - 'ci/pages/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -31,3 +32,30 @@ jobs:
           test -s docs/index.html
           grep -q 'Install from GitHub Releases' docs/index.html
           grep -q 'Next-generation Linux firewall' docs/index.html
+          grep -q 'application/ld+json' docs/index.html
+          grep -q 'class="skip-link"' docs/index.html
+          grep -q 'id="flow"' docs/index.html
+          grep -q 'mermaid@11' docs/index.html
+          for id in dg-consolidate dg-pipeline dg-apply dg-packet dg-ebpf; do
+            grep -q "id=\"$id\"" docs/index.html || { echo "missing diagram $id"; exit 1; }
+          done
+
+  render:
+    name: E2E render diagrams (headless Chrome)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+        with:
+          chrome-version: stable
+
+      - name: Render landing page and assert diagrams
+        env:
+          CHROME_BIN: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: node ci/pages/render-check.mjs
