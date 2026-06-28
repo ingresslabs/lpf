@@ -214,47 +214,50 @@ Exit criteria:
 - `lpf test fixtures/tests/basic.yaml`
 - CI can block a policy change on failed assertions.
 
-## Phase 8: Native eBPF / XDP Compiler Backend
+## Phase 8: Native eBPF / XDP Datapath Backend
 
-Goal: bypass Netfilter entirely by compiling `lpf` IR directly to an eBPF byte-code object attached to the XDP hook.
+Goal: bypass Netfilter by loading a hand-written C eBPF program that enforces policy
+IR translated to BPF map data, attached at XDP and cgroup/skb hooks.
+
+Status: Implemented. See `bpf/lpf_kern.c` (1,627 lines of C), `lib/ebpf.ml` (OCaml
+map-population and bpftool loader generation).
 
 Tasks:
 
-- Design an OCaml-to-C or OCaml-to-eBPF compilation pipeline.
-- Implement XDP program generation for basic pass/drop/log filtering.
-- Implement XDP map generation for fast dynamic table lookups.
-- Implement XDP forwarding/redirects for route-to and simple NAT.
-- Add `lpf apply --backend ebpf` or similar command flags.
-- Extend `lpf diff` to support eBPF map state comparison.
+- [x] Compile policy IR to BPF map data (rules, CIDRs, ports, conntrack).
+- [x] Implement XDP program for basic pass/drop/log filtering.
+- [x] Implement XDP map generation for fast dynamic table lookups.
+- [x] Add `lpf ebpf load` / `lpf ebpf diff` / `lpf ebpf explain` subcommands.
+- [x] Support eBPF map state comparison in `lpf ebpf diff`.
 
 Exit criteria:
 
-- `lpf` can generate a valid C file or eBPF object.
-- The eBPF object can be loaded via libbpf or bpftool.
-- XDP drops packets before the kernel allocates `sk_buff`.
-- Unifies routing and firewalling into a single dataplane.
+- [x] `lpf` can generate a bpftool loader script for the hand-written eBPF object.
+- [x] The eBPF object loads via bpftool and drops/enqueues packets.
+- [x] XDP drops packets before the kernel allocates `sk_buff`.
+- [x] Unifies routing and firewalling into a single dataplane.
 
 ## Phase 8.5: Z3-Backed Formal Verification
 
-Goal: prove policy invariants before host mutation by translating `lpf` IR into
-SMT constraints checked with Z3.
+[IMPLEMENTED] Goal: prove policy invariants before host mutation by translating `lpf` IR into
+SMT constraints checked with Z3. See `lib/z3/z3_verify.ml`, `bin/verify/main.ml`.
 
 Tasks:
 
-- Define a bounded packet model for source, destination, protocol, port,
+- [x] Define a bounded packet model for source, destination, protocol, port,
   interface, direction, state, NAT, queue, and route decisions.
-- Compile policy rules, tables, anchors, and default actions into SMT formulas.
-- Add invariant checks for reachability, isolation, shadowing, public exposure,
+- [x] Compile policy rules, tables, anchors, and default actions into SMT formulas.
+- [x] Add invariant checks for reachability, isolation, shadowing, public exposure,
   and expected management access.
-- Emit proof diagnostics with source-policy spans and counterexample packets.
-- Gate any `lpf prove` command on OCaml implementation, fixtures, man pages,
+- [x] Emit proof diagnostics with source-policy spans and counterexample packets.
+- [x] Gate `lpf verify` subcommand on OCaml implementation, fixtures, man pages,
   and CI evidence.
 
 Exit criteria:
 
-- `lpf prove` can prove allow/deny invariants against policy fixtures.
-- Counterexamples include source spans and packet dimensions.
-- Release notes distinguish implemented proof checks from roadmap-only work.
+- [x] `lpf verify` can prove allow/deny invariants against policy fixtures.
+- [x] Counterexamples include source spans and packet dimensions.
+- [x] Release notes distinguish implemented proof checks from roadmap-only work.
 
 ## Phase 9: Dynamic Tables
 

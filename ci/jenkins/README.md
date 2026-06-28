@@ -43,22 +43,9 @@ The `Jenkinsfile` runs every subsystem end-to-end:
 ## Setup via Jenkins UI
 
 1. **Create folder**: *New Item → Folder*, name `lpf`
-2. **Create `lpf-main`** inside the folder with the XML from `ci/jenkins/lpf-job.xml`
-3. **Create `lpf-five-distro-e2e`** using `ci/five-distro-e2e.groovy` as the Pipeline script path
-4. **Create `lpf-auto-release`** inside the folder with the XML from `ci/jenkins/auto-release.xml`
-
-## Setup via `jc` CLI
-
-```sh
-# Create jobs at root (folder creation unsupported by jc)
-jc job apply lpf-main  -f ci/jenkins/lpf-job.xml
-jc job apply lpf-five-distro-e2e \
-  --config "$(sed 's|ci/jenkins/five-distro-e2e.groovy|ci/five-distro-e2e.groovy|' ci/jenkins/five-distro-e2e.xml)"
-jc job apply lpf-auto-release -f ci/jenkins/auto-release.xml
-
-# Build
-jc job build lpf-five-distro-e2e
-```
+2. **Create `lpf-main`** inside the folder using `Jenkinsfile` from the repo root as Pipeline script path
+3. **Create `lpf-five-distro-e2e`** using `ci/five-distro-e2e.groovy` as Pipeline script path
+4. **Create `lpf-auto-release`** using `ci/jenkins/auto-release.groovy` as Pipeline script path
 
 ## Auto-release pipeline
 

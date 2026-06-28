@@ -4,13 +4,13 @@
 
 lpf CNI is a container network interface plugin that compiles a single `.lpf`
 policy file into an eBPF datapath and attaches it at pod granularity via
-cgroup/skb and LSM hooks.  It targets Kubernetes, k3s, and Nomad with no
-platform-specific policy dialects.
+cgroup/skb and LSM hooks.  The current implementation targets Kubernetes and
+k3s; Nomad remains a planned integration target for the same policy language.
 
 **Why it exists**: Cilium is k8s-only, Calico splits policy across YAML dialects,
 Antrea is OVS-based.  No existing CNI offers:
 
-1. One policy language for k8s and Nomad
+1. One policy language designed to extend beyond Kubernetes-specific dialects
 2. eBPF datapath with Z3-grade formal verification before rollout
 3. Per-pod cgroup attachment (not per-host iptables)
 4. Deterministic explain/diff/dry-run on any policy before applying to a cluster
@@ -66,7 +66,7 @@ Antrea is OVS-based.  No existing CNI offers:
 ### 2.2 CNI ADD flow (pod creation)
 
 ```
-kubelet/containerd/nomad
+kubelet/containerd (Nomad planned)
   │
   ├─1. invokes lpf-cni with CNI_COMMAND=ADD
   │     stdin: network config JSON with policy_ref
@@ -77,7 +77,7 @@ kubelet/containerd/nomad
   │     c. assign IP from IPAM (host-local, whereabouts, or DHCP)
   │     d. add default route via host veth
   │     e. read pod labels/annotations from CNI_ARGS
-  │        (K8S_POD_NAMESPACE, K8S_POD_NAME, NOMAD_GROUP_NAME, …)
+  │        (K8S_POD_NAMESPACE, K8S_POD_NAME, …)
   │     f. map pod identity → cgroup_id and cidr_set index
   │        via lpf-daemon gRPC or direct BPF map update
   │     g. write result JSON to stdout
@@ -93,7 +93,7 @@ kubelet/containerd/nomad
 ### 2.3 CNI DEL flow (pod deletion)
 
 ```
-kubelet/containerd/nomad
+kubelet/containerd (Nomad planned)
   │
   ├─1. invokes lpf-cni with CNI_COMMAND=DEL
   │
@@ -226,7 +226,10 @@ The translator handles: `podSelector`, `namespaceSelector`, `ipBlock`
 (excluding+including), `ports` (named ports via pod spec resolution),
 `policyTypes` (Ingress/Egress), and `endPort` (port ranges).
 
-### 3.3 Nomad network stanza translation
+### 3.3 Planned Nomad network stanza translation
+
+Nomad jobspec translation is not shipped in v0.3.0. The example below captures
+the intended mapping for a future translator.
 
 ```
 # Nomad jobspec
@@ -261,9 +264,10 @@ Identities are CIDR sets populated by lpf-daemon:
 | `<cidr>` | Literal CIDR | `<10.0.0.0/8>` |
 | `<svc>` | Service ClusterIP | `<kube-dns>` → `{10.43.0.10}` |
 
-lpf-daemon watches the Kubernetes API (or Nomad API) and keeps CIDR sets in
-sync.  Pod churn triggers incremental BPF map updates — no full recompilation
-for single-pod add/delete when only CIDR sets change.
+lpf-daemon watches the Kubernetes API and keeps CIDR sets in sync. Pod churn
+triggers incremental BPF map updates — no full recompilation for single-pod
+add/delete when only CIDR sets change. Nomad or Consul watches are planned, not
+currently implemented.
 
 ---
 
@@ -401,7 +405,7 @@ Privileged container with host PID, BPF caps, and `/sys/fs/bpf` mounted.
 
 | Function | How |
 |----------|-----|
-| **Policy watch** | Watches ConfigMap/CRD via informer (k8s) or Consul watch (Nomad). Recompiles `.lpf` → BPF plan on change. |
+| **Policy watch** | Watches ConfigMap/CRD via informer. Recompiles `.lpf` → BPF plan on change. |
 | **Pod watch** | Watches pod create/delete. Assigns cgroup_id → set_index. Updates CIDR maps. |
 | **BPF lifecycle** | Loads programs at startup (from pinned path or embedded ELF). Pins to `/sys/fs/bpf/lpf/`. Atomic map swap on policy change. |
 | **Cgroup attachment** | For each new pod cgroup: `bpftool cgroup attach <cgroup> cgroup_skb ingress pinned /sys/fs/bpf/lpf/progs/cgroup_ingress` |
@@ -522,7 +526,6 @@ test_cni_bpf/
 │   └── event_conntrack_expire         # expiry → conntrack event
 └── test_policy_compile.ml             # OCaml tests: policy → BPF plan
     ├── compile_networkpolicy_yaml      # K8s NP → .lpf → BPF plan
-    ├── compile_nomad_network_stanza    # Nomad → .lpf → BPF plan
     ├── compile_cluster_policy          # ClusterPolicy → BPF plan
     ├── compile_pod_annotation          # Pod annotation → BPF plan
     ├── compile_idempotent              # Same policy → same checksum
@@ -715,7 +718,10 @@ networking:
 | **Policy loop** | Policy that blocks lpf-daemon's own API traffic — verify it can't self-block (reserved rule priority) |
 | **Memory pressure** | Node with 128MB free, deploy 100 pods, verify OOM kills pods not lpf-daemon |
 
-### 7.6 Layer 4 — Nomad E2E
+### 7.6 Layer 4 — Planned Nomad E2E
+
+Nomad E2E is a future compatibility layer and is not part of the current v0.3.0
+test contract.
 
 **Tooling**: Nomad dev agent + Docker task driver.
 
@@ -750,10 +756,10 @@ nomad alloc exec -task web curl -s http://db.local:5432 && echo "PASS" || echo "
 │  ─────────────────────────────────────                    │
 │  Layer 3 (20min)   kind 3-node E2E + chaos (PR only)      │
 │  ─────────────────────────────────────                    │
-│  Layer 4 (15min)   Nomad E2E (PR only)                    │
+│  Layer 4 (future)  Nomad E2E                              │
 │                                                          │
 │  Nightly:           500-pod stress, 1hr soak, fuzzing     │
-│  Release-blocking:  Layer 0-2 must pass. Layer 3-4 must   │
+│  Release-blocking:  Layer 0-2 must pass. Layer 3 must     │
 │                     pass + benchmark regression check.    │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -776,23 +782,23 @@ Run on every PR against `main`.  Regression threshold: ±5%.
 
 ---
 
-## 8. Files to Create
+## 8. File Inventory
 
 ```
 bpf/
   lpf_kern_cni.c               # CNI-specific BPF program extensions
-                                 # (L4-only cgroup variant, lighter than full XDP+TC)
+                                # (L4-only cgroup variant, lighter than full XDP+TC)
 
 ci/cni/
-  Dockerfile.cni                # Builds lpf-cni + lpf-daemon container
-  cni-sandbox.sh                # Layer 1 test harness
+  Dockerfile.cni                # [IMPLEMENTED] Builds lpf-cni container
+  cni-sandbox.sh                # [IMPLEMENTED] Layer 1 test harness
   cni-sandbox-entrypoint.sh     # Per-test execution inside Docker
-  k3s-e2e.sh                    # Layer 2 k3s cluster tests
+  k3s-e2e.sh                    # [IMPLEMENTED] Layer 2 k3s cluster tests
   k3s-cni-install.yaml          # k3s manifest: lpf-daemon DaemonSet + config
-  kind-config.yaml              # kind 3-node cluster config
-  kind-e2e.sh                   # Layer 3 kind cluster tests
-  nomad-e2e.sh                  # Layer 4 Nomad tests
-  nomad-lpf.hcl                 # Nomad CNI plugin config
+  kind-config.yaml              # [IMPLEMENTED] kind 3-node cluster config
+  kind-e2e.sh                   # [IMPLEMENTED] Layer 3 kind cluster tests
+  nomad-e2e.sh                  # [PLANNED] Layer 4 Nomad tests
+  nomad-lpf.hcl                 # [PLANNED] Nomad CNI plugin config
   benchmark.sh                  # Performance regression suite
   test-policies/
     cluster-deny.lpf
@@ -801,37 +807,35 @@ ci/cni/
     namespace-tenant-b.lpf
     k8s-networkpolicy-input.yaml
     k8s-networkpolicy-expected.lpf
-    nomad-network-input.hcl
-    nomad-network-expected.lpf
+    nomad-network-input.hcl     # [PLANNED]
+    nomad-network-expected.lpf  # [PLANNED]
     invalid-policy.lpf
   test-jobs/
-    web-server.nomad
-    database.nomad
-    attacker.nomad
+    web-server.nomad            # [PLANNED]
+    database.nomad              # [PLANNED]
+    attacker.nomad              # [PLANNED]
     web-server.yaml (k8s)
     database.yaml (k8s)
     attacker.yaml (k8s)
 
 lib/
-  cni.ml                        # CNI protocol handler
-  cni.mli
-  network_policy_translate.ml   # K8s NetworkPolicy → .lpf translator
-  network_policy_translate.mli
-  nomad_policy_translate.ml     # Nomad network stanza → .lpf translator
-  nomad_policy_translate.mli
-  lpf_daemon.ml                 # Per-node policy agent
-  lpf_daemon.mli
+  cni.ml                        # [IMPLEMENTED] CNI protocol handler
+  cni.mli                       # [IMPLEMENTED]
+  network_policy_translate.ml   # [IMPLEMENTED] K8s NetworkPolicy -> .lpf translator
+  network_policy_translate.mli  # [IMPLEMENTED]
+  lpf_daemon.ml                 # [IMPLEMENTED] Per-node policy agent
+  lpf_daemon.mli                # [IMPLEMENTED]
 
 bin/
   cni/
-    main.ml                     # lpf-cni entry point (ADD/DEL/CHECK)
-    dune                        # Build lpf-cni binary + container image
+    main.ml                     # [IMPLEMENTED] lpf-cni entry point (ADD/DEL/CHECK)
+    dune                        # [IMPLEMENTED] Build lpf-cni binary
   daemon/
     main.ml                     # lpf-daemon entry point
     dune
 
 test/
-  test_cni_unit.ml              # OCaml CNI protocol tests
+  test_cni_unit.ml              # [IMPLEMENTED] OCaml CNI protocol tests
   test_cni_bpf/                 # BPF_PROG_TEST_RUN C tests
     test_cgroup_ingress.c
     test_cgroup_egress.c
@@ -843,9 +847,8 @@ test/
     test_snat.c
     test_events.c
     Makefile                    # Build+run BPF conformance suite
-  test_network_policy_translate.ml    # K8s NetworkPolicy → .lpf tests
-  test_nomad_policy_translate.ml      # Nomad → .lpf tests
-  test_lpf_daemon_unit.ml             # Daemon unit tests
+  test_network_policy_translate.ml    # [IMPLEMENTED] K8s NetworkPolicy -> .lpf tests
+  test_lpf_daemon_unit.ml             # [IMPLEMENTED] Daemon unit tests
 
 docs/
   cni-spec.md                   # This document
@@ -863,19 +866,19 @@ packaging/
 ## 9. Implementation Phases
 
 ### Phase 1 — Foundation (2 weeks)
-- [ ] `bin/cni/main.ml`: CNI ADD/DEL/CHECK handler with veth+IPAM
-- [ ] `lib/cni.ml`: CNI protocol wire format (JSON config parse)
-- [ ] `Dockerfile.cni`: Container image build
-- [ ] `ci/cni/cni-sandbox.sh`: Layer 1 test harness
+- [x] `bin/cni/main.ml`: CNI ADD/DEL/CHECK handler with veth+IPAM
+- [x] `lib/cni.ml`: CNI protocol wire format (JSON config parse)
+- [x] `Dockerfile.cni`: Container image build
+- [x] `ci/cni/cni-sandbox.sh`: Layer 1 test harness
 - [ ] `test/cni_bpf/test_cgroup_ingress.c`: 6 BPF conformance tests
 - [ ] All existing `lpf_kern.c` cgroup hooks verified against CNI usage
 
 ### Phase 2 — Policy engine (2 weeks)
-- [ ] `lib/network_policy_translate.ml`: K8s NetworkPolicy → .lpf
-- [ ] `lib/nomad_policy_translate.ml`: Nomad → .lpf
-- [ ] `lib/lpf_daemon.ml`: Policy watch, recompilation, map sync
+- [x] `lib/network_policy_translate.ml`: K8s NetworkPolicy -> .lpf
+- [ ] Planned Nomad network stanza -> .lpf translator
+- [x] `lib/lpf_daemon.ml`: Policy watch, recompilation, map sync
 - [ ] BPF cgroup identity map population (lpf_cgroup)
-- [ ] `packaging/k8s/lpf-cni-daemonset.yaml`
+- [x] `packaging/k8s/lpf-cni-daemonset.yaml`
 
 ### Phase 3 — Cluster integration (2 weeks)
 - [ ] `ci/cni/k3s-e2e.sh`: Layer 2 tests
@@ -905,7 +908,7 @@ packaging/
 | Feature | lpf CNI | Cilium | Calico | Antrea |
 |---------|---------|--------|--------|--------|
 | K8s support | yes | yes | yes | yes |
-| Nomad support | **yes** | no | yes (iptables) | no |
+| Nomad support | planned | no | yes (iptables) | no |
 | Policy language | **.lpf (PF-style)** | NetworkPolicy + CiliumNetworkPolicy | NetworkPolicy + CalicoNetworkPolicy | NetworkPolicy + AntreaNetworkPolicy |
 | eBPF datapath | cgroup/skb + LSM + XDP (optional) | XDP + TC + cgroup | eBPF (k8s only) | OVS userspace |
 | Formal verification | **Z3 (policy contradictions, shadow detection)** | no | no | no |

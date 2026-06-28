@@ -59,14 +59,6 @@ let render_ebpf_policy_text ?file text =
           diagnostics @ Ebpf.capability_diagnostics plan.policy )
   | Error diagnostics -> Error diagnostics
 
-let render_ebpf_loader_text ?file text =
-  match plan_policy_text ?file text with
-  | Ok (plan, diagnostics) ->
-      Ok
-        ( Ebpf.loader_script (Ebpf.of_plan plan),
-          diagnostics @ Ebpf.capability_diagnostics plan.policy )
-  | Error diagnostics -> Error diagnostics
-
 let diff_ebpf_policy ?file ~observed text =
   match plan_policy_text ?file text with
   | Ok (plan, diagnostics) ->

@@ -65,7 +65,6 @@ module Json_parse : module type of Json_parse
 module Cni : module type of Cni
 module Lpf_daemon : module type of Lpf_daemon
 module Network_policy_translate : module type of Network_policy_translate
-module Nomad_policy_translate : module type of Nomad_policy_translate
 
 val version : string
 val all_commands : (string * command * string) list
@@ -83,7 +82,6 @@ val format_policy_text :
   ?file:string -> string -> (string, Policy.diagnostic list) result
 
 val ir_of_policy : Policy.policy -> (Ir.t, Policy.diagnostic list) result
-val plan_of_policy : Policy.policy -> (Plan.t, Policy.diagnostic list) result
 
 val plan_policy_text :
   ?file:string ->
@@ -106,11 +104,6 @@ val render_routing_policy_text :
   (string * Policy.diagnostic list, Policy.diagnostic list) result
 
 val render_ebpf_policy_text :
-  ?file:string ->
-  string ->
-  (string * Policy.diagnostic list, Policy.diagnostic list) result
-
-val render_ebpf_loader_text :
   ?file:string ->
   string ->
   (string * Policy.diagnostic list, Policy.diagnostic list) result

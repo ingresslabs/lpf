@@ -5,6 +5,7 @@
 #   make test         run unit test suite
 #   make ci           full CI check (build + test + fixtures + man pages)
 #   make docker       build all 5 CI distro images
+#   make packages     build RPM, DEB, binary, CNI packages via Docker
 #   make ansible      run Ansible role validation
 #   make bpf-e2e      eBPF E2E with live traffic (root required)
 
@@ -39,8 +40,11 @@ ANSIBLE_ROLE       ?= ansible/roles/lpf
 .PHONY: release-checksums release-sign release-verify
 .PHONY: static deb rpm
 .PHONY: bpf bpf-e2e bpf-e2e-comprehensive bpf-e2e-vagabond bpf-e2e-ct
-.PHONY: docker docker-clean ansible-check ansible-lint ansible-dry-run
+.PHONY: docker docker-clean docker-test docker-feature docker-ebpf
+.PHONY: ansible-check ansible-lint ansible-dry-run
 .PHONY: e2e-feature e2e-ebpf
+.PHONY: docker-pkg-deb docker-pkg-rpm docker-pkg-bin docker-pkg-cni
+.PHONY: docker-pkg docker-pkg-cni-image packages
 
 all: build
 
@@ -250,11 +254,11 @@ release-verify: ## Verify release checksums and signatures
 	@if [ -f $(RELEASE_TARBALL).asc ]; then gpg --verify $(RELEASE_TARBALL).asc; fi
 	@printf 'release verified\n'
 
-deb: ## Build Debian package
+deb: ## Build Debian package (local, requires dpkg-buildpackage)
 	set -eu; rm -rf debian; cp -a packaging/deb debian; \
 	trap 'rm -rf debian' EXIT; dpkg-buildpackage -b -us -uc -d
 
-rpm: ## Build RPM package
+rpm: ## Build RPM package (local, requires rpmbuild)
 	set -eu; VERSION=$$($(LPF) version); \
 	RPM_TOPDIR="$$(pwd)/../lpf-rpmbuild"; \
 	OPAMSWITCH="$$(opam switch show)"; export OPAMSWITCH; \
@@ -264,3 +268,110 @@ rpm: ## Build RPM package
 		-o "$$RPM_TOPDIR/SOURCES/lpf-$$VERSION.tar.gz" HEAD; \
 	rpmbuild -bb --nodeps packaging/rpm/lpf.spec \
 		--define "_topdir $$RPM_TOPDIR"
+
+# ── Packaging via Docker (all 5 distros + CNI) ──────────────────────────
+
+PKG_OUT     ?= _packages
+DEB_DISTROS := debian ubuntu-22 ubuntu-24
+RPM_DISTROS := fedora
+BIN_DISTROS := debian ubuntu-22 ubuntu-24 alpine fedora
+
+docker-pkg-deb: docker ## Build .deb packages inside Docker for Debian/Ubuntu
+	@mkdir -p $(PKG_OUT)/deb
+	@for distro in $(DEB_DISTROS); do \
+		if ! docker image inspect $(DOCKER_CI_TAG):$$distro >/dev/null 2>&1; then \
+			printf 'image %s:%s not found, skipping\n' "$(DOCKER_CI_TAG)" "$$distro"; \
+			continue; \
+		fi; \
+		printf 'building .deb in %s:%s\n' "$(DOCKER_CI_TAG)" "$$distro"; \
+		docker run --rm --user root \
+			-v "$(PWD)/$(PKG_OUT):/output" \
+			$(DOCKER_CI_TAG):$$distro \
+			bash -lc 'set -eu; cd /home/opam/src; \
+				rm -rf debian; cp -a packaging/deb debian; \
+				DEB_VERSION=$$(opam exec -- dune exec -- lpf version); \
+				sed -i "s/(0\.[0-9.]*)/($$DEB_VERSION)/" debian/changelog; \
+				mkdir -p /tmp/debbuild; \
+				cp -a . /tmp/debbuild/lpf-$$DEB_VERSION; \
+				cd /tmp/debbuild/lpf-$$DEB_VERSION; \
+				export OPAMSWITCH=$$(opam switch show); \
+				dpkg-buildpackage -b -us -uc -d; \
+				cp /tmp/debbuild/*.deb /output/deb/; \
+				printf "  -> %s\n" $$(ls /tmp/debbuild/*.deb)'; \
+	done
+	@printf 'DEB packages in %s/deb/\n' '$(PKG_OUT)'
+
+docker-pkg-rpm: docker ## Build .rpm packages inside Docker for Fedora
+	@mkdir -p $(PKG_OUT)/rpm
+	@for distro in $(RPM_DISTROS); do \
+		if ! docker image inspect $(DOCKER_CI_TAG):$$distro >/dev/null 2>&1; then \
+			printf 'image %s:%s not found, skipping\n' "$(DOCKER_CI_TAG)" "$$distro"; \
+			continue; \
+		fi; \
+		printf 'building .rpm in %s:%s\n' "$(DOCKER_CI_TAG)" "$$distro"; \
+		docker run --rm --user root \
+			-v "$(PWD)/$(PKG_OUT):/output" \
+			$(DOCKER_CI_TAG):$$distro \
+			bash -lc 'set -eu; cd /home/opam/src; \
+				RPM_VERSION=$$(opam exec -- dune exec -- lpf version); \
+				RPM_TOPDIR="/tmp/rpmbuild"; \
+				rm -rf "$$RPM_TOPDIR"; \
+				mkdir -p "$$RPM_TOPDIR"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}; \
+				git config --global --add safe.directory /home/opam/src; \
+				git archive --prefix="lpf-$$RPM_VERSION/" \
+					-o "$$RPM_TOPDIR/SOURCES/lpf-$$RPM_VERSION.tar.gz" HEAD; \
+				sed "s/^Version:.*/Version: $$RPM_VERSION/" packaging/rpm/lpf.spec \
+					> "$$RPM_TOPDIR/SPECS/lpf.spec"; \
+				rpmbuild -bb --nodeps "$$RPM_TOPDIR/SPECS/lpf.spec" \
+					--define "_topdir $$RPM_TOPDIR"; \
+				cp "$$RPM_TOPDIR"/RPMS/*/*.rpm /output/rpm/ 2>/dev/null || true; \
+				printf "  -> %s\n" $$(ls "$$RPM_TOPDIR"/RPMS/*/*.rpm 2>/dev/null || echo none)'; \
+	done
+	@printf 'RPM packages in %s/rpm/\n' '$(PKG_OUT)'
+
+docker-pkg-bin: docker ## Extract statically-linked lpf binary from each distro image
+	@mkdir -p $(PKG_OUT)/bin
+	@for distro in $(BIN_DISTROS); do \
+		if ! docker image inspect $(DOCKER_CI_TAG):$$distro >/dev/null 2>&1; then \
+			printf 'image %s:%s not found, skipping\n' "$(DOCKER_CI_TAG)" "$$distro"; \
+			continue; \
+		fi; \
+		printf 'extracting binary from %s:%s\n' "$(DOCKER_CI_TAG)" "$$distro"; \
+		docker run --rm \
+			-v "$(PWD)/$(PKG_OUT):/output" \
+			$(DOCKER_CI_TAG):$$distro \
+			bash -lc 'set -eu; \
+				VERSION=$$(opam exec -- dune exec -- lpf version); \
+				cp /usr/local/bin/lpf /output/bin/lpf-$$VERSION-'$$distro'; \
+				printf "  -> lpf-$$VERSION-'$$distro'\n"'; \
+	done
+	@printf 'Binaries in %s/bin/\n' '$(PKG_OUT)'
+
+docker-pkg-cni: docker ## Build CNI plugin binary inside Docker and package as tarball
+	@mkdir -p $(PKG_OUT)/cni
+	@printf 'building CNI plugin in %s:debian\n' "$(DOCKER_CI_TAG)"
+	@docker run --rm --user root \
+		-v "$(PWD)/$(PKG_OUT):/output" \
+		$(DOCKER_CI_TAG):debian \
+		bash -lc 'set -eu; cd /home/opam/src; \
+			opam exec -- dune build bin/cni/main.exe; \
+			VERSION=$$(opam exec -- dune exec -- lpf version); \
+			cp _build/default/bin/cni/main.exe /output/cni/lpf-cni-$$VERSION-linux-amd64; \
+			chmod +x /output/cni/lpf-cni-$$VERSION-linux-amd64; \
+			printf "  -> lpf-cni-$$VERSION-linux-amd64\n"'
+	@printf 'CNI binary in %s/cni/\n' '$(PKG_OUT)'
+
+docker-pkg-cni-image: docker-pkg-cni ## Build CNI Docker image
+	@printf 'building CNI Docker image\n'
+	@mkdir -p $(PKG_OUT)/cni-docker
+	@cp $(PKG_OUT)/cni/lpf-cni-*-linux-amd64 $(PKG_OUT)/cni-docker/lpf-cni 2>/dev/null || true
+	@cp bpf/lpf_kern.o $(PKG_OUT)/cni-docker/lpf_kern.o 2>/dev/null || true
+	@docker build -f Dockerfile.cni -t lpf-cni:latest $(PKG_OUT)/cni-docker/ 2>/dev/null || \
+		docker build -f Dockerfile.cni -t lpf-cni:latest . 2>/dev/null || true
+	@printf 'CNI image: lpf-cni:latest\n'
+
+docker-pkg: docker-pkg-deb docker-pkg-rpm docker-pkg-bin docker-pkg-cni ## Build all packages via Docker
+	@printf '\nAll packages in %s/\n' '$(PKG_OUT)'
+	@find $(PKG_OUT) -type f | sort
+
+packages: docker-pkg ## Alias for docker-pkg (build all packages)

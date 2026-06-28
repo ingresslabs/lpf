@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <meta name="description" content="lpf is a next-generation Linux firewall.">
-  <title>lpf</title>
+  <meta name="description" content="lpf — PF-style firewall policy engine for Linux. One language replaces nftables, tc, and ip route.">
+  <title>lpf — PF-style firewall policy engine for Linux</title>
   <style>
     :root {
       --bg: #030407;
@@ -451,14 +451,6 @@
       padding: 0 clamp(18px, 3vw, 30px) 26px;
     }
 
-    .signal {
-      color: var(--amber);
-    }
-
-    .loop-card b.signal {
-      color: var(--amber);
-    }
-
     .loop-zone {
       min-height: 120vh;
       background:
@@ -611,7 +603,7 @@
         <i class="brand-mark" aria-hidden="true"></i>
         <span>lpf</span>
       </a>
-      <nav class="nav" aria-label="Page">
+      <nav class="nav">
         <a href="#install">Install</a>
         <a href="#usage">Usage</a>
         <a href="#configs">Configs</a>
@@ -623,12 +615,12 @@
       <canvas class="hero-canvas" id="stage" aria-hidden="true"></canvas>
       <div class="hero-inner">
         <h1>lpf</h1>
-        <p class="lede">Next-generation Linux firewall</p>
-        <div class="hero-meta" aria-label="Project traits">
+        <p class="lede">PF-style firewall policy engine</p>
+        <div class="hero-meta">
           <span>PF-style syntax</span>
-          <span>nftables first</span>
-          <span>safe remote apply</span>
-          <span>JSON ready</span>
+          <span>eBPF datapath</span>
+          <span>Z3 formal proofs</span>
+          <span>auto-rollback</span>
         </div>
       </div>
     </section>
@@ -639,22 +631,22 @@
           <div class="section-head">
             <div class="eyebrow">Why</div>
             <div>
-              <h2>Linux firewalling should feel like one system.</h2>
-              <p class="copy">Linux packet policy is powerful, but it is split across nftables, policy routing, tc, conntrack, rollback files, and logging. lpf was created to make that surface readable, reviewable, testable, and safe to apply on remote machines.</p>
+              <h2>One policy. Guarded apply. Explainable.</h2>
+              <p class="copy">Linux packet policy spans nftables, routing, tc, conntrack, and logging. lpf unifies them into a single PF-style policy file with guarded deployment, packet explainability, and formal Z3 verification.</p>
             </div>
           </div>
           <div class="principles">
             <article class="principle">
               <h3>One policy</h3>
-              <p>PF-style rules describe filtering, NAT, routing intent, queues, tables, and logging in one file.</p>
+              <p>One PF-style file describes filtering, NAT, routing, queues, tables, and logging.</p>
             </article>
             <article class="principle">
               <h3>Safe changes</h3>
-              <p>Plans, diffs, guarded apply, confirmation timers, history, and rollback are part of the operating model.</p>
+              <p>Plans, diffs, guarded apply, confirmation timers, history, and rollback.</p>
             </article>
             <article class="principle">
-              <h3>Explainable operations</h3>
-              <p>Operators can ask what would change, why a packet matched, and what state must be restored before touching production networking.</p>
+              <h3>Explainable</h3>
+              <p>Ask what would change, why a packet matched, and what state gets restored before applying.</p>
             </article>
           </div>
         </div>
@@ -665,15 +657,14 @@
           <div class="section-head">
             <div class="eyebrow">Install</div>
             <div>
-              <h2>Install from GitHub Releases.</h2>
-              <p class="copy">Use the native Debian or RPM package for a host install. Clone the repository only when you want the OCaml build, tests, and fixtures locally.</p>
+              <h2>Install from packages or source.</h2>
+              <p class="copy">Native .deb and .rpm packages on GitHub Releases. Clone the repo for the OCaml build, tests, and fixtures.</p>
             </div>
           </div>
           <div class="command-grid">
             <article class="terminal">
               <div class="terminal-title">Debian / Ubuntu</div>
-              <pre><code><span class="prompt">$</span> OUT=/tmp/lpf-release
-<span class="prompt">$</span> mkdir -p "$OUT"
+              <pre><code><span class="prompt">$</span> OUT=/tmp/lpf-release && mkdir -p "$OUT"
 <span class="prompt">$</span> gh release download \
   --repo ingresslabs/lpf \
   --pattern 'lpf_*_amd64.deb' \
@@ -682,8 +673,7 @@
             </article>
             <article class="terminal">
               <div class="terminal-title">RPM hosts</div>
-              <pre><code><span class="prompt">$</span> OUT=/tmp/lpf-release
-<span class="prompt">$</span> mkdir -p "$OUT"
+              <pre><code><span class="prompt">$</span> OUT=/tmp/lpf-release && mkdir -p "$OUT"
 <span class="prompt">$</span> gh release download \
   --repo ingresslabs/lpf \
   --pattern 'lpf-*.x86_64.rpm' \
@@ -692,15 +682,10 @@
             </article>
             <article class="terminal wide">
               <div class="terminal-title">Source checkout</div>
-              <pre><code><span class="prompt">$</span> git clone \
-  https://github.com/ingresslabs/lpf.git
-<span class="prompt">$</span> cd lpf
-<span class="prompt">$</span> opam switch create . \
-  ocaml-base-compiler.5.2.1
-<span class="prompt">$</span> opam install . \
-  --deps-only --with-test
-<span class="prompt">$</span> dune build
-<span class="prompt">$</span> dune runtest</code></pre>
+              <pre><code><span class="prompt">$</span> git clone https://github.com/ingresslabs/lpf.git && cd lpf
+<span class="prompt">$</span> opam switch create . ocaml-base-compiler.5.1
+<span class="prompt">$</span> opam install . --deps-only --with-test
+<span class="prompt">$</span> dune build && dune runtest</code></pre>
             </article>
           </div>
         </div>
@@ -712,7 +697,7 @@
             <div class="eyebrow">Usage</div>
             <div>
               <h2>Check first. Diff live. Apply guarded.</h2>
-              <p class="copy">Use policy files as code: validate before touching the host, inspect live drift, ask why a packet matches, then apply with a confirmation timer.</p>
+              <p class="copy">Policy files as code: validate, inspect drift, trace packets, then apply with a confirmation timer.</p>
             </div>
           </div>
           <div class="command-grid">
@@ -731,7 +716,8 @@
             </article>
             <article class="terminal wide">
               <div class="terminal-title">Explain a packet</div>
-              <pre><code><span class="prompt">$</span> lpf explain --src 10.0.0.5 --dst 1.1.1.1 --dport 443 --tcp --in /etc/lpf.conf</code></pre>
+              <pre><code><span class="prompt">$</span> lpf explain --src 10.0.0.5 --dst 1.1.1.1 \
+  --dport 443 --tcp --in /etc/lpf.conf</code></pre>
             </article>
           </div>
         </div>
@@ -867,7 +853,7 @@ block in log from any to any</code></pre>
 
     <footer>
       <div class="footer-inner">
-        <span>Next-generation Linux firewall</span>
+        <span>PF-style firewall policy engine</span>
         <a href="https://github.com/ingresslabs/lpf">github.com/ingresslabs/lpf</a>
       </div>
     </footer>
@@ -978,26 +964,24 @@ block in log from any to any</code></pre>
       const loop = document.querySelector("[data-loop]");
       const sentinel = document.querySelector("[data-sentinel]");
       const examples = [
-        ["format gate", "$ lpf fmt --check configs/policies/web-server.lpf\nok: canonical policy formatting"],
-        ["typecheck json", "$ lpf check --json configs/policies/web-server.lpf\n{\"status\":\"ok\",\"warnings\":[]}"],
-        ["semantic plan", "$ lpf plan --json configs/policies/reverse-proxy.lpf > plan.json\n$ jq '.checksum' plan.json"],
+        ["fmt check", "$ lpf fmt --check configs/policies/web-server.lpf\nok: canonical formatting"],
+        ["check json", "$ lpf check --json configs/policies/web-server.lpf\n{\"status\":\"ok\",\"warnings\":[]}"],
+        ["plan", "$ lpf plan --json configs/policies/reverse-proxy.lpf > plan.json\n$ jq '.checksum' plan.json"],
         ["render nft", "$ lpf rules show --backend nftables configs/policies/nat-gateway.lpf\n# deterministic lpf-owned ruleset"],
-        ["observed diff", "$ nft list ruleset > observed.nft\n$ lpf rules diff --backend nftables \\\n  --observed observed.nft \\\n  configs/policies/web-server.lpf"],
+        ["observed diff", "$ nft list ruleset > observed.nft\n$ lpf rules diff --backend nftables --observed observed.nft configs/policies/web-server.lpf"],
         ["live drift", "$ sudo lpf diff --live configs/policies/web-server.lpf\nstatus: compare live lpf-owned state"],
-        ["json drift", "$ sudo lpf diff --json --live \\\n  configs/policies/reverse-proxy.lpf\n{\"status\":\"changed\",\"backend\":\"nftables\"}"],
-        ["guarded apply", "$ sudo lpf apply --confirm 60s \\\n  configs/policies/web-server.lpf\npending: rollback timer armed"],
-        ["confirm apply", "$ lpf confirm\nok: latest policy marked known-good"],
+        ["guarded apply", "$ sudo lpf apply --confirm 60s configs/policies/web-server.lpf\npending: rollback timer armed"],
+        ["confirm", "$ lpf confirm\nok: latest policy marked known-good"],
         ["rollback", "$ sudo lpf rollback previous\nok: restored captured backend preimage"],
-        ["packet explain", "$ lpf explain --src 10.0.0.5 \\\n  --dst 1.1.1.1 --tcp --dport 443 \\\n  --in /etc/lpf.conf\ndecision: pass"],
-        ["ssh deny trace", "$ lpf explain --src 203.0.113.99 \\\n  --dst firewall --tcp --dport 22 \\\n  --in configs/policies/web-server.lpf\ndecision: block"],
-        ["dynamic table", "$ sudo lpf table <blocked> add 10.0.0.66\n$ sudo lpf table <blocked> show"],
-        ["state list", "$ sudo lpf state list --json\n[{\"proto\":\"tcp\",\"state\":\"established\"}]"],
-        ["kill flow", "$ sudo lpf state kill --src 10.0.0.1 \\\n  --dst 10.0.0.2\nok: matching conntrack entries removed"],
+        ["explain", "$ lpf explain --src 10.0.0.5 --dst 1.1.1.1 --tcp --dport 443 --in /etc/lpf.conf\ndecision: pass"],
+        ["ssh deny", "$ lpf explain --src 203.0.113.99 --dst firewall --tcp --dport 22 --in configs/policies/web-server.lpf\ndecision: block"],
+        ["tables", "$ sudo lpf table <blocked> add 10.0.0.66\n$ sudo lpf table <blocked> show"],
+        ["conntrack", "$ sudo lpf state kill --src 10.0.0.1 --dst 10.0.0.2\nok: matching conntrack entries removed"],
         ["openai tools", "$ lpf tools --format openai > tools.json\nok: generated tool-calling schema"],
-        ["agent prompt", "$ lpf tools --format system-prompt \\\n  > lpf-agent.txt\nok: compact operator prompt emitted"],
-        ["policy test", "$ lpf test --junit evidence/basic.xml \\\n  fixtures/tests/basic.lpf.test\nok: assertions exported for CI"],
-        ["feature suite", "$ LPF_FEATURE_JUNIT=evidence/feature.xml \\\n  ci/vagabond/feature-suite.sh\nok: userspace feature suite passed"],
-        ["ebpf evidence", "$ sudo python3 bpf/e2e_runner.py \\\n  --layers 0,1,2 --junit evidence/ebpf.xml\nok: ebpf runner JUnit written"],
+        ["agent prompt", "$ lpf tools --format system-prompt > lpf-agent.txt\nok: compact operator prompt emitted"],
+        ["policy test", "$ lpf test --junit evidence/basic.xml fixtures/tests/basic.lpf.test\nok: assertions exported for CI"],
+        ["feature suite", "$ LPF_FEATURE_JUNIT=evidence/feature.xml ci/vagabond/feature-suite.sh\nok: userspace feature suite passed"],
+        ["ebpf evidence", "$ sudo python3 bpf/e2e_runner.py --layers 0,1,2 --junit evidence/ebpf.xml\nok: ebpf runner JUnit written"],
         ["history", "$ lpf history\npolicy-id  checksum  confirmed  rollback"],
         ["man check", "$ lpf man check\nok: generated man pages are current"],
         ["man install", "$ sudo lpf man install\nok: operator docs installed"]
@@ -1016,9 +1000,6 @@ block in log from any to any</code></pre>
           const number = String(cursor + index + 1).padStart(2, "0");
           card.innerHTML = `<b>${number} / ${title}</b><pre><code></code></pre>`;
           card.querySelector("code").textContent = text;
-          if ((cursor + index) % 5 === 0) {
-            card.querySelector("b").classList.add("signal");
-          }
           fragment.appendChild(card);
         });
         cursor += batch.length;

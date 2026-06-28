@@ -1,6 +1,6 @@
 # lpf eBPF development image — full eBPF toolchain with BTF and kernel headers.
 #
-# Unlike the CI image (which treats eBPF tooling as best-effort), this image
+# Unlike the CI image (which omits eBPF tooling), this image
 # requires the eBPF build toolchain and ships libbpf, bpftool, clang/llvm,
 # and kernel BTF headers. Used for local eBPF datapath development and
 # for producing verified BPF objects.

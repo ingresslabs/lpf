@@ -8,13 +8,11 @@ developing `lpf` across Linux distributions.
 | Dockerfile | Purpose | Base | Distros |
 |---|---|---|---|
 | `runtime.Dockerfile` | Production runtime | `ubuntu:22.04` | ubuntu |
-| `ci.Dockerfile` | CI test matrix (parametric) | `ocaml/opam:*` | debian, ubuntu-22, ubuntu-24, alpine, fedora |
 | `ebpf.Dockerfile` | eBPF datapath dev + test | `ocaml/opam:debian-12` | debian |
 | `rootfs.Dockerfile` | Firecracker microVM rootfs | `ocaml/opam:debian-12` | debian |
 
-The root `Dockerfile` and `Dockerfile.ci` at the repo root are kept for
-backward compatibility with existing CI pipelines. New pipelines should
-reference `docker/ci.Dockerfile`.
+The root `Dockerfile` and `Dockerfile.ci` at the repo root are the
+canonical files referenced by CI pipelines and Makefile targets.
 
 ## Usage
 
@@ -30,7 +28,7 @@ docker run --rm --privileged lpf help
 ```sh
 # Build for each distro
 for distro in debian ubuntu-22 ubuntu-24 alpine fedora; do
-  docker build -f docker/ci.Dockerfile \
+  docker build -f Dockerfile.ci \
     --build-arg BASE=ocaml/opam:${distro}-ocaml-5.1 \
     -t lpf-ci:${distro} .
 done
@@ -68,8 +66,7 @@ vagabondRun(
 )
 ```
 
-## Root-level backward compatibility
+## Root-level CI image
 
-The repo root `Dockerfile` and `Dockerfile.ci` remain functional and are
-referenced by existing Jenkins pipelines. `Dockerfile.ci` at root is a
-symlink-friendly copy of `docker/ci.Dockerfile`.
+`Dockerfile.ci` at the repo root is the canonical CI image referenced by
+all pipelines, Makefile targets, and Jenkins jobs.

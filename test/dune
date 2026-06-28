@@ -29,8 +29,7 @@
   test_roundtrip_unit
   test_cni_unit
   test_lpf_daemon_unit
-  test_network_policy_translate
-  test_nomad_policy_translate)
+  test_network_policy_translate)
  (deps
   (source_tree ../configs)
   (source_tree ../fixtures)

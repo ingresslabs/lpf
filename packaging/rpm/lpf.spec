@@ -9,7 +9,7 @@ URL:            https://github.com/ingresslabs/lpf
 Source0:        lpf-%{version}.tar.gz
 
 BuildRequires:  ocaml >= 5.1.0
-BuildRequires:  ocaml-dune >= 3.11
+BuildRequires:  ocaml-dune >= 3.15
 BuildRequires:  opam
 Requires:       nftables
 Requires:       iproute
