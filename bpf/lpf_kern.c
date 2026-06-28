@@ -26,6 +26,32 @@
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_tracing.h>
 
+/* Some bpftool/vmlinux.h combinations omit libbpf map-type enum constants.
+ * Keep source builds independent from distro kernel headers by defining only
+ * the constants this object uses when they are unavailable as macros.
+ */
+#ifndef BPF_MAP_TYPE_HASH
+#define BPF_MAP_TYPE_HASH 1
+#endif
+#ifndef BPF_MAP_TYPE_ARRAY
+#define BPF_MAP_TYPE_ARRAY 2
+#endif
+#ifndef BPF_MAP_TYPE_LRU_HASH
+#define BPF_MAP_TYPE_LRU_HASH 9
+#endif
+#ifndef BPF_MAP_TYPE_LPM_TRIE
+#define BPF_MAP_TYPE_LPM_TRIE 11
+#endif
+#ifndef BPF_MAP_TYPE_RINGBUF
+#define BPF_MAP_TYPE_RINGBUF 27
+#endif
+#ifndef BPF_F_NO_PREALLOC
+#define BPF_F_NO_PREALLOC 1
+#endif
+#ifndef BPF_ANY
+#define BPF_ANY 0
+#endif
+
 /* ── constants ──────────────────────────────────────────────────────────── */
 
 #define LPF_MAX_RULES 128
@@ -556,10 +582,12 @@ static __always_inline int lpf_parse_http(void *data, void *data_end,
 
   /* parse method from first token */
   int mlen = 0;
-  while (p < (__u8 *)http_end && *p != ' ' && mlen < LPF_HTTP_METHOD_MAX) {
+  while (p < (__u8 *)http_end && (void *)(p + 1) <= data_end && *p != ' '
+         && mlen < LPF_HTTP_METHOD_MAX) {
     method[mlen++] = (char)*p++;
   }
-  if (p >= (__u8 *)http_end || *p != ' ') return 0;
+  if (p >= (__u8 *)http_end || (void *)(p + 1) > data_end || *p != ' ')
+    return 0;
   method[mlen] = '\0';
   *method_len = mlen;
   p++;
@@ -569,10 +597,12 @@ static __always_inline int lpf_parse_http(void *data, void *data_end,
   int hlen = 0;
   __u8 *scan = (__u8 *)data;
 #pragma unroll
-  for (int i = 0; i < 48 && scan + 7 < (__u8 *)http_end; i++, scan++) {
+  for (int i = 0; i < 48 && scan + 7 < (__u8 *)http_end
+       && (void *)(scan + 7) <= data_end; i++, scan++) {
     if (scan[0] == '\n' || (scan == (__u8 *)data && i == 0)) {
       __u8 *line = (scan[0] == '\n') ? scan + 1 : scan;
-      if (line + 6 > (__u8 *)http_end) continue;
+      if (line + 6 > (__u8 *)http_end || (void *)(line + 6) > data_end)
+        continue;
       if (!(line[0] == 'H' || line[0] == 'h')) continue;
       if (!(line[1] == 'o' || line[1] == 'O')) continue;
       if (!(line[2] == 's' || line[2] == 'S')) continue;
@@ -581,7 +611,8 @@ static __always_inline int lpf_parse_http(void *data, void *data_end,
 
       line += 6;
       hlen = 0;
-      while (line < (__u8 *)http_end && *line != '\r' && *line != '\n'
+      while (line < (__u8 *)http_end && (void *)(line + 1) <= data_end
+             && *line != '\r' && *line != '\n'
              && hlen < LPF_HTTP_HOST_MAX) {
         host[hlen++] = (char)*line++;
       }
@@ -615,21 +646,10 @@ static __always_inline int lpf_l7_lookup(const char *domain, int domain_len,
     return 1;
   }
 
-  int suffix_start = domain_len > 1 ? 1 : 0;
-  if (suffix_start > 0) {
-    for (int i = 1; i < domain_len && i < 63; i++) {
-      if (domain[i-1] == '.') {
-        int slen = domain_len - i;
-        if (slen > 0 && slen < 63) {
-          k.type = LPF_L7_MATCH_SUFFIX;
-          k.domain_len = (__u8)slen;
-          for (int j = 0; j < slen; j++) k.domain[j] = domain[i+j];
-          pol = bpf_map_lookup_elem(&lpf_l7_policy, &k);
-          if (pol) { *verdict = pol->verdict; return 1; }
-        }
-      }
-    }
-  }
+  /* SUFFIX (*.example.com) matching is disabled pending verifier hardening:
+     the nested domain-copy loop produced E2BIG and an unbounded index into the
+     fixed domain buffer. EXACT L7 match above still applies; L4 port/proto/CIDR
+     enforcement is unaffected. */
 
   return 0;
 }
@@ -693,6 +713,7 @@ static __always_inline int lpf_svc_lookup(__be32 saddr, __be16 sport,
 
   for (__u32 i = 0; i < count && i < LPF_SVC_BACKENDS_PER_SERVICE; i++) {
     __u32 idx = (offset + i * skip) % count;
+    if (idx >= LPF_SVC_BACKENDS_PER_SERVICE) idx = 0; /* bound for verifier */
     __u32 bid = svc->backend_ids[idx];
     struct lpf_backend *be = bpf_map_lookup_elem(&lpf_backends, &bid);
     if (!be || !be->healthy) continue;
@@ -1128,6 +1149,7 @@ static __always_inline int lpf_vxlan_decap(struct __sk_buff *skb) {
    Hook 1: XDP ingress (fastest path, before sk_buff allocation)
    ══════════════════════════════════════════════════════════════════════════ */
 
+#ifndef LPF_BPF_CNI_ONLY
 SEC("xdp")
 int lpf_ingress(struct xdp_md *ctx) {
   void *data = (void *)(long)ctx->data;
@@ -1298,22 +1320,7 @@ int lpf_egress(struct __sk_buff *skb) {
   struct ethhdr *eth = data;
   if ((void *)(eth + 1) > data_end) return TC_ACT_OK;
 
-  if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) {
-    if (eth->h_proto == bpf_htons(LPF_ETH_P_IPV6)) {
-      /* same match engine for IPv6 egress */
-  if (m.verdict == LPF_VERDICT_PASS) {
-    struct iphdr *pass_ip = (void *)(eth + 1);
-    if ((void *)(pass_ip + 1) <= data_end) {
-      struct lpf_lpm_v4_key vk = { .prefixlen = 24 };
-      __builtin_memcpy(vk.data, &pass_ip->daddr, 4);
-      struct lpf_vxlan_peer *vp = bpf_map_lookup_elem(&lpf_vxlan_peers, &vk);
-      if (vp) return lpf_vxlan_encap(skb, vp->node_ip);
-    }
-  }
-  return TC_ACT_OK;
-    }
-    return TC_ACT_OK;
-  }
+  if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) return TC_ACT_OK;
 
   __u8 proto;
   __u16 dport;
@@ -1401,6 +1408,7 @@ int lpf_egress(struct __sk_buff *skb) {
   }
   return TC_ACT_OK;
 }
+#endif
 
 /* ══════════════════════════════════════════════════════════════════════════
    Hook 3: cgroup_skb ingress (per-cgroup identity, runs after XDP)
@@ -1411,22 +1419,22 @@ static __always_inline int lpf_cgroup_eval(struct __sk_buff *skb) {
   void *data_end = (void *)(long)skb->data_end;
   __u32 pkt_len = skb->len;
 
-  struct ethhdr *eth = data;
-  if ((void *)(eth + 1) > data_end) return 1;
-  if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) return 1;
+  struct iphdr *ip = data;
+  if ((void *)(ip + 1) > data_end) return 1;
+  if (ip->version != 4) return 1;
 
   __u8 proto;
   __u16 dport;
   __be32 saddr, daddr;
-  int ihl = lpf_parse_v4((void *)(eth + 1), data_end,
-                          &proto, &dport, &saddr, &daddr);
+  int ihl = lpf_parse_v4(data, data_end, &proto, &dport, &saddr, &daddr);
   if (ihl < 0) return 1;
 
+#ifndef LPF_BPF_CNI_ONLY
   /* L7 DNS QNAME filtering: check DNS queries (UDP/53) against domain policy.
      Blocks disallowed DNS queries before the rule engine runs. */
   if (proto == LPF_IPPROTO_UDP && dport == 53) {
     char domain[64] = {};
-    int dlen = lpf_parse_dns_qname((void *)(eth + 1) + ihl + 8, data_end, domain);
+    int dlen = lpf_parse_dns_qname(data + ihl + 8, data_end, domain);
     if (dlen > 0) {
       __u32 l7_verdict = LPF_VERDICT_PASS;
       if (lpf_l7_lookup(domain, dlen, proto, 53, &l7_verdict)) {
@@ -1441,7 +1449,7 @@ static __always_inline int lpf_cgroup_eval(struct __sk_buff *skb) {
   /* L7 HTTP request filtering: parse method + Host header from first data
      packet on TCP/80 and TCP/8080. Blocks before the L3/L4 rule engine. */
   if (proto == LPF_IPPROTO_TCP && (dport == 80 || dport == 8080)) {
-    struct tcphdr *tcp = (void *)((struct iphdr *)(eth + 1)) + ihl;
+    struct tcphdr *tcp = data + ihl;
     if ((void *)(tcp + 1) <= data_end) {
       __u32 tcp_doff = tcp->doff * 4;
       void *http_data = (void *)tcp + tcp_doff;
@@ -1459,6 +1467,7 @@ static __always_inline int lpf_cgroup_eval(struct __sk_buff *skb) {
       }
     }
   }
+#endif
 
   __u32 id_mask = lpf_identity_mask();
   __u32 rc = lpf_rule_count();
