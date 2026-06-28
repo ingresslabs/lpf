@@ -63,6 +63,36 @@ if tracked_env_files=$(git ls-files | grep -E '(^|/)\.env($|\.)' | grep -Ev '(^|
   fi
 fi
 
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+text = Path("lib/dune").read_text()
+match = re.search(r"\(modules\s+([^)]*)\)", text, re.S)
+if match is None:
+    print("::error file=lib/dune::library must declare its modules")
+    sys.exit(1)
+
+declared = set(match.group(1).split())
+files = {path.stem for path in Path("lib").glob("*.ml")}
+extra = sorted(files - declared)
+missing = sorted(declared - files)
+
+failed = False
+for name in extra:
+    print(
+        f"::error file=lib/{name}.ml::OCaml module is present but not declared in lib/dune"
+    )
+    failed = True
+for name in missing:
+    print(f"::error file=lib/dune::declared module {name} has no lib/{name}.ml")
+    failed = True
+
+if failed:
+    sys.exit(1)
+PY
+
 bad_files=$(git ls-files | while IFS= read -r path; do
   [ -e "$path" ] || continue
   printf '%s\n' "$path"
