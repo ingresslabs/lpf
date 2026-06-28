@@ -230,8 +230,7 @@ let add_route ifname dst gw netns_path =
   let dev_str = " dev " ^ ifname in
   run_cmd
     (Printf.sprintf "nsenter --net=%s ip route replace %s%s%s" netns_path dst
-       gw_str
-       dev_str)
+       gw_str dev_str)
 
 let add_default_route ifname gw netns_path =
   match gw with
@@ -374,8 +373,7 @@ let call_ipam plugin_path ipam_config _container_id _ifname =
 
 let cgroup_path_of_pid pid =
   let cgroup_cmd =
-    Printf.sprintf "cat /proc/%s/cgroup 2>/dev/null | head -1 | cut -d: -f3"
-      pid
+    Printf.sprintf "cat /proc/%s/cgroup 2>/dev/null | head -1 | cut -d: -f3" pid
   in
   match run_cmd_out cgroup_cmd with
   | Ok cgroup_rel ->
@@ -424,7 +422,10 @@ let find_netns_cgroup_path netns_path =
   else
     let cmd =
       Printf.sprintf
-        "target=$(readlink %s 2>/dev/null); [ -n \"$target\" ] || exit 1; for p in /proc/[0-9]*; do ns=$(readlink \"$p/ns/net\" 2>/dev/null || true); if [ \"$ns\" = \"$target\" ]; then echo ${p##*/}; exit 0; fi; done; exit 1"
+        "target=$(readlink %s 2>/dev/null); [ -n \"$target\" ] || exit 1; for \
+         p in /proc/[0-9]*; do ns=$(readlink \"$p/ns/net\" 2>/dev/null || \
+         true); if [ \"$ns\" = \"$target\" ]; then echo ${p##*/}; exit 0; fi; \
+         done; exit 1"
         netns_path
     in
     match run_cmd_out cmd with
@@ -450,7 +451,8 @@ let find_cgroup_path ?(netns_path = "") container_id =
           | Error _ -> (
               let cmdline_hint =
                 Printf.sprintf
-                  "grep -l %s /proc/*/cmdline 2>/dev/null | head -1 | cut -d/ -f3"
+                  "grep -l %s /proc/*/cmdline 2>/dev/null | head -1 | cut -d/ \
+                   -f3"
                   container_id
               in
               match run_cmd_out cmdline_hint with
@@ -490,24 +492,24 @@ let attach_bpf cgroup_path _policy_mode =
     let prog_ingress = Filename.concat bpffs "progs/cgroup_ingress" in
     let prog_egress = Filename.concat bpffs "progs/cgroup_egress" in
     let attached = ref false in
-    if Sys.file_exists prog_ingress then
-      (match
+    (if Sys.file_exists prog_ingress then
+       match
          run_cmd
            (Printf.sprintf
               "bpftool cgroup attach %s ingress pinned %s 2>/dev/null"
               cgroup_path prog_ingress)
        with
-      | Ok () -> attached := true
-      | Error _ -> ());
-    if Sys.file_exists prog_egress then
-      (match
+       | Ok () -> attached := true
+       | Error _ -> ());
+    (if Sys.file_exists prog_egress then
+       match
          run_cmd
            (Printf.sprintf
               "bpftool cgroup attach %s egress pinned %s 2>/dev/null"
               cgroup_path prog_egress)
        with
-      | Ok () -> attached := true
-      | Error _ -> ());
+       | Ok () -> attached := true
+       | Error _ -> ());
     !attached
 
 let detach_bpf cgroup_path =
@@ -518,41 +520,37 @@ let detach_bpf cgroup_path =
     ignore
       (run_cmd
          (Printf.sprintf
-            "bpftool cgroup detach %s ingress pinned %s 2>/dev/null"
-            cgroup_path prog_ingress));
+            "bpftool cgroup detach %s ingress pinned %s 2>/dev/null" cgroup_path
+            prog_ingress));
   if Sys.file_exists prog_egress then
     ignore
       (run_cmd
-         (Printf.sprintf
-            "bpftool cgroup detach %s egress pinned %s 2>/dev/null"
+         (Printf.sprintf "bpftool cgroup detach %s egress pinned %s 2>/dev/null"
             cgroup_path prog_egress))
 
 let defer_attach_bpf container_id netns_path =
   let cmd =
     Printf.sprintf
-      "(PIN=%s; CID=%s; NETNS=%s; \
-       attach() { path=\"$1\"; [ -d \"$path\" ] || return 1; \
-       [ -e \"$PIN/progs/cgroup_ingress\" ] && bpftool cgroup attach \"$path\" \
-       ingress pinned \"$PIN/progs/cgroup_ingress\" 2>/dev/null || true; \
-       [ -e \"$PIN/progs/cgroup_egress\" ] && bpftool cgroup attach \"$path\" \
-       egress pinned \"$PIN/progs/cgroup_egress\" 2>/dev/null || true; exit 0; \
-       }; \
-       cgpath() { pid=\"$1\"; rel=$(cat \"/proc/$pid/cgroup\" 2>/dev/null | \
-       head -1 | cut -d: -f3); [ -n \"$rel\" ] || return 1; case \"$rel\" in \
-       *kubepods*|*kubelet-kubepods*) rel=${rel%%/cri-containerd-*}; \
-       rel=${rel%%/docker-*};; esac; printf '/sys/fs/cgroup%%s' \"$rel\"; }; \
-       echo \"defer attach start cid=$CID netns=$NETNS pin=$PIN\"; \
-       for i in $(seq 1 100); do \
-       for ns in k8s.io default; do \
+      "(PIN=%s; CID=%s; NETNS=%s; attach() { path=\"$1\"; [ -d \"$path\" ] || \
+       return 1; [ -e \"$PIN/progs/cgroup_ingress\" ] && bpftool cgroup attach \
+       \"$path\" ingress pinned \"$PIN/progs/cgroup_ingress\" 2>/dev/null || \
+       true; [ -e \"$PIN/progs/cgroup_egress\" ] && bpftool cgroup attach \
+       \"$path\" egress pinned \"$PIN/progs/cgroup_egress\" 2>/dev/null || \
+       true; exit 0; }; cgpath() { pid=\"$1\"; rel=$(cat \"/proc/$pid/cgroup\" \
+       2>/dev/null | head -1 | cut -d: -f3); [ -n \"$rel\" ] || return 1; case \
+       \"$rel\" in *kubepods*|*kubelet-kubepods*) \
+       rel=${rel%%/cri-containerd-*}; rel=${rel%%/docker-*};; esac; printf \
+       '/sys/fs/cgroup%%s' \"$rel\"; }; echo \"defer attach start cid=$CID \
+       netns=$NETNS pin=$PIN\"; for i in $(seq 1 100); do for ns in k8s.io \
+       default; do \
        f=\"/run/containerd/io.containerd.runtime.v2.task/$ns/$CID/init.pid\"; \
        if [ -s \"$f\" ]; then path=$(cgpath \"$(cat \"$f\")\") && attach \
-       \"$path\"; fi; done; \
-       target=$(readlink \"$NETNS\" 2>/dev/null || true); \
-       if [ -n \"$target\" ]; then for p in /proc/[0-9]*; do \
-       ns=$(readlink \"$p/ns/net\" 2>/dev/null || true); \
-       if [ \"$ns\" = \"$target\" ]; then path=$(cgpath \"${p##*/}\") && attach \
-       \"$path\"; fi; done; fi; sleep 0.1; done; \
-       echo \"defer attach gave up cid=$CID\") >>/run/lpf-cni-defer.log 2>&1 &"
+       \"$path\"; fi; done; target=$(readlink \"$NETNS\" 2>/dev/null || true); \
+       if [ -n \"$target\" ]; then for p in /proc/[0-9]*; do ns=$(readlink \
+       \"$p/ns/net\" 2>/dev/null || true); if [ \"$ns\" = \"$target\" ]; then \
+       path=$(cgpath \"${p##*/}\") && attach \"$path\"; fi; done; fi; sleep \
+       0.1; done; echo \"defer attach gave up cid=$CID\") \
+       >>/run/lpf-cni-defer.log 2>&1 &"
       (Filename.quote (bpf_pin_root ()))
       (Filename.quote container_id)
       (Filename.quote netns_path)
@@ -565,18 +563,17 @@ let setup_bandwidth host_if =
   ignore
     (run_cmd
        (Printf.sprintf
-          "tc qdisc add dev %s root handle 1: htb default 1 2>/dev/null"
-          host_if));
+          "tc qdisc add dev %s root handle 1: htb default 1 2>/dev/null" host_if));
   ignore
     (run_cmd
        (Printf.sprintf
-          "tc class add dev %s parent 1: classid 1:1 htb rate 1gbit ceil 1gbit 2>/dev/null"
+          "tc class add dev %s parent 1: classid 1:1 htb rate 1gbit ceil 1gbit \
+           2>/dev/null"
           host_if))
 
 let teardown_bandwidth host_if =
   ignore
-    (run_cmd
-       (Printf.sprintf "tc qdisc delete dev %s root 2>/dev/null" host_if))
+    (run_cmd (Printf.sprintf "tc qdisc delete dev %s root 2>/dev/null" host_if))
 
 (* ─── ADD handler ─── *)
 
@@ -628,12 +625,12 @@ let handle_add cfg netns_path container_id ifname =
                                   ignore (delete_veth host_if);
                                   Error (Printf.sprintf "default route: %s" e)
                               | Ok () -> (
-                                   let rec add_routes = function
-                                     | [] -> Ok ()
-                                     | (dst, _) :: rest
-                                       when dst = "0.0.0.0/0" || dst = "::/0" ->
-                                         add_routes rest
-                                     | (dst, dst_gw) :: rest -> (
+                                  let rec add_routes = function
+                                    | [] -> Ok ()
+                                    | (dst, _) :: rest
+                                      when dst = "0.0.0.0/0" || dst = "::/0" ->
+                                        add_routes rest
+                                    | (dst, dst_gw) :: rest -> (
                                         match
                                           add_route container_if dst dst_gw
                                             netns_path
@@ -645,24 +642,22 @@ let handle_add cfg netns_path container_id ifname =
                                         | Ok () -> add_routes rest)
                                   in
                                   match add_routes routes with
-                                   | Error e ->
-                                       ignore (delete_veth host_if);
-                                       Error e
-                                   | Ok () -> (
-                                       setup_host_routing host_if ip_addr;
-                                       match cfg.policy with
+                                  | Error e ->
+                                      ignore (delete_veth host_if);
+                                      Error e
+                                  | Ok () -> (
+                                      setup_host_routing host_if ip_addr;
+                                      match cfg.policy with
                                       | Some _policy -> (
                                           match
                                             find_cgroup_path ~netns_path
                                               container_id
                                           with
-                                           | Ok cg_path ->
-                                               if
-                                                 not
-                                                   (attach_bpf cg_path "auto")
-                                               then
-                                                 defer_attach_bpf container_id
-                                                   netns_path;
+                                          | Ok cg_path ->
+                                              if not (attach_bpf cg_path "auto")
+                                              then
+                                                defer_attach_bpf container_id
+                                                  netns_path;
                                               Ok
                                                 {
                                                   ip_address = ip_addr;
@@ -754,14 +749,7 @@ let handle_version () =
 let result_to_json result =
   let open Json_parse in
   let interfaces =
-    Array
-      [
-        Object
-          [
-            ("name", String "eth0");
-            ("sandbox", String "");
-          ];
-      ]
+    Array [ Object [ ("name", String "eth0"); ("sandbox", String "") ] ]
   in
   let ips =
     Array

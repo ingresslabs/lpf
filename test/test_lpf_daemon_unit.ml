@@ -24,7 +24,9 @@ let () =
   require (not (String.equal hash_a hash_c)) "policy_hash changes";
 
   let status = Lpf.Lpf_daemon.create_status () in
-  let code, _content_type, body = Lpf.Lpf_daemon.route_response status "/livez" in
+  let code, _content_type, body =
+    Lpf.Lpf_daemon.route_response status "/livez"
+  in
   require (code = 200) "livez is always healthy";
   require (String.equal body "ok\n") "livez body";
 
@@ -39,15 +41,15 @@ let () =
   status.last_policy_hash <- Some "abc123";
   status.last_reload_at <- Some 42.;
 
-  let code, _content_type, body = Lpf.Lpf_daemon.route_response status "/readyz" in
+  let code, _content_type, body =
+    Lpf.Lpf_daemon.route_response status "/readyz"
+  in
   require (code = 200) "readyz ok after load";
   require (String.equal body "ok\n") "readyz body";
 
   let metrics = Lpf.Lpf_daemon.metrics_text status in
   require (contains metrics "lpf_daemon_ready 1") "metrics ready";
-  require
-    (contains metrics "lpf_daemon_reload_total 2")
-    "metrics reload count";
+  require (contains metrics "lpf_daemon_reload_total 2") "metrics reload count";
   require
     (contains metrics "lpf_daemon_reload_failure_total 1")
     "metrics failure count";
@@ -155,17 +157,21 @@ let () =
     (contains effective "anchor tenant-a-allow-web")
     "effective policy includes translated NetworkPolicy";
   require
-    (contains effective "pass in on eth0 proto tcp from 10.10.0.0/16 to any port 80")
+    (contains effective
+       "pass in on eth0 proto tcp from 10.10.0.0/16 to any port 80")
     "effective policy renders parseable NetworkPolicy rule";
   require
-    (contains effective "# staged tenant-a/staged-ssh priority=30 (not enforced)")
+    (contains effective
+       "# staged tenant-a/staged-ssh priority=30 (not enforced)")
     "effective policy carries StagedPolicy as non-enforced text";
   let checked = Lpf.check_policy_text ~file:"kubernetes-api" effective in
   let diagnostics =
-    checked.Lpf.Policy.diagnostics |> List.map Lpf.Policy.diagnostic_to_string
+    checked.Lpf.Policy.diagnostics
+    |> List.map Lpf.Policy.diagnostic_to_string
     |> String.concat "\n"
   in
-  require (Option.is_some checked.Lpf.Policy.policy)
+  require
+    (Option.is_some checked.Lpf.Policy.policy)
     ("effective policy parses:\n" ^ effective ^ "\n" ^ diagnostics);
 
   let code, _content_type, body =

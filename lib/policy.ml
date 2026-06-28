@@ -68,11 +68,9 @@ let parse_port token =
                   Ok (Port_number value)
               | _ -> Error ("invalid port `" ^ token ^ "`"))
           | [ low_str; high_str ] -> (
-              match
-                (int_of_string_opt low_str, int_of_string_opt high_str)
-              with
-              | Some low, Some high
-                when low >= 1 && high <= 65535 && low < high ->
+              match (int_of_string_opt low_str, int_of_string_opt high_str) with
+              | Some low, Some high when low >= 1 && high <= 65535 && low < high
+                ->
                   Ok (Port_range (low, high))
               | _ -> Error ("invalid port range `" ^ token ^ "`"))
           | _ -> Error ("invalid port `" ^ token ^ "`")))

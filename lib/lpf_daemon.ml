@@ -76,10 +76,8 @@ let default_config () =
     policy_path = env "LPF_DAEMON_POLICY_PATH" "/etc/lpf/policy/policy.lpf";
     cni_config_path =
       env "LPF_DAEMON_CNI_CONFIG_PATH" "/etc/lpf/cni/10-lpf.conflist";
-    host_cni_bin_dir =
-      env "LPF_DAEMON_HOST_CNI_BIN_DIR" "/host/opt/cni/bin";
-    host_cni_net_dir =
-      env "LPF_DAEMON_HOST_CNI_NET_DIR" "/host/etc/cni/net.d";
+    host_cni_bin_dir = env "LPF_DAEMON_HOST_CNI_BIN_DIR" "/host/opt/cni/bin";
+    host_cni_net_dir = env "LPF_DAEMON_HOST_CNI_NET_DIR" "/host/etc/cni/net.d";
     cni_binary_source =
       env "LPF_DAEMON_CNI_BINARY_SOURCE" "/opt/cni/bin/lpf-cni";
     bpf_object;
@@ -111,8 +109,7 @@ let create_status () =
 let policy_hash text = Digest.to_hex (Digest.string text)
 
 let read_file_result path =
-  try Ok (File_util.read_file path)
-  with exn -> Error (Printexc.to_string exn)
+  try Ok (File_util.read_file path) with exn -> Error (Printexc.to_string exn)
 
 let read_all_channel ic =
   let buf = Buffer.create 4096 in
@@ -143,8 +140,9 @@ let with_kube_auth_header token f =
   try
     let path = Filename.temp_file "lpf-kube-auth-" ".header" in
     let oc =
-      open_out_gen [ Open_wronly; Open_creat; Open_trunc; Open_binary ] 0o600
-        path
+      open_out_gen
+        [ Open_wronly; Open_creat; Open_trunc; Open_binary ]
+        0o600 path
     in
     Fun.protect
       ~finally:(fun () -> close_out_noerr oc)
@@ -157,8 +155,7 @@ let with_kube_auth_header token f =
 
 let kube_get cfg path =
   match read_file_result cfg.kube_api_token_path with
-  | Error error ->
-      Error (Printf.sprintf "read service account token: %s" error)
+  | Error error -> Error (Printf.sprintf "read service account token: %s" error)
   | Ok token ->
       let ca_args =
         if Sys.file_exists cfg.kube_api_ca_path then
@@ -168,11 +165,12 @@ let kube_get cfg path =
       let url = cfg.kube_api_server ^ path in
       with_kube_auth_header token (fun header_path ->
           run_capture "curl"
-            ([ "-fsS"; "--max-time"; "10" ] @ ca_args
-            @ [ "-H"; "@" ^ header_path; "-H"; "Accept: application/json"; url ]))
+            ([ "-fsS"; "--max-time"; "10" ]
+            @ ca_args
+            @ [ "-H"; "@" ^ header_path; "-H"; "Accept: application/json"; url ]
+            ))
 
 let json_fields = function Json_parse.Object fields -> fields | _ -> []
-
 let json_field name fields = List.assoc_opt name fields
 
 let json_field_string name fields =
@@ -207,7 +205,8 @@ let copy_file ~src ~dst =
         File_util.write_file dst content;
         Unix.chmod dst 0o755;
         Ok ()
-      with exn -> Error (Printf.sprintf "write %s: %s" dst (Printexc.to_string exn)))
+      with exn ->
+        Error (Printf.sprintf "write %s: %s" dst (Printexc.to_string exn)))
 
 let install_cni_files cfg =
   if not cfg.install_cni then Ok ()
@@ -227,7 +226,8 @@ let install_cni_files cfg =
               Ok ()
             with exn ->
               Error
-                (Printf.sprintf "write %s: %s" dst_conf (Printexc.to_string exn))))
+                (Printf.sprintf "write %s: %s" dst_conf (Printexc.to_string exn))
+            ))
 
 let diagnostic_text diagnostics =
   diagnostics |> List.map Policy.diagnostic_to_string |> String.concat "\n"
@@ -241,13 +241,11 @@ let strip_default_lines policy =
   |> List.filter (fun line ->
          let line = String.trim line in
          not (has_prefix ~prefix:"set default " line))
-  |> String.concat "\n"
-  |> String.trim
+  |> String.concat "\n" |> String.trim
 
 let comment_block title text =
   let lines =
-    if String.trim text = "" then []
-    else String.split_on_char '\n' text
+    if String.trim text = "" then [] else String.split_on_char '\n' text
   in
   "# " ^ title ^ "\n"
   ^ String.concat "\n" (List.map (fun line -> "# " ^ line) lines)
@@ -261,8 +259,12 @@ let default_action_of_string value =
 let item_key item =
   let fields = json_fields item in
   let metadata = json_field_obj "metadata" fields in
-  let namespace = Option.value (json_field_string "namespace" metadata) ~default:"" in
-  let name = Option.value (json_field_string "name" metadata) ~default:"unnamed" in
+  let namespace =
+    Option.value (json_field_string "namespace" metadata) ~default:""
+  in
+  let name =
+    Option.value (json_field_string "name" metadata) ~default:"unnamed"
+  in
   if namespace = "" then name else namespace ^ "/" ^ name
 
 let item_priority item =
@@ -341,7 +343,9 @@ let effective_policy_of_kubernetes_items ~cluster_policies ~namespaced_policies
     |> List.filter_map (policy_fragment_of_item "StagedPolicy")
     |> List.sort compare_fragment
   in
-  match Network_policy_translate.translate_network_policies network_policies with
+  match
+    Network_policy_translate.translate_network_policies network_policies
+  with
   | Error error -> Error ("translate NetworkPolicy: " ^ error)
   | Ok network_policy_text ->
       let staged_text =
@@ -500,7 +504,8 @@ let metrics_text status =
       "# HELP lpf_daemon_reload_failure_total Failed policy reloads.";
       "# TYPE lpf_daemon_reload_failure_total counter";
       Printf.sprintf "lpf_daemon_reload_failure_total %d" status.failures;
-      "# HELP lpf_daemon_last_reload_timestamp_seconds Last successful reload time.";
+      "# HELP lpf_daemon_last_reload_timestamp_seconds Last successful reload \
+       time.";
       "# TYPE lpf_daemon_last_reload_timestamp_seconds gauge";
       Printf.sprintf "lpf_daemon_last_reload_timestamp_seconds %.0f" last_reload;
       "# HELP lpf_daemon_policy_info Active policy metadata.";
@@ -531,7 +536,9 @@ let handle_client status fd =
   Fun.protect
     ~finally:(fun () -> close_out_noerr oc)
     (fun () ->
-      let line = try input_line ic with End_of_file -> "GET /livez HTTP/1.0" in
+      let line =
+        try input_line ic with End_of_file -> "GET /livez HTTP/1.0"
+      in
       let path =
         match String.split_on_char ' ' line with
         | _method :: path :: _ -> path
@@ -560,7 +567,8 @@ let run cfg =
       prerr_endline ("lpf-daemon install failed: " ^ error));
   (match reload_policy cfg status with
   | Ok () -> Printf.eprintf "lpf-daemon loaded initial policy\n%!"
-  | Error error -> Printf.eprintf "lpf-daemon initial policy failed: %s\n%!" error);
+  | Error error ->
+      Printf.eprintf "lpf-daemon initial policy failed: %s\n%!" error);
   let socket = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
   Unix.setsockopt socket Unix.SO_REUSEADDR true;
   Unix.bind socket (sockaddr_of_config cfg);

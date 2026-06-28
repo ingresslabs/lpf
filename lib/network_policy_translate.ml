@@ -126,8 +126,7 @@ let translate_ingress_rule rule_json =
   let froms = field_list "from" fields in
   let port_specs = translate_ports (field_list "ports" fields) in
   let sources =
-    if froms = [] then [ "any" ]
-    else List.filter_map translate_peer_addr froms
+    if froms = [] then [ "any" ] else List.filter_map translate_peer_addr froms
   in
   List.concat_map
     (fun source ->
@@ -143,8 +142,7 @@ let translate_egress_rule rule_json =
   let tos = field_list "to" fields in
   let port_specs = translate_ports (field_list "ports" fields) in
   let destinations =
-    if tos = [] then [ "any" ]
-    else List.filter_map translate_peer_addr tos
+    if tos = [] then [ "any" ] else List.filter_map translate_peer_addr tos
   in
   List.concat_map
     (fun destination ->

@@ -167,7 +167,9 @@ let () =
   let result_json = result_to_json result in
   require (contains result_json "10.42.0.5/24") "result_to_json contains ip";
   require (contains result_json "10.42.0.1") "result_to_json contains gateway";
-  require (contains result_json "\"interfaces\"") "result_to_json has interfaces";
+  require
+    (contains result_json "\"interfaces\"")
+    "result_to_json has interfaces";
   require
     (contains result_json "\"interface\": 0")
     "result_to_json uses numeric interface index";
