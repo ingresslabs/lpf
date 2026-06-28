@@ -50,6 +50,32 @@ struct socket {
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_tracing.h>
 
+/* Some bpftool/vmlinux.h combinations omit libbpf map-type enum constants.
+ * Keep source builds independent from distro kernel headers by defining only
+ * the constants this object uses when they are unavailable as macros.
+ */
+#ifndef BPF_MAP_TYPE_HASH
+#define BPF_MAP_TYPE_HASH 1
+#endif
+#ifndef BPF_MAP_TYPE_ARRAY
+#define BPF_MAP_TYPE_ARRAY 2
+#endif
+#ifndef BPF_MAP_TYPE_LRU_HASH
+#define BPF_MAP_TYPE_LRU_HASH 9
+#endif
+#ifndef BPF_MAP_TYPE_LPM_TRIE
+#define BPF_MAP_TYPE_LPM_TRIE 11
+#endif
+#ifndef BPF_MAP_TYPE_RINGBUF
+#define BPF_MAP_TYPE_RINGBUF 27
+#endif
+#ifndef BPF_F_NO_PREALLOC
+#define BPF_F_NO_PREALLOC 1
+#endif
+#ifndef BPF_ANY
+#define BPF_ANY 0
+#endif
+
 /* ── constants ──────────────────────────────────────────────────────────── */
 
 #define LPF_MAX_RULES 128
@@ -159,7 +185,7 @@ struct lpf_event {
   __u32 hook;          /* 0=xdp 1=tc_egress 2=cgroup 3=lsm */
   __u64 timestamp_ns;
   __u32 pkt_len;
-  __u32 padding;
+  __u32 cgroup_id;     /* pod identity: lower 32 bits of cgroup id */
 };
 
 /* ── BPF maps ───────────────────────────────────────────────────────────── */
@@ -354,6 +380,30 @@ struct {
   __type(key, struct lpf_svc_ct_key);
   __type(value, struct lpf_svc_ct_value);
 } lpf_svc_ct SEC(".maps");
+
+/* ── VXLAN overlay ─────────────────────────────────────────────────────────
+   Pure eBPF overlay network: no userspace tunnel daemon.
+   lpf_vxlan_peers maps pod CIDR prefix → target node IP.
+   TC ingress decaps VXLAN, TC egress encapsulates to remote nodes. */
+
+#define LPF_VXLAN_PORT 8472
+#define LPF_VXLAN_MAX_PEERS 4096
+
+struct lpf_vxlan_peer {
+  __be32 node_ip;       /* target node IP for encap */
+  __u32 vni;            /* virtual network identifier */
+};
+
+/* pod CIDR prefix (u32) → (node IP, VNI).
+   Key: pod IP masked to /24 (e.g. 10.42.1.0 → 10.42.1.0 as u32).
+   Value: node IP to encap to + VNI. */
+struct {
+  __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+  __uint(max_entries, LPF_VXLAN_MAX_PEERS);
+  __type(key, struct lpf_lpm_v4_key);
+  __type(value, struct lpf_vxlan_peer);
+  __uint(map_flags, BPF_F_NO_PREALLOC);
+} lpf_vxlan_peers SEC(".maps");
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
 
@@ -555,10 +605,12 @@ static __always_inline int lpf_parse_http(void *data, void *data_end,
 
   /* parse method from first token */
   int mlen = 0;
-  while (p < (__u8 *)http_end && *p != ' ' && mlen < LPF_HTTP_METHOD_MAX) {
+  while (p < (__u8 *)http_end && (void *)(p + 1) <= data_end && *p != ' '
+         && mlen < LPF_HTTP_METHOD_MAX) {
     method[mlen++] = (char)*p++;
   }
-  if (p >= (__u8 *)http_end || *p != ' ') return 0;
+  if (p >= (__u8 *)http_end || (void *)(p + 1) > data_end || *p != ' ')
+    return 0;
   method[mlen] = '\0';
   *method_len = mlen;
   p++;
@@ -568,10 +620,12 @@ static __always_inline int lpf_parse_http(void *data, void *data_end,
   int hlen = 0;
   __u8 *scan = (__u8 *)data;
 #pragma unroll
-  for (int i = 0; i < 48 && scan + 7 < (__u8 *)http_end; i++, scan++) {
+  for (int i = 0; i < 48 && scan + 7 < (__u8 *)http_end
+       && (void *)(scan + 7) <= data_end; i++, scan++) {
     if (scan[0] == '\n' || (scan == (__u8 *)data && i == 0)) {
       __u8 *line = (scan[0] == '\n') ? scan + 1 : scan;
-      if (line + 6 > (__u8 *)http_end) continue;
+      if (line + 6 > (__u8 *)http_end || (void *)(line + 6) > data_end)
+        continue;
       if (!(line[0] == 'H' || line[0] == 'h')) continue;
       if (!(line[1] == 'o' || line[1] == 'O')) continue;
       if (!(line[2] == 's' || line[2] == 'S')) continue;
@@ -580,7 +634,8 @@ static __always_inline int lpf_parse_http(void *data, void *data_end,
 
       line += 6;
       hlen = 0;
-      while (line < (__u8 *)http_end && *line != '\r' && *line != '\n'
+      while (line < (__u8 *)http_end && (void *)(line + 1) <= data_end
+             && *line != '\r' && *line != '\n'
              && hlen < LPF_HTTP_HOST_MAX) {
         host[hlen++] = (char)*line++;
       }
@@ -614,21 +669,10 @@ static __always_inline int lpf_l7_lookup(const char *domain, int domain_len,
     return 1;
   }
 
-  int suffix_start = domain_len > 1 ? 1 : 0;
-  if (suffix_start > 0) {
-    for (int i = 1; i < domain_len && i < 63; i++) {
-      if (domain[i-1] == '.') {
-        int slen = domain_len - i;
-        if (slen > 0 && slen < 63) {
-          k.type = LPF_L7_MATCH_SUFFIX;
-          k.domain_len = (__u8)slen;
-          for (int j = 0; j < slen; j++) k.domain[j] = domain[i+j];
-          pol = bpf_map_lookup_elem(&lpf_l7_policy, &k);
-          if (pol) { *verdict = pol->verdict; return 1; }
-        }
-      }
-    }
-  }
+  /* SUFFIX (*.example.com) matching is disabled pending verifier hardening:
+     the nested domain-copy loop produced E2BIG and an unbounded index into the
+     fixed domain buffer. EXACT L7 match above still applies; L4 port/proto/CIDR
+     enforcement is unaffected. */
 
   return 0;
 }
@@ -719,9 +763,8 @@ static __always_inline int lpf_svc_lookup(__be32 saddr, __be16 sport,
   for (__u32 i = 0; i < LPF_SVC_BACKENDS_PER_SERVICE; i++) {
     if (i >= count) break;
     __u32 idx = (offset + i * skip) % count;
-    if (idx >= LPF_SVC_BACKENDS_PER_SERVICE) continue;
-    __u32 bid = lpf_svc_backend_id(svc, idx);
-    if (bid == 0) continue;
+    if (idx >= LPF_SVC_BACKENDS_PER_SERVICE) idx = 0; /* bound for verifier */
+    __u32 bid = svc->backend_ids[idx];
     struct lpf_backend *be = bpf_map_lookup_elem(&lpf_backends, &bid);
     if (!be || !be->healthy) continue;
 
@@ -752,6 +795,7 @@ static __always_inline void lpf_emit_event(__u32 verdict, __s32 matched,
     ev->hook = hook;
     ev->timestamp_ns = bpf_ktime_get_ns();
     ev->pkt_len = pkt_len;
+    ev->cgroup_id = (__u32)bpf_get_current_cgroup_id();
     bpf_ringbuf_submit(ev, 0);
   }
 }
@@ -1047,10 +1091,115 @@ static __always_inline int lpf_send_rst(struct __sk_buff *skb,
   return bpf_redirect(skb->ifindex, BPF_F_INGRESS);
 }
 
+/* ── VXLAN encap ───────────────────────────────────────────────────────────
+   Encapsulates a pod-to-pod packet destined for a remote node.
+   Wraps the original Ethernet+IP+payload in VXLAN+UDP+IP+Ethernet headers.
+   Uses bpf_skb_adjust_room for header growth. */
+
+#define LPF_VXLAN_HEADER_SIZE (8 + 8 + 20 + 14)
+
+struct lpf_vxlan_hdr {
+  __u8 flags;
+  __u8 reserved[3];
+  __u32 vni_reserved;
+};
+
+static __always_inline int lpf_vxlan_encap(struct __sk_buff *skb,
+                                            __be32 remote_node_ip) {
+  void *data = (void *)(long)skb->data;
+  void *data_end = (void *)(long)skb->data_end;
+  __u32 pkt_len = skb->len;
+
+  struct ethhdr *eth = data;
+  if ((void *)(eth + 1) > data_end) return TC_ACT_OK;
+
+  if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) return TC_ACT_OK;
+
+  struct iphdr *inner_ip = (void *)(eth + 1);
+  if ((void *)(inner_ip + 1) > data_end) return TC_ACT_OK;
+
+  struct lpf_lpm_v4_key vxlan_key = { .prefixlen = 24 };
+  __builtin_memcpy(vxlan_key.data, &inner_ip->daddr, 4);
+  struct lpf_vxlan_peer *peer = bpf_map_lookup_elem(&lpf_vxlan_peers, &vxlan_key);
+  if (!peer || peer->node_ip != remote_node_ip) return TC_ACT_OK;
+
+  if (bpf_skb_adjust_room(skb, LPF_VXLAN_HEADER_SIZE, BPF_ADJ_ROOM_MAC, 0))
+    return TC_ACT_OK;
+
+  data = (void *)(long)skb->data;
+  data_end = (void *)(long)skb->data_end;
+
+  struct ethhdr *outer_eth = data;
+  struct iphdr *outer_ip = (void *)(outer_eth + 1);
+  struct udphdr *outer_udp = (void *)(outer_ip + 1);
+  struct lpf_vxlan_hdr *vxlan = (void *)(outer_udp + 1);
+
+  if ((void *)(vxlan + 1) > data_end) return TC_ACT_OK;
+
+  __builtin_memset(outer_eth->h_dest, 0, 6);
+  __builtin_memset(outer_eth->h_source, 0, 6);
+  outer_eth->h_proto = bpf_htons(LPF_ETH_P_IP);
+
+  outer_ip->version = 4;
+  outer_ip->ihl = 5;
+  outer_ip->tos = 0;
+  outer_ip->tot_len = bpf_htons((__u16)(pkt_len + 8 + 8 + 20));
+  outer_ip->id = 0;
+  outer_ip->frag_off = 0;
+  outer_ip->ttl = 64;
+  outer_ip->protocol = LPF_IPPROTO_UDP;
+  outer_ip->saddr = 0;
+  outer_ip->daddr = peer->node_ip;
+  outer_ip->check = 0;
+
+  outer_udp->source = bpf_htons(LPF_VXLAN_PORT);
+  outer_udp->dest = bpf_htons(LPF_VXLAN_PORT);
+  outer_udp->len = bpf_htons((__u16)(pkt_len + 8 + 8));
+  outer_udp->check = 0;
+
+  __builtin_memset(vxlan, 0, sizeof(*vxlan));
+  vxlan->flags = 0x08;
+
+  return bpf_redirect(skb->ifindex, BPF_F_INGRESS);
+}
+
+/* ── VXLAN decap ───────────────────────────────────────────────────────────
+   Decapsulates a VXLAN packet arriving from a remote node.
+   Strips VXLAN+UDP+IP+Ethernet headers and re-injects the inner packet.
+   Uses bpf_skb_adjust_room for header removal. */
+
+static __always_inline int lpf_vxlan_decap(struct __sk_buff *skb) {
+  void *data = (void *)(long)skb->data;
+  void *data_end = (void *)(long)skb->data_end;
+
+  struct ethhdr *eth = data;
+  if ((void *)(eth + 1) > data_end) return TC_ACT_OK;
+  if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) return TC_ACT_OK;
+
+  struct iphdr *ip = (void *)(eth + 1);
+  if ((void *)(ip + 1) > data_end) return TC_ACT_OK;
+  if (ip->protocol != LPF_IPPROTO_UDP) return TC_ACT_OK;
+
+  __u32 ihl = ip->ihl * 4;
+  struct udphdr *udp = (void *)ip + ihl;
+  if ((void *)(udp + 1) > data_end) return TC_ACT_OK;
+  if (udp->dest != bpf_htons(LPF_VXLAN_PORT)) return TC_ACT_OK;
+
+  struct lpf_vxlan_hdr *vxlan = (void *)(udp + 1);
+  if ((void *)(vxlan + 1) > data_end) return TC_ACT_OK;
+  if (vxlan->flags != 0x08) return TC_ACT_OK;
+
+  if (bpf_skb_adjust_room(skb, -(int)LPF_VXLAN_HEADER_SIZE, BPF_ADJ_ROOM_MAC, 0))
+    return TC_ACT_OK;
+
+  return bpf_redirect(skb->ifindex, BPF_F_INGRESS);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Hook 1: XDP ingress (fastest path, before sk_buff allocation)
    ══════════════════════════════════════════════════════════════════════════ */
 
+#ifndef LPF_BPF_CNI_ONLY
 SEC("xdp")
 int lpf_ingress(struct xdp_md *ctx) {
   void *data = (void *)(long)ctx->data;
@@ -1221,9 +1370,7 @@ int lpf_egress(struct __sk_buff *skb) {
   struct ethhdr *eth = data;
   if ((void *)(eth + 1) > data_end) return TC_ACT_OK;
 
-  if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) {
-    return TC_ACT_OK;
-  }
+  if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) return TC_ACT_OK;
 
   __u8 proto;
   __u16 dport;
@@ -1311,6 +1458,7 @@ int lpf_egress(struct __sk_buff *skb) {
   }
   return TC_ACT_OK;
 }
+#endif
 
 /* ══════════════════════════════════════════════════════════════════════════
    Hook 3: cgroup_skb ingress (per-cgroup identity, runs after XDP)
@@ -1321,20 +1469,55 @@ static __always_inline int lpf_cgroup_eval(struct __sk_buff *skb) {
   void *data_end = (void *)(long)skb->data_end;
   __u32 pkt_len = skb->len;
 
-  struct ethhdr *eth = data;
-  if ((void *)(eth + 1) > data_end) return 1;
-  if (eth->h_proto != bpf_htons(LPF_ETH_P_IP)) return 1;
+  struct iphdr *ip = data;
+  if ((void *)(ip + 1) > data_end) return 1;
+  if (ip->version != 4) return 1;
 
   __u8 proto;
   __u16 dport;
   __be32 saddr, daddr;
-  int ihl = lpf_parse_v4((void *)(eth + 1), data_end,
-                          &proto, &dport, &saddr, &daddr);
+  int ihl = lpf_parse_v4(data, data_end, &proto, &dport, &saddr, &daddr);
   if (ihl < 0) return 1;
 
-  /* Packet L7 parsers use variable packet scans that current kernels do not
-     reliably prove safe in cgroup_skb. Keep L7 policy out of this hook until
-     the DNS and HTTP parsers are rewritten with fixed-offset packet loads. */
+#ifndef LPF_BPF_CNI_ONLY
+  /* L7 DNS QNAME filtering: check DNS queries (UDP/53) against domain policy.
+     Blocks disallowed DNS queries before the rule engine runs. */
+  if (proto == LPF_IPPROTO_UDP && dport == 53) {
+    char domain[64] = {};
+    int dlen = lpf_parse_dns_qname(data + ihl + 8, data_end, domain);
+    if (dlen > 0) {
+      __u32 l7_verdict = LPF_VERDICT_PASS;
+      if (lpf_l7_lookup(domain, dlen, proto, 53, &l7_verdict)) {
+        if (l7_verdict == LPF_VERDICT_DROP || l7_verdict == LPF_VERDICT_REJECT) {
+          lpf_emit_event(l7_verdict, -2, proto, dport, saddr, daddr, 2, pkt_len);
+          return 0;
+        }
+      }
+    }
+   }
+
+  /* L7 HTTP request filtering: parse method + Host header from first data
+     packet on TCP/80 and TCP/8080. Blocks before the L3/L4 rule engine. */
+  if (proto == LPF_IPPROTO_TCP && (dport == 80 || dport == 8080)) {
+    struct tcphdr *tcp = data + ihl;
+    if ((void *)(tcp + 1) <= data_end) {
+      __u32 tcp_doff = tcp->doff * 4;
+      void *http_data = (void *)tcp + tcp_doff;
+      char method[LPF_HTTP_METHOD_MAX] = {};
+      char host[LPF_HTTP_HOST_MAX] = {};
+      int mlen = 0, hlen = 0;
+      if (lpf_parse_http(http_data, data_end, method, &mlen, host, &hlen)) {
+        __u32 l7_verdict = LPF_VERDICT_PASS;
+        if (hlen > 0 && lpf_l7_lookup(host, hlen, proto, dport, &l7_verdict)) {
+          if (l7_verdict == LPF_VERDICT_DROP || l7_verdict == LPF_VERDICT_REJECT) {
+            lpf_emit_event(l7_verdict, -4, proto, dport, saddr, daddr, 2, pkt_len);
+            return 0;
+          }
+        }
+      }
+    }
+  }
+#endif
 
   __u32 id_mask = lpf_identity_mask();
   __u32 rc = lpf_rule_count();

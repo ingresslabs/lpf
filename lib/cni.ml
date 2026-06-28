@@ -53,6 +53,16 @@ let trim s =
 
 let opt_bind f opt = match opt with Some x -> f x | None -> None
 
+let starts_with ~prefix s =
+  let lp = String.length prefix in
+  String.length s >= lp && String.sub s 0 lp = prefix
+
+let contains_substring s sub =
+  try
+    ignore (Str.search_forward (Str.regexp_string sub) s 0);
+    true
+  with Not_found -> false
+
 (* ─── command execution ─── *)
 
 let run_cmd cmd =
@@ -197,6 +207,19 @@ let set_if_up_in_netns_by_path ifname netns_path =
   run_cmd
     (Printf.sprintf "nsenter --net=%s ip link set %s up" netns_path ifname)
 
+let rename_if_in_netns oldname newname netns_path =
+  run_cmd
+    (Printf.sprintf "nsenter --net=%s ip link set %s name %s" netns_path oldname
+       newname)
+
+(* Move the temp peer into the pod netns then rename it to the final ifname
+   (e.g. eth0). The peer is created with a temp name so it does not collide
+   with an interface of the same name already present in the host/root netns. *)
+let move_and_rename tmp_peer final_if netns_path =
+  match move_if_to_netns tmp_peer netns_path with
+  | Error e -> Error e
+  | Ok () -> rename_if_in_netns tmp_peer final_if netns_path
+
 let assign_ip ifname ip_addr netns_path =
   run_cmd
     (Printf.sprintf "nsenter --net=%s ip addr add %s dev %s" netns_path ip_addr
@@ -206,46 +229,31 @@ let add_route ifname dst gw netns_path =
   let gw_str = match gw with Some g -> " via " ^ g | None -> "" in
   let dev_str = " dev " ^ ifname in
   run_cmd
-    (Printf.sprintf "nsenter --net=%s ip route add %s%s%s" netns_path dst gw_str
-       dev_str)
+    (Printf.sprintf "nsenter --net=%s ip route replace %s%s%s" netns_path dst
+       gw_str dev_str)
 
 let add_default_route ifname gw netns_path =
   match gw with
   | Some g -> add_route ifname "0.0.0.0/0" (Some g) netns_path
   | None -> add_route ifname "0.0.0.0/0" None netns_path
 
-(* host-side L3 plumbing (ptp/proxy_arp primary CNI) *)
-
-(* Make the node forward and reach the pod: enable ip_forward, install a
-   /32 host route to the pod via its host veth, and enable proxy_arp on the
-   host veth so the pod's on-link gateway/neighbour ARP requests are answered
-   by the node. This turns lpf-cni into a working primary (ptp-style) CNI. *)
-let run_host_command program args =
-  let invocation : Process.invocation = { program; argv = program :: args } in
-  ignore (Process.run ~temp_prefix:"lpf-cni-host" invocation)
-
-let proc_sys_net_conf_path ifname key =
-  if
-    String.equal ifname "" || String.equal ifname "."
-    || String.equal ifname ".." || String.contains ifname '/'
-  then None
-  else Some ("/proc/sys/net/ipv4/conf/" ^ ifname ^ "/" ^ key)
-
-let write_proc_sys_ifname ifname key value =
-  match proc_sys_net_conf_path ifname key with
-  | None -> ()
-  | Some path -> (
-      try File_util.write_file path value
-      with Sys_error _ | Unix.Unix_error _ -> ())
-
+(* host-side L3 plumbing for a ptp-style primary CNI: enable forwarding,
+   install a /32 route to the pod via its host veth, and enable proxy_arp so
+   the pod's on-link gateway ARP is answered by the node (which has a default
+   route). This gives node<->pod and pod<->pod/external connectivity. *)
 let setup_host_routing host_if ip_addr =
   let pod_ip =
     match String.split_on_char '/' ip_addr with ip :: _ -> ip | [] -> ip_addr
   in
-  run_host_command "sysctl" [ "-w"; "-q"; "net.ipv4.ip_forward=1" ];
-  run_host_command "ip" [ "route"; "replace"; pod_ip ^ "/32"; "dev"; host_if ];
-  write_proc_sys_ifname host_if "proxy_arp" "1\n";
-  write_proc_sys_ifname host_if "forwarding" "1\n"
+  ignore (run_cmd "sysctl -wq net.ipv4.ip_forward=1 2>/dev/null");
+  ignore
+    (run_cmd (Printf.sprintf "ip route replace %s/32 dev %s" pod_ip host_if));
+  ignore
+    (run_cmd
+       (Printf.sprintf "echo 1 > /proc/sys/net/ipv4/conf/%s/proxy_arp" host_if));
+  ignore
+    (run_cmd
+       (Printf.sprintf "echo 1 > /proc/sys/net/ipv4/conf/%s/forwarding" host_if))
 
 (* ─── IPAM delegation ─── *)
 
@@ -253,7 +261,7 @@ let call_ipam plugin_path ipam_config _container_id _ifname =
   let open Json_parse in
   let ipam_input =
     let ipam_obj =
-      [ ("type", String ipam_config.ipam_type); ("name", String "lpf-ipam") ]
+      [ ("type", String ipam_config.ipam_type) ]
       @ (match ipam_config.ipam_subnet with
         | Some s -> [ ("subnet", String s) ]
         | None -> [])
@@ -274,7 +282,13 @@ let call_ipam plugin_path ipam_config _container_id _ifname =
         ]
       else []
     in
-    string_of_json (Object ipam_obj)
+    string_of_json
+      (Object
+         [
+           ("cniVersion", String "1.0.0");
+           ("name", String "lpf");
+           ("ipam", Object ipam_obj);
+         ])
   in
   let plugin = Filename.concat plugin_path ipam_config.ipam_type in
   if not (Sys.file_exists plugin) then
@@ -357,92 +371,221 @@ let call_ipam plugin_path ipam_config _container_id _ifname =
 
 (* ─── BPF cgroup attachment ─── *)
 
-let find_cgroup_path container_id =
-  let pid_cmd = Printf.sprintf "pgrep -f %s | head -1" container_id in
-  match run_cmd_out pid_cmd with
-  | Ok pid_str -> (
-      let pid = trim pid_str in
-      if pid = "" then
-        Error (Printf.sprintf "no process found for container %s" container_id)
-      else
-        let cgroup_cmd =
-          Printf.sprintf
-            "cat /proc/%s/cgroup 2>/dev/null | head -1 | cut -d: -f3" pid
-        in
-        match run_cmd_out cgroup_cmd with
-        | Ok cgroup_rel ->
-            let cgroup_rel_trimmed = trim cgroup_rel in
-            let cgroup_path = "/sys/fs/cgroup" ^ cgroup_rel_trimmed in
-            Ok cgroup_path
-        | Error e -> Error (Printf.sprintf "cgroup lookup failed: %s" e))
-  | Error _e -> (
-      let netns_hint =
-        Printf.sprintf
-          "grep -l %s /proc/*/net/ns/net 2>/dev/null | head -1 | cut -d/ -f3"
-          container_id
+let cgroup_path_of_pid pid =
+  let cgroup_cmd =
+    Printf.sprintf "cat /proc/%s/cgroup 2>/dev/null | head -1 | cut -d: -f3" pid
+  in
+  match run_cmd_out cgroup_cmd with
+  | Ok cgroup_rel ->
+      let cgroup_rel = trim cgroup_rel in
+      let cgroup_rel =
+        if
+          contains_substring cgroup_rel "/kubepods"
+          || contains_substring cgroup_rel "/kubelet-kubepods"
+        then
+          let base = Filename.basename cgroup_rel in
+          if
+            starts_with ~prefix:"cri-containerd-" base
+            || starts_with ~prefix:"docker-" base
+          then Filename.dirname cgroup_rel
+          else cgroup_rel
+        else cgroup_rel
       in
-      match run_cmd_out netns_hint with
-      | Ok pid_str -> (
-          let pid = trim pid_str in
-          if pid = "" then
-            Error
-              (Printf.sprintf "cannot find cgroup for container %s" container_id)
-          else
-            let cgroup_cmd =
-              Printf.sprintf
-                "cat /proc/%s/cgroup 2>/dev/null | head -1 | cut -d: -f3" pid
-            in
-            match run_cmd_out cgroup_cmd with
-            | Ok cgroup_rel ->
-                let cgroup_path = "/sys/fs/cgroup" ^ trim cgroup_rel in
-                Ok cgroup_path
-            | Error e -> Error (Printf.sprintf "cgroup lookup failed: %s" e))
-      | Error _ ->
-          Error
-            (Printf.sprintf "cannot find cgroup for container %s" container_id))
+      if cgroup_rel = "" || cgroup_rel = "/" then Ok "/sys/fs/cgroup"
+      else Ok ("/sys/fs/cgroup" ^ cgroup_rel)
+  | Error e -> Error (Printf.sprintf "cgroup lookup failed: %s" e)
+
+let find_containerd_cgroup_path container_id =
+  let candidates =
+    [
+      Printf.sprintf
+        "/run/containerd/io.containerd.runtime.v2.task/k8s.io/%s/init.pid"
+        container_id;
+      Printf.sprintf
+        "/run/containerd/io.containerd.runtime.v2.task/default/%s/init.pid"
+        container_id;
+    ]
+  in
+  let rec loop = function
+    | [] -> Error "containerd init.pid not found"
+    | path :: rest ->
+        if Sys.file_exists path then
+          match run_cmd_out (Printf.sprintf "cat %s" path) with
+          | Ok pid when trim pid <> "" -> cgroup_path_of_pid (trim pid)
+          | _ -> loop rest
+        else loop rest
+  in
+  loop candidates
+
+let find_netns_cgroup_path netns_path =
+  if trim netns_path = "" then Error "no netns path"
+  else
+    let cmd =
+      Printf.sprintf
+        "target=$(readlink %s 2>/dev/null); [ -n \"$target\" ] || exit 1; for \
+         p in /proc/[0-9]*; do ns=$(readlink \"$p/ns/net\" 2>/dev/null || \
+         true); if [ \"$ns\" = \"$target\" ]; then echo ${p##*/}; exit 0; fi; \
+         done; exit 1"
+        netns_path
+    in
+    match run_cmd_out cmd with
+    | Ok pid when trim pid <> "" -> cgroup_path_of_pid (trim pid)
+    | _ -> Error "netns cgroup lookup failed"
+
+let find_cgroup_path ?(netns_path = "") container_id =
+  match find_containerd_cgroup_path container_id with
+  | Ok path -> Ok path
+  | Error _ -> (
+      match find_netns_cgroup_path netns_path with
+      | Ok path -> Ok path
+      | Error _ -> (
+          let pid_cmd = Printf.sprintf "pgrep -f %s | head -1" container_id in
+          match run_cmd_out pid_cmd with
+          | Ok pid_str ->
+              let pid = trim pid_str in
+              if pid = "" then
+                Error
+                  (Printf.sprintf "no process found for container %s"
+                     container_id)
+              else cgroup_path_of_pid pid
+          | Error _ -> (
+              let cmdline_hint =
+                Printf.sprintf
+                  "grep -l %s /proc/*/cmdline 2>/dev/null | head -1 | cut -d/ \
+                   -f3"
+                  container_id
+              in
+              match run_cmd_out cmdline_hint with
+              | Ok pid_str ->
+                  let pid = trim pid_str in
+                  if pid = "" then
+                    Error
+                      (Printf.sprintf "cannot find cgroup for container %s"
+                         container_id)
+                  else cgroup_path_of_pid pid
+              | Error _ ->
+                  Error
+                    (Printf.sprintf "cannot find cgroup for container %s"
+                       container_id))))
+
+let bpf_pin_root () = getenv_default "LPF_BPF_PIN_ROOT" "/sys/fs/bpf/lpf"
+
+let string_contains s sub =
+  let n = String.length s and m = String.length sub in
+  if m = 0 then true
+  else
+    let rec loop i =
+      if i + m > n then false
+      else if String.sub s i m = sub then true
+      else loop (i + 1)
+    in
+    loop 0
 
 let attach_bpf cgroup_path _policy_mode =
-  let bpffs = "/sys/fs/bpf/lpf" in
-  let prog_ingress = Filename.concat bpffs "progs/cgroup_ingress" in
-  let prog_egress = Filename.concat bpffs "progs/cgroup_egress" in
-  if Sys.file_exists prog_ingress then
-    ignore
-      (run_cmd
-         (Printf.sprintf
-            "bpftool cgroup attach %s cgroup_skb ingress pinned %s 2>/dev/null"
-            cgroup_path prog_ingress));
-  if Sys.file_exists prog_egress then
-    ignore
-      (run_cmd
-         (Printf.sprintf
-            "bpftool cgroup attach %s cgroup_skb egress pinned %s 2>/dev/null"
-            cgroup_path prog_egress))
+  (* Only attach to a real pod cgroup. find_cgroup_path may resolve to the
+     root/init.scope in some runtimes; attaching a default-deny program there
+     would filter node/system traffic. Cluster-wide enforcement is provided
+     separately by attaching at kubepods.slice. *)
+  if not (string_contains cgroup_path "kubepods") then false
+  else
+    let bpffs = bpf_pin_root () in
+    let prog_ingress = Filename.concat bpffs "progs/cgroup_ingress" in
+    let prog_egress = Filename.concat bpffs "progs/cgroup_egress" in
+    let attached = ref false in
+    (if Sys.file_exists prog_ingress then
+       match
+         run_cmd
+           (Printf.sprintf
+              "bpftool cgroup attach %s ingress pinned %s 2>/dev/null"
+              cgroup_path prog_ingress)
+       with
+       | Ok () -> attached := true
+       | Error _ -> ());
+    (if Sys.file_exists prog_egress then
+       match
+         run_cmd
+           (Printf.sprintf
+              "bpftool cgroup attach %s egress pinned %s 2>/dev/null"
+              cgroup_path prog_egress)
+       with
+       | Ok () -> attached := true
+       | Error _ -> ());
+    !attached
 
 let detach_bpf cgroup_path =
-  let bpffs = "/sys/fs/bpf/lpf" in
+  let bpffs = bpf_pin_root () in
   let prog_ingress = Filename.concat bpffs "progs/cgroup_ingress" in
   let prog_egress = Filename.concat bpffs "progs/cgroup_egress" in
   if Sys.file_exists prog_ingress then
     ignore
       (run_cmd
          (Printf.sprintf
-            "bpftool cgroup detach %s cgroup_skb ingress pinned %s 2>/dev/null"
-            cgroup_path prog_ingress));
+            "bpftool cgroup detach %s ingress pinned %s 2>/dev/null" cgroup_path
+            prog_ingress));
   if Sys.file_exists prog_egress then
     ignore
       (run_cmd
-         (Printf.sprintf
-            "bpftool cgroup detach %s cgroup_skb egress pinned %s 2>/dev/null"
+         (Printf.sprintf "bpftool cgroup detach %s egress pinned %s 2>/dev/null"
             cgroup_path prog_egress))
+
+let defer_attach_bpf container_id netns_path =
+  let cmd =
+    Printf.sprintf
+      "(PIN=%s; CID=%s; NETNS=%s; attach() { path=\"$1\"; [ -d \"$path\" ] || \
+       return 1; [ -e \"$PIN/progs/cgroup_ingress\" ] && bpftool cgroup attach \
+       \"$path\" ingress pinned \"$PIN/progs/cgroup_ingress\" 2>/dev/null || \
+       true; [ -e \"$PIN/progs/cgroup_egress\" ] && bpftool cgroup attach \
+       \"$path\" egress pinned \"$PIN/progs/cgroup_egress\" 2>/dev/null || \
+       true; exit 0; }; cgpath() { pid=\"$1\"; rel=$(cat \"/proc/$pid/cgroup\" \
+       2>/dev/null | head -1 | cut -d: -f3); [ -n \"$rel\" ] || return 1; case \
+       \"$rel\" in *kubepods*|*kubelet-kubepods*) \
+       rel=${rel%%/cri-containerd-*}; rel=${rel%%/docker-*};; esac; printf \
+       '/sys/fs/cgroup%%s' \"$rel\"; }; echo \"defer attach start cid=$CID \
+       netns=$NETNS pin=$PIN\"; for i in $(seq 1 100); do for ns in k8s.io \
+       default; do \
+       f=\"/run/containerd/io.containerd.runtime.v2.task/$ns/$CID/init.pid\"; \
+       if [ -s \"$f\" ]; then path=$(cgpath \"$(cat \"$f\")\") && attach \
+       \"$path\"; fi; done; target=$(readlink \"$NETNS\" 2>/dev/null || true); \
+       if [ -n \"$target\" ]; then for p in /proc/[0-9]*; do ns=$(readlink \
+       \"$p/ns/net\" 2>/dev/null || true); if [ \"$ns\" = \"$target\" ]; then \
+       path=$(cgpath \"${p##*/}\") && attach \"$path\"; fi; done; fi; sleep \
+       0.1; done; echo \"defer attach gave up cid=$CID\") \
+       >>/run/lpf-cni-defer.log 2>&1 &"
+      (Filename.quote (bpf_pin_root ()))
+      (Filename.quote container_id)
+      (Filename.quote netns_path)
+  in
+  ignore (Sys.command cmd)
+
+(* ─── bandwidth enforcement ──────────────────────────────────────────────── *)
+
+let setup_bandwidth host_if =
+  ignore
+    (run_cmd
+       (Printf.sprintf
+          "tc qdisc add dev %s root handle 1: htb default 1 2>/dev/null" host_if));
+  ignore
+    (run_cmd
+       (Printf.sprintf
+          "tc class add dev %s parent 1: classid 1:1 htb rate 1gbit ceil 1gbit \
+           2>/dev/null"
+          host_if))
+
+let teardown_bandwidth host_if =
+  ignore
+    (run_cmd (Printf.sprintf "tc qdisc delete dev %s root 2>/dev/null" host_if))
 
 (* ─── ADD handler ─── *)
 
 let handle_add cfg netns_path container_id ifname =
   let host_if, container_if = veth_name container_id ifname in
-  match create_veth_pair host_if container_if with
+  let tmp_peer =
+    "lpfc" ^ String.sub (Digest.to_hex (Digest.string container_id)) 0 8
+  in
+  match create_veth_pair host_if tmp_peer with
   | Error e -> Error (Printf.sprintf "veth create: %s" e)
   | Ok () -> (
-      match move_if_to_netns container_if netns_path with
+      match move_and_rename tmp_peer container_if netns_path with
       | Error e ->
           ignore (delete_veth host_if);
           Error (Printf.sprintf "netns move: %s" e)
@@ -457,6 +600,7 @@ let handle_add cfg netns_path container_id ifname =
                   ignore (delete_veth host_if);
                   Error (Printf.sprintf "container if up: %s" e)
               | Ok () -> (
+                  setup_bandwidth host_if;
                   match cfg.ipam with
                   | Some ipam_cfg -> (
                       let cni_path = getenv_default "CNI_PATH" "/opt/cni/bin" in
@@ -483,6 +627,9 @@ let handle_add cfg netns_path container_id ifname =
                               | Ok () -> (
                                   let rec add_routes = function
                                     | [] -> Ok ()
+                                    | (dst, _) :: rest
+                                      when dst = "0.0.0.0/0" || dst = "::/0" ->
+                                        add_routes rest
                                     | (dst, dst_gw) :: rest -> (
                                         match
                                           add_route container_if dst dst_gw
@@ -503,10 +650,14 @@ let handle_add cfg netns_path container_id ifname =
                                       match cfg.policy with
                                       | Some _policy -> (
                                           match
-                                            find_cgroup_path container_id
+                                            find_cgroup_path ~netns_path
+                                              container_id
                                           with
                                           | Ok cg_path ->
-                                              attach_bpf cg_path "auto";
+                                              if not (attach_bpf cg_path "auto")
+                                              then
+                                                defer_attach_bpf container_id
+                                                  netns_path;
                                               Ok
                                                 {
                                                   ip_address = ip_addr;
@@ -515,6 +666,8 @@ let handle_add cfg netns_path container_id ifname =
                                                   dns_nameservers = dns_servers;
                                                 }
                                           | Error _ ->
+                                              defer_attach_bpf container_id
+                                                netns_path;
                                               Ok
                                                 {
                                                   ip_address = ip_addr;
@@ -554,6 +707,7 @@ let handle_del cfg _netns_path container_id ifname =
       ignore
         (run_cmd (Printf.sprintf "ip addr flush dev %s 2>/dev/null" host_if))
   | None -> ());
+  teardown_bandwidth host_if;
   ignore (delete_veth host_if);
   Ok ()
 
@@ -594,6 +748,9 @@ let handle_version () =
 
 let result_to_json result =
   let open Json_parse in
+  let interfaces =
+    Array [ Object [ ("name", String "eth0"); ("sandbox", String "") ] ]
+  in
   let ips =
     Array
       [
@@ -602,7 +759,7 @@ let result_to_json result =
             ("address", String result.ip_address);
             ( "gateway",
               match result.gateway with Some g -> String g | None -> Null );
-            ("interface", String "eth0");
+            ("interface", Number 0.0);
           ];
       ]
   in
@@ -630,6 +787,7 @@ let result_to_json result =
     (Object
        [
          ("cniVersion", String "1.0.0");
+         ("interfaces", interfaces);
          ("ips", ips);
          ("routes", routes);
          ("dns", dns);

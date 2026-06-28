@@ -63,6 +63,7 @@ module Process : module type of Process
 module File_util : module type of File_util
 module Json_parse : module type of Json_parse
 module Cni : module type of Cni
+module Lpf_daemon : module type of Lpf_daemon
 module Network_policy_translate : module type of Network_policy_translate
 module Nomad_policy_translate : module type of Nomad_policy_translate
 

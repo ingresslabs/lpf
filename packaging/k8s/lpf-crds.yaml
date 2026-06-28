@@ -1,0 +1,170 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: clusterpolicies.policy.ingresslabs.com
+spec:
+  group: policy.ingresslabs.com
+  scope: Cluster
+  names:
+    plural: clusterpolicies
+    singular: clusterpolicy
+    kind: ClusterPolicy
+    shortNames: ["lpfcp"]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["policy"]
+              properties:
+                policy:
+                  type: string
+                  description: LPF policy text applied cluster-wide.
+                defaultAction:
+                  type: string
+                  enum: ["pass", "deny", "block"]
+                auditMode:
+                  type: boolean
+                priority:
+                  type: integer
+      additionalPrinterColumns:
+        - name: Priority
+          type: integer
+          jsonPath: .spec.priority
+        - name: Audit
+          type: boolean
+          jsonPath: .spec.auditMode
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: namespacedpolicies.policy.ingresslabs.com
+spec:
+  group: policy.ingresslabs.com
+  scope: Namespaced
+  names:
+    plural: namespacedpolicies
+    singular: namespacedpolicy
+    kind: NamespacedPolicy
+    shortNames: ["lpfnp"]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["policy"]
+              properties:
+                policy:
+                  type: string
+                  description: LPF policy text applied within the namespace.
+                podSelector:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                auditMode:
+                  type: boolean
+                priority:
+                  type: integer
+      additionalPrinterColumns:
+        - name: Priority
+          type: integer
+          jsonPath: .spec.priority
+        - name: Audit
+          type: boolean
+          jsonPath: .spec.auditMode
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: stagedpolicies.policy.ingresslabs.com
+spec:
+  group: policy.ingresslabs.com
+  scope: Namespaced
+  names:
+    plural: stagedpolicies
+    singular: stagedpolicy
+    kind: StagedPolicy
+    shortNames: ["lpfsp"]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required: ["policy"]
+              properties:
+                policy:
+                  type: string
+                  description: LPF policy text evaluated in audit/shadow mode.
+                podSelector:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                promoteAfter:
+                  type: string
+                priority:
+                  type: integer
+            status:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+      additionalPrinterColumns:
+        - name: Priority
+          type: integer
+          jsonPath: .spec.priority
+        - name: PromoteAfter
+          type: string
+          jsonPath: .spec.promoteAfter
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: trafficclasses.policy.ingresslabs.com
+spec:
+  group: policy.ingresslabs.com
+  scope: Namespaced
+  names:
+    plural: trafficclasses
+    singular: trafficclass
+    kind: TrafficClass
+    shortNames: ["lpftc"]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                podSelector:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                ingressRate:
+                  type: string
+                  description: tc-compatible ingress rate, for example 10Mbit.
+                egressRate:
+                  type: string
+                  description: tc-compatible egress rate, for example 10Mbit.
+                parent:
+                  type: string
+      additionalPrinterColumns:
+        - name: Ingress
+          type: string
+          jsonPath: .spec.ingressRate
+        - name: Egress
+          type: string
+          jsonPath: .spec.egressRate

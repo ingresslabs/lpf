@@ -119,6 +119,7 @@ let require_interface (policy : Policy.policy) span reference context =
 let resolve_port (policy : Policy.policy) span = function
   | Policy.Port_any -> Ok Port_any
   | Policy.Port_number number -> Ok (Range (number, number))
+  | Policy.Port_range (low, high) -> Ok (Range (low, high))
   | Policy.Port_macro name -> (
       match
         List.find_opt

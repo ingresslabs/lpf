@@ -1,3 +1,41 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lpf-cni
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: lpf-cni
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "namespaces", "nodes", "pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy.ingresslabs.com"]
+    resources:
+      - "clusterpolicies"
+      - "namespacedpolicies"
+      - "stagedpolicies"
+      - "trafficclasses"
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: lpf-cni
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: lpf-cni
+subjects:
+  - kind: ServiceAccount
+    name: lpf-cni
+    namespace: kube-system
+---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -15,6 +53,7 @@ spec:
       labels:
         app: lpf-cni
     spec:
+      serviceAccountName: lpf-cni
       hostNetwork: true
       hostPID: true
       tolerations:
@@ -29,6 +68,22 @@ spec:
           env:
             - name: CNI_PATH
               value: /opt/cni/bin
+            - name: LPF_DAEMON_POLICY_PATH
+              value: /etc/lpf/policy/policy.lpf
+            - name: LPF_DAEMON_KUBE_API_WATCH
+              value: "true"
+            - name: LPF_DAEMON_CNI_CONFIG_PATH
+              value: /etc/lpf/cni/10-lpf.conflist
+            - name: LPF_DAEMON_HOST_CNI_BIN_DIR
+              value: /host/opt/cni/bin
+            - name: LPF_DAEMON_HOST_CNI_NET_DIR
+              value: /host/etc/cni/net.d
+            - name: LPF_DAEMON_CNI_BINARY_SOURCE
+              value: /opt/cni/bin/lpf-cni
+            - name: LPF_DAEMON_PORT
+              value: "9999"
+            - name: LPF_BPF_OBJECT
+              value: /opt/lpf/bpf/lpf_kern.o
             - name: NODE_NAME
               valueFrom:
                 fieldRef:
@@ -43,9 +98,15 @@ spec:
                 - SYS_RESOURCE
           volumeMounts:
             - name: cni-bin
-              mountPath: /opt/cni/bin
+              mountPath: /host/opt/cni/bin
             - name: cni-netd
-              mountPath: /etc/cni/net.d
+              mountPath: /host/etc/cni/net.d
+            - name: cni-config
+              mountPath: /etc/lpf/cni
+              readOnly: true
+            - name: cluster-policy
+              mountPath: /etc/lpf/policy
+              readOnly: true
             - name: bpf-fs
               mountPath: /sys/fs/bpf
             - name: lib-modules
@@ -86,7 +147,7 @@ spec:
         - name: bpf-fs
           hostPath:
             path: /sys/fs/bpf
-            type: Directory
+            type: DirectoryOrCreate
         - name: lib-modules
           hostPath:
             path: /lib/modules
@@ -95,6 +156,18 @@ spec:
           hostPath:
             path: /sys/fs/cgroup
             type: Directory
+        - name: cni-config
+          configMap:
+            name: lpf-cni-config
+            items:
+              - key: 10-lpf.conflist
+                path: 10-lpf.conflist
+        - name: cluster-policy
+          configMap:
+            name: lpf-cluster-policy
+            items:
+              - key: policy.lpf
+                path: policy.lpf
 ---
 apiVersion: v1
 kind: ConfigMap

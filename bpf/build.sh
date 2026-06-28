@@ -21,6 +21,7 @@ llvm_strip=${LLVM_STRIP:-llvm-strip}
 bpftool=${BPFTOOL:-bpftool}
 libbpf_include=${LIBBPF_INCLUDE:-}
 no_btf=${LPF_NO_BTF:-0}
+cni_only=${LPF_BPF_CNI_ONLY:-0}
 
 need_tool() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -48,6 +49,7 @@ else
 fi
 
 btf_flags=
+extra_cflags=${LPF_EXTRA_CFLAGS:-}
 if [ "$no_btf" = "1" ]; then
   btf_flags="-DLPF_NO_VMLINUX_H"
   case "$(uname -m)" in
@@ -69,6 +71,10 @@ elif [ ! -s "$dir/vmlinux.h" ]; then
   "$bpftool" btf dump file "$btf" format c >"$dir/vmlinux.h"
 fi
 
+if [ "$cni_only" = "1" ]; then
+  extra_cflags="$extra_cflags -DLPF_BPF_CNI_ONLY"
+fi
+
 "$clang" -O2 -g -Wall \
   -fno-builtin \
   -fno-builtin-memcpy \
@@ -77,13 +83,19 @@ fi
   -Wno-compare-distinct-pointer-types \
   -target bpf \
   "-D__TARGET_ARCH_$target_arch" \
+  $extra_cflags \
   $btf_flags \
   $include_flags \
   -c "$dir/lpf_kern.c" -o "$dir/lpf_kern.o"
 
 # Verify all expected sections are present
 echo "program sections:"
-for sec in xdp tc cgroup_skb/ingress cgroup_skb/egress lsm/socket_connect lsm/socket_bind; do
+if [ "$cni_only" = "1" ]; then
+  expected_sections="cgroup_skb/ingress cgroup_skb/egress lsm/socket_connect lsm/socket_bind"
+else
+  expected_sections="xdp tc cgroup_skb/ingress cgroup_skb/egress lsm/socket_connect lsm/socket_bind"
+fi
+for sec in $expected_sections; do
   if "$llvm_objdump" -h "$dir/lpf_kern.o" 2>/dev/null | grep -qF "$sec"; then
     echo "  $sec: present"
   else

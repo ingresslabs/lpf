@@ -61,9 +61,18 @@ let parse_port token =
       match parse_macro_ref token with
       | Some name -> Ok (Port_macro name)
       | None -> (
-          match int_of_string_opt token with
-          | Some value when value >= 1 && value <= 65535 ->
-              Ok (Port_number value)
+          match String.split_on_char ':' token with
+          | [ single ] -> (
+              match int_of_string_opt single with
+              | Some value when value >= 1 && value <= 65535 ->
+                  Ok (Port_number value)
+              | _ -> Error ("invalid port `" ^ token ^ "`"))
+          | [ low_str; high_str ] -> (
+              match (int_of_string_opt low_str, int_of_string_opt high_str) with
+              | Some low, Some high when low >= 1 && high <= 65535 && low < high
+                ->
+                  Ok (Port_range (low, high))
+              | _ -> Error ("invalid port range `" ^ token ^ "`"))
           | _ -> Error ("invalid port `" ^ token ^ "`")))
 
 let parse_action = function
@@ -1176,7 +1185,7 @@ let validate_interface_reference ?(context = "rule") ~interfaces ~macros span =
       ]
 
 let validate_port ~macros span = function
-  | Port_any | Port_number _ -> []
+  | Port_any | Port_number _ | Port_range _ -> []
   | Port_macro name ->
       if List.mem name macros then []
       else

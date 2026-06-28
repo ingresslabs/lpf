@@ -72,7 +72,11 @@ type t = {
   tables : Ir.table list;
 }
 
-let pin_root = "/sys/fs/bpf/lpf"
+let pin_root =
+  match Sys.getenv_opt "LPF_BPF_PIN_ROOT" with
+  | Some path when String.trim path <> "" -> String.trim path
+  | _ -> "/sys/fs/bpf/lpf"
+
 let state_dir = "/var/lib/lpf/ebpf"
 
 (* --- compilation (Phase 1, with Phase 4 identity selectors) --- *)
@@ -981,6 +985,28 @@ let proc_resolution (program : t) =
             (u32_le (int_of_string idx)))
         map.entries
 
+let object_backed_map name =
+  List.mem name
+    [
+      "lpf_meta";
+      "lpf_rules";
+      "lpf_rules_hash";
+      "lpf_counters";
+      "lpf_cidr4";
+      "lpf_cidr6";
+      "lpf_conntrack";
+      "lpf_cgroup";
+      "lpf_dns";
+      "lpf_events";
+      "lpf_dnat";
+      "lpf_snat";
+      "lpf_l7_policy";
+      "lpf_services";
+      "lpf_backends";
+      "lpf_svc_ct";
+      "lpf_vxlan_peers";
+    ]
+
 let loader_script (program : t) =
   let rule_count = List.length program.rules in
   let header =
@@ -1008,10 +1034,17 @@ let loader_script (program : t) =
     @ proc_resolution program @ dns_resolution program
   in
   let attach =
+    let map_reuse_args =
+      program.maps
+      |> List.filter (fun (m : map) -> object_backed_map m.name)
+      |> List.map (fun (m : map) ->
+             Printf.sprintf " map name %s pinned \"$PIN/%s\"" m.name m.name)
+      |> String.concat ""
+    in
     [
       "if [ -n \"${LPF_BPF_OBJECT:-}\" ] && [ -f \"${LPF_BPF_OBJECT}\" ]; then";
-      "  bpftool prog loadall \"$LPF_BPF_OBJECT\" \"$PIN/prog\" 2>/dev/null || \
-       true";
+      "  bpftool -m prog loadall \"$LPF_BPF_OBJECT\" \"$PIN/prog\""
+      ^ map_reuse_args ^ " 2>/dev/null || true";
     ]
     @ List.filter_map
         (fun (p : program) ->

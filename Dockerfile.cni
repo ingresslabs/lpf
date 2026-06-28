@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     iproute2 \
     iptables \
     bpftool \
+    curl \
     libelf1 \
     ca-certificates \
   && rm -rf /var/lib/apt/lists/*

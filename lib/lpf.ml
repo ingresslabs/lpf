@@ -63,6 +63,7 @@ module Process = Process
 module File_util = File_util
 module Json_parse = Json_parse
 module Cni = Cni
+module Lpf_daemon = Lpf_daemon
 module Network_policy_translate = Network_policy_translate
 module Nomad_policy_translate = Nomad_policy_translate
 
