@@ -21,7 +21,31 @@
 //   lpf_dns (hash)      = resolved_ip -> set index (DNS identity)
 //   lpf_events (ringbuf)= structured event output for observability
 
+#ifdef LPF_NO_VMLINUX_H
+#include <linux/types.h>
+#include <linux/bpf.h>
+#include <linux/if_ether.h>
+#include <linux/in.h>
+#include <linux/in6.h>
+#include <linux/ip.h>
+#include <linux/ipv6.h>
+#include <linux/pkt_cls.h>
+#include <linux/socket.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
+#ifndef SOCK_STREAM
+#define SOCK_STREAM 1
+#endif
+struct sockaddr {
+  unsigned short sa_family;
+  char sa_data[14];
+};
+struct socket {
+  short type;
+};
+#else
 #include "vmlinux.h"
+#endif
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 #include <bpf/bpf_tracing.h>
@@ -529,7 +553,6 @@ static __always_inline int lpf_parse_tls_sni(void *data, void *data_end,
     p += 4;
     if (ext_type == 0x0000) {           /* SNI extension */
       if (p + 2 > (__u8 *)ext_end) break;
-      __u16 snl_len = (p[0] << 8) | p[1];
       p += 2;
       if (p + 3 > (__u8 *)ext_end) break;
       if (*p++ != 0x00) break;          /* name type = host_name */
@@ -671,6 +694,29 @@ static __always_inline __u32 lpf_hash32(__u32 val, __u32 seed) {
   return hash;
 }
 
+static __always_inline __u32 lpf_svc_backend_id(struct lpf_svc_value *svc,
+                                                 __u32 idx) {
+  switch (idx) {
+  case 0: return svc->backend_ids[0];
+  case 1: return svc->backend_ids[1];
+  case 2: return svc->backend_ids[2];
+  case 3: return svc->backend_ids[3];
+  case 4: return svc->backend_ids[4];
+  case 5: return svc->backend_ids[5];
+  case 6: return svc->backend_ids[6];
+  case 7: return svc->backend_ids[7];
+  case 8: return svc->backend_ids[8];
+  case 9: return svc->backend_ids[9];
+  case 10: return svc->backend_ids[10];
+  case 11: return svc->backend_ids[11];
+  case 12: return svc->backend_ids[12];
+  case 13: return svc->backend_ids[13];
+  case 14: return svc->backend_ids[14];
+  case 15: return svc->backend_ids[15];
+  default: return 0;
+  }
+}
+
 static __always_inline int lpf_svc_lookup(__be32 saddr, __be16 sport,
                                            __be32 daddr, __be16 dport,
                                            __u8 proto, __u64 now_ns,
@@ -708,10 +754,14 @@ static __always_inline int lpf_svc_lookup(__be32 saddr, __be16 sport,
   h2 = lpf_hash32((__u32)proto, h2);
 
   __u32 count = svc->backend_count;
+  if (count > LPF_SVC_BACKENDS_PER_SERVICE)
+    count = LPF_SVC_BACKENDS_PER_SERVICE;
+  if (count == 0) return 0;
   __u32 offset = h1 % count;
   __u32 skip = count > 1 ? ((h2 % (count - 1)) + 1) : 1;
 
-  for (__u32 i = 0; i < count && i < LPF_SVC_BACKENDS_PER_SERVICE; i++) {
+  for (__u32 i = 0; i < LPF_SVC_BACKENDS_PER_SERVICE; i++) {
+    if (i >= count) break;
     __u32 idx = (offset + i * skip) % count;
     if (idx >= LPF_SVC_BACKENDS_PER_SERVICE) idx = 0; /* bound for verifier */
     __u32 bid = svc->backend_ids[idx];
